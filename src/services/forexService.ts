@@ -38,6 +38,31 @@ export const formatDateLong = (date: Date): string => {
   return date.toLocaleDateString(undefined, options);
 };
 
+// ISO3 to ISO2 mapping for flag icons
+const countryCodeMapping: { [key: string]: string } = {
+  "USD": "us",
+  "EUR": "eu",
+  "GBP": "gb",
+  "CHF": "ch",
+  "AUD": "au",
+  "CAD": "ca",
+  "SGD": "sg",
+  "JPY": "jp",
+  "CNY": "cn",
+  "SAR": "sa",
+  "QAR": "qa",
+  "THB": "th",
+  "AED": "ae",
+  "MYR": "my",
+  "KRW": "kr",
+  "SEK": "se",
+  "DKK": "dk",
+  "HKD": "hk",
+  "KWD": "kw",
+  "BHD": "bh",
+  "OMR": "om",
+};
+
 export const getFlagEmoji = (iso3: string): string => {
   const flagEmojis: { [key: string]: string } = {
     "USD": "🇺🇸",
@@ -64,4 +89,13 @@ export const getFlagEmoji = (iso3: string): string => {
   };
   
   return flagEmojis[iso3] || "🏳️";
+};
+
+// Function to get flag icon HTML for a currency
+export const getFlagIcon = (iso3: string): string => {
+  const iso2 = countryCodeMapping[iso3];
+  if (iso2) {
+    return `<span class="fi fi-${iso2}"></span>`;
+  }
+  return getFlagEmoji(iso3); // Fallback to emoji if no mapping exists
 };
