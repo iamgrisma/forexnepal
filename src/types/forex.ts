@@ -34,6 +34,25 @@ export interface ForexResponse {
   };
 }
 
+export interface HistoricalRates {
+  status: {
+    code: number;
+    message?: string;
+  };
+  payload: RatesData[];
+}
+
 export interface FlagEmojiMap {
   [key: string]: string;
+}
+
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+export interface ChartDataPoint {
+  date: string;
+  buy: number;
+  sell: number;
 }

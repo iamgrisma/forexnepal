@@ -5,6 +5,7 @@ import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
+import CurrencyChartModal from './CurrencyChartModal';
 
 interface ForexTableProps {
   rates: Rate[];
@@ -18,6 +19,8 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
     key: string;
     direction: 'ascending' | 'descending';
   } | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState<Rate | null>(null);
+  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
 
   // Filter the rates based on search term
   const filteredRates = rates.filter(rate => 
@@ -73,6 +76,11 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
   const getSortIndicator = (key: string) => {
     if (!sortConfig || sortConfig.key !== key) return null;
     return sortConfig.direction === 'ascending' ? ' ↑' : ' ↓';
+  };
+
+  const handleCurrencyClick = (rate: Rate) => {
+    setSelectedCurrency(rate);
+    setIsChartModalOpen(true);
   };
 
   if (isLoading) {
@@ -150,10 +158,15 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
                     {index + 1}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    <div className="flex items-center">
-                      <span className="text-xl mr-2">{getFlagEmoji(rate.currency.iso3)}</span>
+                    <button 
+                      onClick={() => handleCurrencyClick(rate)}
+                      className="flex items-center hover:text-forex-blue transition-colors focus:outline-none"
+                    >
+                      <span className="mr-2">
+                        <span className={`fi fi-${rate.currency.iso3.toLowerCase() === 'eur' ? 'eu' : rate.currency.iso3.substring(0, 2).toLowerCase()}`}></span>
+                      </span>
                       <span>{rate.currency.name} ({rate.currency.iso3})</span>
-                    </div>
+                    </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                     {rate.currency.unit}
@@ -176,6 +189,14 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
           </tbody>
         </table>
       </div>
+
+      {selectedCurrency && (
+        <CurrencyChartModal
+          currency={selectedCurrency}
+          isOpen={isChartModalOpen}
+          onClose={() => setIsChartModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

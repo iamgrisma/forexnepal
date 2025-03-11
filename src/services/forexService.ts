@@ -1,5 +1,5 @@
 
-import { ForexResponse } from '../types/forex';
+import { ForexResponse, HistoricalRates } from '../types/forex';
 
 export const fetchForexRates = async (): Promise<ForexResponse> => {
   try {
@@ -19,6 +19,58 @@ export const fetchForexRates = async (): Promise<ForexResponse> => {
     console.error("Failed to fetch forex rates:", error);
     throw error;
   }
+};
+
+export const fetchHistoricalRates = async (fromDate: string, toDate: string): Promise<HistoricalRates> => {
+  try {
+    const response = await fetch(
+      `https://www.nrb.org.np/api/forex/v1/rates?from=${fromDate}&to=${toDate}&per_page=100&page=1`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return {
+      payload: data.data.payload,
+      status: data.status
+    };
+  } catch (error) {
+    console.error("Failed to fetch historical forex rates:", error);
+    throw error;
+  }
+};
+
+export const getDateRanges = () => {
+  const today = new Date();
+  
+  // Week range
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  
+  // Month range
+  const monthAgo = new Date(today);
+  monthAgo.setMonth(monthAgo.getMonth() - 1);
+  
+  // Year range
+  const yearAgo = new Date(today);
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  
+  return {
+    week: {
+      from: formatDate(weekAgo),
+      to: formatDate(today)
+    },
+    month: {
+      from: formatDate(monthAgo),
+      to: formatDate(today)
+    },
+    year: {
+      from: formatDate(yearAgo),
+      to: formatDate(today)
+    }
+  };
 };
 
 export const formatDate = (date: Date): string => {
