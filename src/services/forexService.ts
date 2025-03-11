@@ -53,9 +53,12 @@ export const getDateRanges = () => {
   const monthAgo = new Date(today);
   monthAgo.setMonth(monthAgo.getMonth() - 1);
   
-  // Year range
+  // Year range - split into two 6-month periods to handle API limitations
   const yearAgo = new Date(today);
   yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  
+  // For the year range, we'll provide a range that is exactly 1 year ago
+  // The component will handle splitting this into multiple requests if needed
   
   return {
     week: {
@@ -113,6 +116,7 @@ const countryCodeMapping: { [key: string]: string } = {
   "KWD": "kw",
   "BHD": "bh",
   "OMR": "om",
+  "INR": "in",
 };
 
 export const getFlagEmoji = (iso3: string): string => {
@@ -138,6 +142,7 @@ export const getFlagEmoji = (iso3: string): string => {
     "KWD": "🇰🇼",
     "BHD": "🇧🇭",
     "OMR": "🇴🇲",
+    "INR": "🇮🇳",
   };
   
   return flagEmojis[iso3] || "🏳️";

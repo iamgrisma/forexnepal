@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchForexRates, formatDateLong } from '../services/forexService';
@@ -14,6 +13,10 @@ import { useToast } from '@/components/ui/use-toast';
 const Index = () => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [popularCurrencies, setPopularCurrencies] = useState<Rate[]>([]);
+  const [asianCurrencies, setAsianCurrencies] = useState<Rate[]>([]);
+  const [europeanCurrencies, setEuropeanCurrencies] = useState<Rate[]>([]);
+  const [middleEastCurrencies, setMiddleEastCurrencies] = useState<Rate[]>([]);
+  const [otherCurrencies, setOtherCurrencies] = useState<Rate[]>([]);
   const { toast } = useToast();
   
   const { 
@@ -41,15 +44,29 @@ const Index = () => {
   
   useEffect(() => {
     if (forexData?.data?.payload?.[0]?.rates) {
-      // Define popular currency codes
-      const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
+      const allRates = forexData.data.payload[0].rates;
       
-      // Filter rates to get popular currencies
-      const popular = forexData.data.payload[0].rates.filter(
-        rate => popularCodes.includes(rate.currency.iso3)
-      );
+      // Define currency categories
+      const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
+      const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB'];
+      const europeanCodes = ['EUR', 'GBP', 'CHF', 'SEK', 'DKK'];
+      const middleEastCodes = ['SAR', 'QAR', 'AED', 'KWD', 'BHD', 'OMR'];
+      
+      // Filter rates to get categorized currencies
+      const popular = allRates.filter(rate => popularCodes.includes(rate.currency.iso3));
+      const asian = allRates.filter(rate => asianCodes.includes(rate.currency.iso3));
+      const european = allRates.filter(rate => europeanCodes.includes(rate.currency.iso3));
+      const middleEast = allRates.filter(rate => middleEastCodes.includes(rate.currency.iso3));
+      
+      // Other currencies (not in any other category)
+      const allCategorizedCodes = [...new Set([...popularCodes, ...asianCodes, ...europeanCodes, ...middleEastCodes])];
+      const others = allRates.filter(rate => !allCategorizedCodes.includes(rate.currency.iso3));
       
       setPopularCurrencies(popular);
+      setAsianCurrencies(asian);
+      setEuropeanCurrencies(european);
+      setMiddleEastCurrencies(middleEast);
+      setOtherCurrencies(others);
     }
   }, [forexData]);
 
@@ -127,6 +144,7 @@ const Index = () => {
             <TabsTrigger value="asian">Asian</TabsTrigger>
             <TabsTrigger value="european">European</TabsTrigger>
             <TabsTrigger value="middle-east">Middle East</TabsTrigger>
+            <TabsTrigger value="other">Other</TabsTrigger>
           </TabsList>
           
           <TabsContent value="all" className="animate-fade-in">
@@ -169,26 +187,92 @@ const Index = () => {
             )}
           </TabsContent>
           
-          {/* Placeholder content for other tabs */}
           <TabsContent value="asian" className="animate-fade-in">
-            <div className="text-center py-12">
-              <TrendingUp className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-xl text-gray-500">Asian Currencies Coming Soon</h3>
-            </div>
+            {viewMode === 'table' ? (
+              <ForexTable 
+                rates={asianCurrencies} 
+                isLoading={isLoading} 
+                title="Asian Currencies" 
+              />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
+                  ))
+                ) : (
+                  asianCurrencies.map((rate, index) => (
+                    <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
           
           <TabsContent value="european" className="animate-fade-in">
-            <div className="text-center py-12">
-              <TrendingUp className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-xl text-gray-500">European Currencies Coming Soon</h3>
-            </div>
+            {viewMode === 'table' ? (
+              <ForexTable 
+                rates={europeanCurrencies} 
+                isLoading={isLoading} 
+                title="European Currencies" 
+              />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
+                  ))
+                ) : (
+                  europeanCurrencies.map((rate, index) => (
+                    <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
           
           <TabsContent value="middle-east" className="animate-fade-in">
-            <div className="text-center py-12">
-              <TrendingUp className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-xl text-gray-500">Middle East Currencies Coming Soon</h3>
-            </div>
+            {viewMode === 'table' ? (
+              <ForexTable 
+                rates={middleEastCurrencies} 
+                isLoading={isLoading} 
+                title="Middle East Currencies" 
+              />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
+                  ))
+                ) : (
+                  middleEastCurrencies.map((rate, index) => (
+                    <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                  ))
+                )}
+              </div>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="other" className="animate-fade-in">
+            {viewMode === 'table' ? (
+              <ForexTable 
+                rates={otherCurrencies} 
+                isLoading={isLoading} 
+                title="Other Currencies" 
+              />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {isLoading ? (
+                  Array.from({ length: 6 }).map((_, index) => (
+                    <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
+                  ))
+                ) : (
+                  otherCurrencies.map((rate, index) => (
+                    <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                  ))
+                )}
+              </div>
+            )}
           </TabsContent>
         </Tabs>
         

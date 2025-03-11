@@ -36,7 +36,7 @@ const ForexTicker = ({ rates, isLoading }: ForexTickerProps) => {
         >
           {rates.map((rate, index) => (
             <span key={index} className="inline-flex items-center mx-4">
-              <span className="text-lg mr-1">{getFlagEmoji(rate.currency.iso3)}</span>
+              <span className="text-lg mr-1" dangerouslySetInnerHTML={{ __html: getFlagEmoji(rate.currency.iso3) }} />
               <span className="text-forex-indigo font-semibold">{rate.currency.iso3}:</span>
               <span className="ml-1">
                 <span className="text-forex-green">{rate.buy}</span>

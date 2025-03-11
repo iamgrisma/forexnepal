@@ -6,18 +6,21 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format } from 'date-fns';
+import { format, differenceInMonths, addMonths, isAfter, isBefore, parseISO } from 'date-fns';
 import { CalendarIcon, RefreshCw } from 'lucide-react';
 import { Rate, ChartDataPoint, HistoricalRates, RatesData } from '../types/forex';
 import { fetchHistoricalRates, getDateRanges } from '../services/forexService';
 import { getFlagEmoji } from '../services/forexService';
 import { useToast } from '@/components/ui/use-toast';
+import { Input } from '@/components/ui/input';
 
 interface CurrencyChartModalProps {
   currency: Rate;
   isOpen: boolean;
   onClose: () => void;
 }
+
+const MAX_MONTHS_PER_REQUEST = 6; // NRB API limitation
 
 const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalProps) => {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -28,37 +31,80 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
     to: undefined,
   });
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [customFromDate, setCustomFromDate] = useState<string>('');
+  const [customToDate, setCustomToDate] = useState<string>('');
   const { toast } = useToast();
 
-  const loadHistoricalData = async (from: string, to: string) => {
+  const splitDateRangeForRequests = (fromDate: Date, toDate: Date): Array<{from: string, to: string}> => {
+    const dateRanges: Array<{from: string, to: string}> = [];
+    let currentFrom = fromDate;
+    
+    // If date range is less than MAX_MONTHS_PER_REQUEST, just return one range
+    if (differenceInMonths(toDate, fromDate) <= MAX_MONTHS_PER_REQUEST) {
+      return [{
+        from: format(fromDate, 'yyyy-MM-dd'),
+        to: format(toDate, 'yyyy-MM-dd')
+      }];
+    }
+    
+    // Split the date range into chunks of MAX_MONTHS_PER_REQUEST
+    while (isBefore(currentFrom, toDate) || currentFrom.getTime() === toDate.getTime()) {
+      const nextTo = addMonths(currentFrom, MAX_MONTHS_PER_REQUEST);
+      const chunkEndDate = isAfter(nextTo, toDate) ? toDate : nextTo;
+      
+      dateRanges.push({
+        from: format(currentFrom, 'yyyy-MM-dd'),
+        to: format(chunkEndDate, 'yyyy-MM-dd')
+      });
+      
+      if (chunkEndDate.getTime() === toDate.getTime()) break;
+      currentFrom = addMonths(chunkEndDate, 1); // Start next chunk from the next month
+    }
+    
+    return dateRanges;
+  };
+
+  const loadHistoricalData = async (fromDate: string, toDate: string) => {
     if (!isOpen) return;
     
     setIsLoading(true);
     try {
-      const histData: HistoricalRates = await fetchHistoricalRates(from, to);
+      // Parse the dates
+      const fromDateObj = parseISO(fromDate);
+      const toDateObj = parseISO(toDate);
       
-      if (histData.status.code === 200 && histData.payload.length > 0) {
-        const formattedData: ChartDataPoint[] = [];
+      // Split the date range if needed
+      const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj);
+      
+      // Create an array to store all the data
+      let allData: ChartDataPoint[] = [];
+      
+      // Fetch data for each date range
+      for (const range of dateRanges) {
+        const histData: HistoricalRates = await fetchHistoricalRates(range.from, range.to);
         
-        // Process the historical data
-        histData.payload.forEach((dayData: RatesData) => {
-          const currencyRate = dayData.rates.find(
-            (rate) => rate.currency.iso3 === currency.currency.iso3
-          );
-          
-          if (currencyRate) {
-            formattedData.push({
-              date: dayData.date,
-              buy: parseFloat(currencyRate.buy.toString()),
-              sell: parseFloat(currencyRate.sell.toString()),
-            });
-          }
-        });
-        
+        if (histData.status.code === 200 && histData.payload.length > 0) {
+          // Process the historical data
+          histData.payload.forEach((dayData: RatesData) => {
+            const currencyRate = dayData.rates.find(
+              (rate) => rate.currency.iso3 === currency.currency.iso3
+            );
+            
+            if (currencyRate) {
+              allData.push({
+                date: dayData.date,
+                buy: parseFloat(currencyRate.buy.toString()),
+                sell: parseFloat(currencyRate.sell.toString()),
+              });
+            }
+          });
+        }
+      }
+      
+      if (allData.length > 0) {
         // Sort by date
-        formattedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        setChartData(formattedData);
+        allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setChartData(allData);
       } else {
         toast({
           title: "No data available",
@@ -95,12 +141,63 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
     }
   };
 
+  const validateDateString = (dateStr: string): boolean => {
+    // Basic regex for YYYY-MM-DD format
+    const regex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!regex.test(dateStr)) return false;
+    
+    // Check if it's a valid date
+    const date = new Date(dateStr);
+    return !isNaN(date.getTime());
+  };
+
   const handleCustomDateApply = () => {
     if (dateRange.from && dateRange.to) {
       const fromFormatted = format(dateRange.from, 'yyyy-MM-dd');
       const toFormatted = format(dateRange.to, 'yyyy-MM-dd');
       loadHistoricalData(fromFormatted, toFormatted);
       setCalendarOpen(false);
+    } else if (customFromDate && customToDate) {
+      if (!validateDateString(customFromDate) || !validateDateString(customToDate)) {
+        toast({
+          title: "Invalid date format",
+          description: "Please use YYYY-MM-DD format for custom dates.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      const fromDate = new Date(customFromDate);
+      const toDate = new Date(customToDate);
+      
+      if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+        toast({
+          title: "Invalid dates",
+          description: "Please enter valid dates.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (fromDate > toDate) {
+        toast({
+          title: "Invalid date range",
+          description: "Start date must be before end date.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      if (toDate > new Date()) {
+        toast({
+          title: "Future dates not allowed",
+          description: "End date cannot be in the future.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      loadHistoricalData(customFromDate, customToDate);
     } else {
       toast({
         title: "Date selection required",
@@ -126,7 +223,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
         </DialogHeader>
 
         <Tabs value={selectedTab} onValueChange={handleTabChange}>
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <TabsList>
               <TabsTrigger value="week">Last Week</TabsTrigger>
               <TabsTrigger value="month">Last Month</TabsTrigger>
@@ -135,41 +232,74 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
             </TabsList>
             
             {selectedTab === 'custom' && (
-              <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
-                    <CalendarIcon className="h-4 w-4" />
-                    <span>
-                      {dateRange.from ? format(dateRange.from, 'PP') : 'Select'} - 
-                      {dateRange.to ? format(dateRange.to, 'PP') : 'Select'}
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="range"
-                    selected={dateRange}
-                    onSelect={(range) => setDateRange(range as { from: Date | undefined; to: Date | undefined })}
-                    initialFocus
-                    disabled={{ after: new Date() }}
-                  />
-                  <div className="p-3 border-t border-border">
-                    <Button size="sm" onClick={handleCustomDateApply} className="w-full">
-                      Apply Range
+              <div className="flex items-center gap-2 flex-wrap">
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="flex items-center gap-2">
+                      <CalendarIcon className="h-4 w-4" />
+                      <span>
+                        {dateRange.from ? format(dateRange.from, 'PP') : 'Select'} - 
+                        {dateRange.to ? format(dateRange.to, 'PP') : 'Select'}
+                      </span>
                     </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="range"
+                      selected={dateRange}
+                      onSelect={(range) => setDateRange(range as { from: Date | undefined; to: Date | undefined })}
+                      initialFocus
+                      disabled={{ after: new Date() }}
+                      className="pointer-events-auto"
+                    />
+                    <div className="p-3 border-t border-border">
+                      <Button size="sm" onClick={handleCustomDateApply} className="w-full">
+                        Apply Range
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col">
+                    <label className="text-xs mb-1">From (YYYY-MM-DD)</label>
+                    <Input
+                      type="text"
+                      placeholder="YYYY-MM-DD"
+                      value={customFromDate}
+                      onChange={(e) => setCustomFromDate(e.target.value)}
+                      className="w-32"
+                    />
                   </div>
-                </PopoverContent>
-              </Popover>
+                  <div className="flex flex-col">
+                    <label className="text-xs mb-1">To (YYYY-MM-DD)</label>
+                    <Input
+                      type="text"
+                      placeholder="YYYY-MM-DD"
+                      value={customToDate}
+                      onChange={(e) => setCustomToDate(e.target.value)}
+                      className="w-32"
+                    />
+                  </div>
+                  <Button onClick={handleCustomDateApply} size="sm" className="mt-6">
+                    Apply
+                  </Button>
+                </div>
+              </div>
             )}
             
             <Button 
               variant="outline" 
               size="sm" 
               onClick={() => {
-                if (selectedTab === 'custom' && dateRange.from && dateRange.to) {
-                  const fromFormatted = format(dateRange.from, 'yyyy-MM-dd');
-                  const toFormatted = format(dateRange.to, 'yyyy-MM-dd');
-                  loadHistoricalData(fromFormatted, toFormatted);
+                if (selectedTab === 'custom') {
+                  if (dateRange.from && dateRange.to) {
+                    const fromFormatted = format(dateRange.from, 'yyyy-MM-dd');
+                    const toFormatted = format(dateRange.to, 'yyyy-MM-dd');
+                    loadHistoricalData(fromFormatted, toFormatted);
+                  } else if (customFromDate && customToDate) {
+                    loadHistoricalData(customFromDate, customToDate);
+                  }
                 } else {
                   const ranges = getDateRanges();
                   loadHistoricalData(ranges[selectedTab as keyof typeof ranges].from, ranges[selectedTab as keyof typeof ranges].to);
