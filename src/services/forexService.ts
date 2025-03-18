@@ -1,4 +1,3 @@
-
 import { ForexResponse, HistoricalRates } from '../types/forex';
 
 export const fetchForexRates = async (): Promise<ForexResponse> => {
@@ -153,7 +152,6 @@ export const formatDateLong = (date: Date): string => {
   return date.toLocaleDateString(undefined, options);
 };
 
-// ISO3 to ISO2 mapping for flag icons
 const countryCodeMapping: { [key: string]: string } = {
   "USD": "us",
   "EUR": "eu",
@@ -208,7 +206,6 @@ export const getFlagEmoji = (iso3: string): string => {
   return flagEmojis[iso3] || "🏳️";
 };
 
-// Function to get flag icon HTML for a currency
 export const getFlagIcon = (iso3: string): string => {
   const iso2 = countryCodeMapping[iso3];
   if (iso2) {
@@ -217,23 +214,22 @@ export const getFlagIcon = (iso3: string): string => {
   return getFlagEmoji(iso3); // Fallback to emoji if no mapping exists
 };
 
-// Split date ranges for API requests (max 6 months per request)
 export const splitDateRangeForRequests = (fromDate: Date, toDate: Date): Array<{from: string, to: string}> => {
   const dateRanges: Array<{from: string, to: string}> = [];
   let currentFrom = new Date(toDate);
   let remainingDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
   
-  // If date range is less than or equal to 180 days (roughly 6 months), just return one range
-  if (remainingDays <= 180) {
+  // If date range is less than or equal to 90 days, just return one range
+  if (remainingDays <= 90) {
     return [{
       from: formatDate(fromDate),
       to: formatDate(toDate)
     }];
   }
   
-  // Split the date range into chunks of 180 days, working backwards from the most recent date
+  // Split the date range into chunks of 90 days, working backwards from the most recent date
   while (remainingDays > 0) {
-    const chunkSize = Math.min(remainingDays, 180);
+    const chunkSize = Math.min(remainingDays, 90);
     const chunkStart = new Date(currentFrom);
     chunkStart.setDate(chunkStart.getDate() - chunkSize);
     

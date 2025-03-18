@@ -45,6 +45,8 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       // Split the date range if needed
       const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj);
       
+      console.log('Date ranges for API requests:', dateRanges);
+      
       // Create an array to store all the data
       let allData: ChartDataPoint[] = [];
       
