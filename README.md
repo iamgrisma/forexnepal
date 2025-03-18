@@ -2,7 +2,7 @@
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/c22cb4ec-91da-417b-b347-d49c235c4819
+**URL**: [Forex Nepal](https://forex-flicker.lovable.app/)
 
 ## How can I edit this code?
 
