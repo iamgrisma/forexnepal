@@ -92,12 +92,21 @@ export const getDateRanges = () => {
   const monthAgo = new Date(today);
   monthAgo.setMonth(monthAgo.getMonth() - 1);
   
-  // Year range - split into two 6-month periods to handle API limitations
+  // 3 Month range
+  const threeMonthsAgo = new Date(today);
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+  
+  // 6 Month range
+  const sixMonthsAgo = new Date(today);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  
+  // Year range
   const yearAgo = new Date(today);
   yearAgo.setFullYear(yearAgo.getFullYear() - 1);
   
-  // For the year range, we'll provide a range that is exactly 1 year ago
-  // The component will handle splitting this into multiple requests if needed
+  // 5 Year range
+  const fiveYearsAgo = new Date(today);
+  fiveYearsAgo.setFullYear(fiveYearsAgo.getFullYear() - 5);
   
   return {
     week: {
@@ -108,8 +117,20 @@ export const getDateRanges = () => {
       from: formatDate(monthAgo),
       to: formatDate(today)
     },
+    threeMonth: {
+      from: formatDate(threeMonthsAgo),
+      to: formatDate(today)
+    },
+    sixMonth: {
+      from: formatDate(sixMonthsAgo),
+      to: formatDate(today)
+    },
     year: {
       from: formatDate(yearAgo),
+      to: formatDate(today)
+    },
+    fiveYear: {
+      from: formatDate(fiveYearsAgo),
       to: formatDate(today)
     }
   };
@@ -194,4 +215,40 @@ export const getFlagIcon = (iso3: string): string => {
     return `<span class="fi fi-${iso2}"></span>`;
   }
   return getFlagEmoji(iso3); // Fallback to emoji if no mapping exists
+};
+
+// Split date ranges for API requests (max 6 months per request)
+export const splitDateRangeForRequests = (fromDate: Date, toDate: Date): Array<{from: string, to: string}> => {
+  const dateRanges: Array<{from: string, to: string}> = [];
+  let currentFrom = new Date(toDate);
+  let remainingDays = Math.floor((toDate.getTime() - fromDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // If date range is less than or equal to 180 days (roughly 6 months), just return one range
+  if (remainingDays <= 180) {
+    return [{
+      from: formatDate(fromDate),
+      to: formatDate(toDate)
+    }];
+  }
+  
+  // Split the date range into chunks of 180 days, working backwards from the most recent date
+  while (remainingDays > 0) {
+    const chunkSize = Math.min(remainingDays, 180);
+    const chunkStart = new Date(currentFrom);
+    chunkStart.setDate(chunkStart.getDate() - chunkSize);
+    
+    // Ensure we don't go before the fromDate
+    const actualChunkStart = chunkStart.getTime() < fromDate.getTime() ? fromDate : chunkStart;
+    
+    dateRanges.push({
+      from: formatDate(actualChunkStart),
+      to: formatDate(currentFrom)
+    });
+    
+    currentFrom = new Date(actualChunkStart);
+    currentFrom.setDate(currentFrom.getDate() - 1); // Move to the day before the chunk start
+    remainingDays -= chunkSize;
+  }
+  
+  return dateRanges;
 };

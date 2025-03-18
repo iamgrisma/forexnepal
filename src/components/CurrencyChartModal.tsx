@@ -9,7 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { format, differenceInMonths, addMonths, isAfter, isBefore, parseISO } from 'date-fns';
 import { CalendarIcon, RefreshCw } from 'lucide-react';
 import { Rate, ChartDataPoint, HistoricalRates, RatesData } from '../types/forex';
-import { fetchHistoricalRates, getDateRanges } from '../services/forexService';
+import { fetchHistoricalRates, getDateRanges, splitDateRangeForRequests } from '../services/forexService';
 import { getFlagEmoji } from '../services/forexService';
 import { useToast } from '@/components/ui/use-toast';
 import { Input } from '@/components/ui/input';
@@ -19,8 +19,6 @@ interface CurrencyChartModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-const MAX_MONTHS_PER_REQUEST = 6; // NRB API limitation
 
 const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalProps) => {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
@@ -34,35 +32,6 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
   const { toast } = useToast();
-
-  const splitDateRangeForRequests = (fromDate: Date, toDate: Date): Array<{from: string, to: string}> => {
-    const dateRanges: Array<{from: string, to: string}> = [];
-    let currentFrom = fromDate;
-    
-    // If date range is less than MAX_MONTHS_PER_REQUEST, just return one range
-    if (differenceInMonths(toDate, fromDate) <= MAX_MONTHS_PER_REQUEST) {
-      return [{
-        from: format(fromDate, 'yyyy-MM-dd'),
-        to: format(toDate, 'yyyy-MM-dd')
-      }];
-    }
-    
-    // Split the date range into chunks of MAX_MONTHS_PER_REQUEST
-    while (isBefore(currentFrom, toDate) || currentFrom.getTime() === toDate.getTime()) {
-      const nextTo = addMonths(currentFrom, MAX_MONTHS_PER_REQUEST);
-      const chunkEndDate = isAfter(nextTo, toDate) ? toDate : nextTo;
-      
-      dateRanges.push({
-        from: format(currentFrom, 'yyyy-MM-dd'),
-        to: format(chunkEndDate, 'yyyy-MM-dd')
-      });
-      
-      if (chunkEndDate.getTime() === toDate.getTime()) break;
-      currentFrom = addMonths(chunkEndDate, 1); // Start next chunk from the next month
-    }
-    
-    return dateRanges;
-  };
 
   const loadHistoricalData = async (fromDate: string, toDate: string) => {
     if (!isOpen) return;
@@ -102,7 +71,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       }
       
       if (allData.length > 0) {
-        // Sort by date
+        // Sort by date chronologically
         allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         setChartData(allData);
       } else {
@@ -227,7 +196,10 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
             <TabsList>
               <TabsTrigger value="week">Last Week</TabsTrigger>
               <TabsTrigger value="month">Last Month</TabsTrigger>
+              <TabsTrigger value="threeMonth">Last 3 Months</TabsTrigger>
+              <TabsTrigger value="sixMonth">Last 6 Months</TabsTrigger>
               <TabsTrigger value="year">Last Year</TabsTrigger>
+              <TabsTrigger value="fiveYear">Last 5 Years</TabsTrigger>
               <TabsTrigger value="custom">Custom Range</TabsTrigger>
             </TabsList>
             
@@ -320,7 +292,19 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
             <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
           </TabsContent>
           
+          <TabsContent value="threeMonth" className="mt-4">
+            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
+          </TabsContent>
+          
+          <TabsContent value="sixMonth" className="mt-4">
+            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
+          </TabsContent>
+          
           <TabsContent value="year" className="mt-4">
+            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
+          </TabsContent>
+          
+          <TabsContent value="fiveYear" className="mt-4">
             <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
           </TabsContent>
           

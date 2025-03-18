@@ -56,3 +56,8 @@ export interface ChartDataPoint {
   buy: number;
   sell: number;
 }
+
+export interface DateRangeRequest {
+  from: string;
+  to: string;
+}
