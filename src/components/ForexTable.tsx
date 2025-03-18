@@ -4,16 +4,17 @@ import { Rate } from '../types/forex';
 import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown } from 'lucide-react';
 import CurrencyChartModal from './CurrencyChartModal';
 
 interface ForexTableProps {
   rates: Rate[];
   isLoading: boolean;
   title: string;
+  previousDayRates?: Rate[];
 }
 
-const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
+const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTableProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -83,6 +84,30 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
     setIsChartModalOpen(true);
   };
 
+  // Function to get rate change from previous day
+  const getRateChange = (currentRate: Rate, type: 'buy' | 'sell'): { value: number, isIncrease: boolean | null } => {
+    if (!previousDayRates || previousDayRates.length === 0) {
+      return { value: 0, isIncrease: null };
+    }
+    
+    const prevRate = previousDayRates.find(
+      rate => rate.currency.iso3 === currentRate.currency.iso3
+    );
+    
+    if (!prevRate) {
+      return { value: 0, isIncrease: null };
+    }
+    
+    const prevValue = parseFloat(prevRate[type].toString());
+    const currentValue = parseFloat(currentRate[type].toString());
+    const diff = currentValue - prevValue;
+    
+    return {
+      value: Math.abs(diff),
+      isIncrease: diff > 0 ? true : diff < 0 ? false : null
+    };
+  };
+
   if (isLoading) {
     return (
       <div className="animate-pulse space-y-4">
@@ -145,43 +170,92 @@ const ForexTable = ({ rates, isLoading, title }: ForexTableProps) => {
               >
                 Selling Rate{getSortIndicator('sell')}
               </th>
+              {previousDayRates && previousDayRates.length > 0 && (
+                <>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Buy Trend
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    Sell Trend
+                  </th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody className="bg-white/60 backdrop-blur-sm">
             {sortedRates.length > 0 ? (
-              sortedRates.map((rate, index) => (
-                <tr 
-                  key={rate.currency.iso3} 
-                  className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors"
-                >
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {index + 1}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    <button 
-                      onClick={() => handleCurrencyClick(rate)}
-                      className="flex items-center hover:text-forex-blue transition-colors focus:outline-none"
-                    >
-                      <span className="mr-2">
-                        <span className={`fi fi-${rate.currency.iso3.toLowerCase() === 'eur' ? 'eu' : rate.currency.iso3.substring(0, 2).toLowerCase()}`}></span>
-                      </span>
-                      <span>{rate.currency.name} ({rate.currency.iso3})</span>
-                    </button>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {rate.currency.unit}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-green">
-                    {rate.buy}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-red">
-                    {rate.sell}
-                  </td>
-                </tr>
-              ))
+              sortedRates.map((rate, index) => {
+                const buyChange = getRateChange(rate, 'buy');
+                const sellChange = getRateChange(rate, 'sell');
+                
+                return (
+                  <tr 
+                    key={rate.currency.iso3} 
+                    className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors"
+                  >
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      {index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      <button 
+                        onClick={() => handleCurrencyClick(rate)}
+                        className="flex items-center hover:text-forex-blue transition-colors focus:outline-none"
+                      >
+                        <span className="mr-2" dangerouslySetInnerHTML={{ __html: getFlagEmoji(rate.currency.iso3) }} />
+                        <span>{rate.currency.name} ({rate.currency.iso3})</span>
+                      </button>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                      {rate.currency.unit}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-green">
+                      {rate.buy}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-red">
+                      {rate.sell}
+                    </td>
+                    {previousDayRates && previousDayRates.length > 0 && (
+                      <>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {buyChange.isIncrease !== null ? (
+                            <div className="flex items-center">
+                              {buyChange.isIncrease ? (
+                                <TrendingUp className="h-4 w-4 text-forex-green mr-1" />
+                              ) : (
+                                <TrendingDown className="h-4 w-4 text-forex-red mr-1" />
+                              )}
+                              <span className={buyChange.isIncrease ? 'text-forex-green' : 'text-forex-red'}>
+                                {buyChange.value.toFixed(2)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {sellChange.isIncrease !== null ? (
+                            <div className="flex items-center">
+                              {sellChange.isIncrease ? (
+                                <TrendingUp className="h-4 w-4 text-forex-green mr-1" />
+                              ) : (
+                                <TrendingDown className="h-4 w-4 text-forex-red mr-1" />
+                              )}
+                              <span className={sellChange.isIncrease ? 'text-forex-green' : 'text-forex-red'}>
+                                {sellChange.value.toFixed(2)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                );
+              })
             ) : (
               <tr>
-                <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                <td colSpan={previousDayRates && previousDayRates.length > 0 ? 7 : 5} className="px-6 py-4 text-center text-sm text-gray-500">
                   No currencies found matching your search
                 </td>
               </tr>

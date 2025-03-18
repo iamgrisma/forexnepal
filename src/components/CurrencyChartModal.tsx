@@ -214,7 +214,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <span className="text-2xl mr-2">{getFlagEmoji(currency.currency.iso3)}</span>
+            <span className="text-2xl mr-2" dangerouslySetInnerHTML={{ __html: getFlagEmoji(currency.currency.iso3) }} />
             {currency.currency.name} ({currency.currency.iso3}) Exchange Rate History
           </DialogTitle>
           <DialogDescription>
@@ -243,7 +243,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
                       </span>
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
+                  <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
                       mode="range"
                       selected={dateRange}

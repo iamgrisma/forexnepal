@@ -21,6 +21,45 @@ export const fetchForexRates = async (): Promise<ForexResponse> => {
   }
 };
 
+export const fetchPreviousDayRates = async (): Promise<ForexResponse | null> => {
+  try {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const formattedYesterday = formatDate(yesterday);
+    
+    const response = await fetch(
+      `https://www.nrb.org.np/api/forex/v1/rates?from=${formattedYesterday}&to=${formattedYesterday}&per_page=100&page=1`
+    );
+    
+    if (!response.ok) {
+      if (response.status === 404) {
+        // Try one more day back if yesterday's data is not available
+        const dayBeforeYesterday = new Date(today);
+        dayBeforeYesterday.setDate(dayBeforeYesterday.getDate() - 2);
+        const formattedDayBeforeYesterday = formatDate(dayBeforeYesterday);
+        
+        const retryResponse = await fetch(
+          `https://www.nrb.org.np/api/forex/v1/rates?from=${formattedDayBeforeYesterday}&to=${formattedDayBeforeYesterday}&per_page=100&page=1`
+        );
+        
+        if (!retryResponse.ok) {
+          console.warn("Unable to fetch previous day rates");
+          return null;
+        }
+        
+        return await retryResponse.json();
+      }
+      throw new Error(`Error: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Failed to fetch previous day rates:", error);
+    return null;
+  }
+};
+
 export const fetchHistoricalRates = async (fromDate: string, toDate: string): Promise<HistoricalRates> => {
   try {
     const response = await fetch(

@@ -1,6 +1,7 @@
+
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, formatDateLong } from '../services/forexService';
+import { fetchForexRates, fetchPreviousDayRates, formatDateLong } from '../services/forexService';
 import { Rate, RatesData } from '../types/forex';
 import ForexTable from '../components/ForexTable';
 import ForexTicker from '../components/ForexTicker';
@@ -17,6 +18,7 @@ const Index = () => {
   const [europeanCurrencies, setEuropeanCurrencies] = useState<Rate[]>([]);
   const [middleEastCurrencies, setMiddleEastCurrencies] = useState<Rate[]>([]);
   const [otherCurrencies, setOtherCurrencies] = useState<Rate[]>([]);
+  const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
   const { toast } = useToast();
   
   const { 
@@ -32,6 +34,16 @@ const Index = () => {
     staleTime: 1000 * 60 * 15, // 15 minutes
   });
 
+  const { 
+    data: prevDayData,
+    isLoading: isPrevDayLoading,
+  } = useQuery({
+    queryKey: ['previousDayRates'],
+    queryFn: fetchPreviousDayRates,
+    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
   useEffect(() => {
     if (isError && error instanceof Error) {
       toast({
@@ -43,12 +55,18 @@ const Index = () => {
   }, [isError, error, toast]);
   
   useEffect(() => {
+    if (prevDayData?.data?.payload?.[0]?.rates) {
+      setPreviousDayRates(prevDayData.data.payload[0].rates);
+    }
+  }, [prevDayData]);
+  
+  useEffect(() => {
     if (forexData?.data?.payload?.[0]?.rates) {
       const allRates = forexData.data.payload[0].rates;
       
       // Define currency categories
       const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
-      const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB'];
+      const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
       const europeanCodes = ['EUR', 'GBP', 'CHF', 'SEK', 'DKK'];
       const middleEastCodes = ['SAR', 'QAR', 'AED', 'KWD', 'BHD', 'OMR'];
       
@@ -149,7 +167,12 @@ const Index = () => {
           
           <TabsContent value="all" className="animate-fade-in">
             {viewMode === 'table' ? (
-              <ForexTable rates={rates} isLoading={isLoading} title={title} />
+              <ForexTable 
+                rates={rates} 
+                isLoading={isLoading} 
+                title={title} 
+                previousDayRates={previousDayRates}
+              />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoading ? (
@@ -171,6 +194,7 @@ const Index = () => {
                 rates={popularCurrencies} 
                 isLoading={isLoading} 
                 title="Popular Foreign Currencies" 
+                previousDayRates={previousDayRates}
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -193,6 +217,7 @@ const Index = () => {
                 rates={asianCurrencies} 
                 isLoading={isLoading} 
                 title="Asian Currencies" 
+                previousDayRates={previousDayRates}
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -215,6 +240,7 @@ const Index = () => {
                 rates={europeanCurrencies} 
                 isLoading={isLoading} 
                 title="European Currencies" 
+                previousDayRates={previousDayRates}
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -237,6 +263,7 @@ const Index = () => {
                 rates={middleEastCurrencies} 
                 isLoading={isLoading} 
                 title="Middle East Currencies" 
+                previousDayRates={previousDayRates}
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -259,6 +286,7 @@ const Index = () => {
                 rates={otherCurrencies} 
                 isLoading={isLoading} 
                 title="Other Currencies" 
+                previousDayRates={previousDayRates}
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
