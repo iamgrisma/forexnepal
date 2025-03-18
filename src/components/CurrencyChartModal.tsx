@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format, differenceInMonths, addMonths, isAfter, isBefore, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { CalendarIcon, RefreshCw } from 'lucide-react';
 import { Rate, ChartDataPoint, HistoricalRates, RatesData } from '../types/forex';
 import { fetchHistoricalRates, getDateRanges, splitDateRangeForRequests } from '../services/forexService';
