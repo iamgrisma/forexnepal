@@ -2,7 +2,7 @@
 
 ## Project info
 
-**URL**: [Forex Nepal](https://forex-flicker.lovable.app/)
+**URL**: [Forex Nepal](https://forex.grisma.com.np/)
 
 ## How can I edit this code?
 
@@ -10,7 +10,7 @@ There are several ways of editing your application.
 
 **Use Lovable**
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/c22cb4ec-91da-417b-b347-d49c235c4819) and start prompting.
+Simply visit the and start converting forex.
 
 Changes made via Lovable will be committed automatically to this repo.
 
