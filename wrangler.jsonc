@@ -1,5 +1,5 @@
 {
-    "name": "worker-name",
+    "name": "forex",
     "compatibility_date": "2025-08-14",
     "build": {
         "command": "npm run build"
