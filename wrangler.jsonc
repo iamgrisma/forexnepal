@@ -1,7 +1,10 @@
 {
-	    "name": "worker-name",
+    "name": "worker-name",
     "compatibility_date": "2025-08-14",
-	    "assets": {
-	      "directory": "./dist"
-	    }
+    "build": {
+        "command": "npm run build"
+    },
+    "assets": {
+        "directory": "./dist"
+    }
 }
