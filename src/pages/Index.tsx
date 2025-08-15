@@ -306,8 +306,9 @@ const Index = () => {
           </Tabs>
           
           <footer className="text-center text-gray-500 text-sm mt-12 pt-6 border-t border-gray-100">
-            <p>Data provided by Nepal Rastra Bank API</p>
-            <p className="mt-2">© {new Date().getFullYear()} Forex Tracker</p>
+            <p>Forex data is provided by Nepal Rastra Bank</p>
+            <p className="mt-2">Made with ❤️ by Grisma Blog</p>
+            <p className="mt-1">© {new Date().getFullYear()} Grisma Blog</p>
           </footer>
         </div>
       </div>
