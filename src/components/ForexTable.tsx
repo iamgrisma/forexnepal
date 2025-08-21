@@ -201,7 +201,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
                         onClick={() => handleCurrencyClick(rate)}
                         className="flex items-center hover:text-forex-blue transition-colors focus:outline-none"
                       >
-                        <span className="mr-2" dangerouslySetInnerHTML={{ __html: getFlagEmoji(rate.currency.iso3) }} />
+                        <span className="mr-2">{getFlagEmoji(rate.currency.iso3)}</span>
                         <span>{rate.currency.name} ({rate.currency.iso3})</span>
                       </button>
                     </td>

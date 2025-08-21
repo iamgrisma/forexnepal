@@ -12,6 +12,7 @@ import { Rate, ChartDataPoint, HistoricalRates, RatesData } from '../types/forex
 import { fetchHistoricalRates, getDateRanges, splitDateRangeForRequests } from '../services/forexService';
 import { getFlagEmoji } from '../services/forexService';
 import { useToast } from '@/components/ui/use-toast';
+import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 import { Input } from '@/components/ui/input';
 
 interface CurrencyChartModalProps {
@@ -112,15 +113,6 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
     }
   };
 
-  const validateDateString = (dateStr: string): boolean => {
-    // Basic regex for YYYY-MM-DD format
-    const regex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!regex.test(dateStr)) return false;
-    
-    // Check if it's a valid date
-    const date = new Date(dateStr);
-    return !isNaN(date.getTime());
-  };
 
   const handleCustomDateApply = () => {
     if (dateRange.from && dateRange.to) {
@@ -129,7 +121,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       loadHistoricalData(fromFormatted, toFormatted);
       setCalendarOpen(false);
     } else if (customFromDate && customToDate) {
-      if (!validateDateString(customFromDate) || !validateDateString(customToDate)) {
+      if (!isValidDateString(customFromDate) || !isValidDateString(customToDate)) {
         toast({
           title: "Invalid date format",
           description: "Please use YYYY-MM-DD format for custom dates.",
@@ -138,27 +130,16 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
         return;
       }
       
-      const fromDate = new Date(customFromDate);
-      const toDate = new Date(customToDate);
-      
-      if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
-        toast({
-          title: "Invalid dates",
-          description: "Please enter valid dates.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (fromDate > toDate) {
+      if (!isValidDateRange(customFromDate, customToDate)) {
         toast({
           title: "Invalid date range",
-          description: "Start date must be before end date.",
+          description: "Please enter a valid date range (from date should be before to date).",
           variant: "destructive",
         });
         return;
       }
       
+      const toDate = new Date(customToDate);
       if (toDate > new Date()) {
         toast({
           title: "Future dates not allowed",
@@ -185,7 +166,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <span className="text-2xl mr-2" dangerouslySetInnerHTML={{ __html: getFlagEmoji(currency.currency.iso3) }} />
+            <span className="text-2xl mr-2">{getFlagEmoji(currency.currency.iso3)}</span>
             {currency.currency.name} ({currency.currency.iso3}) Exchange Rate History
           </DialogTitle>
           <DialogDescription>
@@ -241,7 +222,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
                       type="text"
                       placeholder="YYYY-MM-DD"
                       value={customFromDate}
-                      onChange={(e) => setCustomFromDate(e.target.value)}
+                      onChange={(e) => setCustomFromDate(sanitizeDateInput(e.target.value))}
                       className="w-32"
                     />
                   </div>
@@ -251,7 +232,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
                       type="text"
                       placeholder="YYYY-MM-DD"
                       value={customToDate}
-                      onChange={(e) => setCustomToDate(e.target.value)}
+                      onChange={(e) => setCustomToDate(sanitizeDateInput(e.target.value))}
                       className="w-32"
                     />
                   </div>
