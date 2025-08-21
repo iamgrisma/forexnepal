@@ -10,6 +10,7 @@ import { fetchForexRates } from '@/services/forexService';
 import { Rate } from '@/types/forex';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
+import AdSense from '@/components/AdSense';
 
 const Converter = () => {
   const { toast } = useToast();
@@ -329,6 +330,7 @@ const Converter = () => {
                 </div>
               </TabsContent>
             </Tabs>
+            <AdSense />
           </CardContent>
         </Card>
       </div>
