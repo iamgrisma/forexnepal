@@ -7,9 +7,10 @@ import ForexTicker from '../components/ForexTicker';
 import CurrencyCard from '../components/CurrencyCard';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, TrendingUp, List, Grid3X3 } from 'lucide-react';
+import { RefreshCw, Gitlab, List, Grid3X3 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import Layout from '@/components/Layout';
+import AdSense from '@/components/AdSense';
 
 const Index = () => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -36,7 +37,6 @@ const Index = () => {
 
   const { 
     data: prevDayData,
-    isLoading: isPrevDayLoading,
   } = useQuery({
     queryKey: ['previousDayRates'],
     queryFn: fetchPreviousDayRates,
@@ -304,6 +304,8 @@ const Index = () => {
               )}
             </TabsContent>
           </Tabs>
+          
+          <AdSense />
           
           <footer className="text-center text-gray-500 text-sm mt-12 pt-6 border-t border-gray-100">
             <p>Forex data is provided by Nepal Rastra Bank</p>
