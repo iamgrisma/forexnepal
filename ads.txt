@@ -1,8 +1,6 @@
 #Ads.txt grisma.com.np
 #Ads.txt managed by AdsTxtManager.com - the free ads.txt management tool for publishers
 ownerdomain=grisma.com.np
-contact=directsales@ezoic.com
-managerdomain=ezoic.ai
 
 ezoic.ai, 515fac9d412f802bd231607a03c74761, DIRECT
 #35
