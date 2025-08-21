@@ -307,8 +307,13 @@ const Index = () => {
           
           <footer className="text-center text-gray-500 text-sm mt-12 pt-6 border-t border-gray-100">
             <p>Forex data is provided by Nepal Rastra Bank</p>
-            <p className="mt-2">Made with ❤️ by Grisma Blog</p>
-            <p className="mt-1">© {new Date().getFullYear()} <a href="https://Grisma.com.np">Grisma Blog</a></p>
+            <p className="mt-2">Made with ❤️ by <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
+            <p className="mt-1">© {new Date().getFullYear()} <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
+            <p className="mt-2">
+              <a href="/privacy-policy" className="hover:text-primary mr-4">Privacy Policy</a>
+              <span className="text-xs text-gray-400">We do not collect user data. For full privacy policy, visit </span>
+              <a href="https://grisma.com.np/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary">grisma.com.np/privacy</a>
+            </p>
           </footer>
         </div>
       </div>
