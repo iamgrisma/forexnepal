@@ -156,19 +156,6 @@ const Index = () => {
           {/* Ticker component */}
           <ForexTicker rates={rates} isLoading={isLoading} />
           
-          {/* Introduction about forex rates */}
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8 border border-gray-100">
-            <h2 className="text-xl font-semibold mb-3 text-gray-900">About Nepal's Foreign Exchange Rates</h2>
-            <p className="text-gray-600 leading-relaxed">
-              The foreign exchange rates displayed here are the official rates published by Nepal Rastra Bank (NRB), 
-              Nepal's central bank. These rates are primarily influenced by Nepal's trade relationships, remittance flows, 
-              and the country's foreign exchange reserves. The Nepalese Rupee (NPR) is pegged to the Indian Rupee (INR) 
-              at a fixed rate, while other currency rates fluctuate based on international market conditions and Nepal's 
-              economic fundamentals. These rates are used by banks, financial institutions, and money exchangers across Nepal 
-              for foreign currency transactions.
-            </p>
-          </div>
-          
           <Tabs defaultValue="all" className="mb-12">
             <TabsList className="mb-8 w-full lg:w-auto bg-white/80 backdrop-blur-sm border border-gray-100">
               <TabsTrigger value="all">All Currencies</TabsTrigger>
@@ -317,6 +304,19 @@ const Index = () => {
               )}
             </TabsContent>
           </Tabs>
+          
+          {/* Introduction about forex rates */}
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8 border border-gray-100">
+            <h2 className="text-xl font-semibold mb-3 text-gray-900">About Nepal's Foreign Exchange Rates</h2>
+            <p className="text-gray-600 leading-relaxed">
+              The foreign exchange rates displayed here are the official rates published by Nepal Rastra Bank (NRB), 
+              Nepal's central bank. These rates are primarily influenced by Nepal's trade relationships, remittance flows, 
+              and the country's foreign exchange reserves. The Nepalese Rupee (NPR) is pegged to the Indian Rupee (INR) 
+              at a fixed rate, while other currency rates fluctuate based on international market conditions and Nepal's 
+              economic fundamentals. These rates are used by banks, financial institutions, and money exchangers across Nepal 
+              for foreign currency transactions.
+            </p>
+          </div>
           
           <AdSense />
           
