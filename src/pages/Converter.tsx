@@ -11,6 +11,7 @@ import { Rate } from '@/types/forex';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
+import ForexTicker from '@/components/ForexTicker';
 
 const Converter = () => {
   const { toast } = useToast();
@@ -127,6 +128,9 @@ const Converter = () => {
     <Layout>
       <div className="container mx-auto p-4 md:p-6">
         <h1 className="text-3xl font-bold mb-6">Currency Converter</h1>
+        
+        {/* Ticker component */}
+        <ForexTicker rates={rates} isLoading={isLoading} />
         
         <Card className="w-full max-w-3xl mx-auto">
           <CardHeader>
@@ -330,9 +334,10 @@ const Converter = () => {
                 </div>
               </TabsContent>
             </Tabs>
-            <AdSense />
           </CardContent>
         </Card>
+        
+        <AdSense />
       </div>
     </Layout>
   );

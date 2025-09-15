@@ -2,7 +2,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { ArrowRightLeft, BarChart, Home, BookOpen, User } from 'lucide-react';
+import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone } from 'lucide-react';
 
 const Navigation = () => {
   const location = useLocation();
@@ -22,13 +22,17 @@ const Navigation = () => {
                 <ArrowRightLeft className="h-4 w-4 mr-1" />
                 Converter
               </NavLink>
+              <NavLink to="/about" active={location.pathname === '/about'}>
+                <User className="h-4 w-4 mr-1" />
+                About
+              </NavLink>
               <ExternalNavLink href="https://grisma.com.np">
                 <BookOpen className="h-4 w-4 mr-1" />
                 Blogs
               </ExternalNavLink>
-              <ExternalNavLink href="https://grisma.com.np/about">
-                <User className="h-4 w-4 mr-1" />
-                About
+              <ExternalNavLink href="https://grisma.com.np/contact">
+                <Phone className="h-4 w-4 mr-1" />
+                Contact
               </ExternalNavLink>
             </div>
           </div>
@@ -40,11 +44,11 @@ const Navigation = () => {
             <NavLink to="/converter" active={location.pathname === '/converter'}>
               <ArrowRightLeft className="h-4 w-4" />
             </NavLink>
-            <ExternalNavLink href="https://grisma.com.np">
-              <BookOpen className="h-4 w-4" />
-            </ExternalNavLink>
-            <ExternalNavLink href="https://grisma.com.np/about">
+            <NavLink to="/about" active={location.pathname === '/about'}>
               <User className="h-4 w-4" />
+            </NavLink>
+            <ExternalNavLink href="https://grisma.com.np/contact">
+              <Phone className="h-4 w-4" />
             </ExternalNavLink>
           </div>
         </div>
@@ -69,19 +73,20 @@ const Navigation = () => {
             <ArrowRightLeft className="h-4 w-4 mx-auto mb-1" />
             <span className="text-xs">Converter</span>
           </NavLink>
-          <ExternalNavLink 
-            href="https://grisma.com.np" 
-            className="justify-center text-center py-2"
-          >
-            <BookOpen className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">Blogs</span>
-          </ExternalNavLink>
-          <ExternalNavLink 
-            href="https://grisma.com.np/about" 
+          <NavLink 
+            to="/about" 
+            active={location.pathname === '/about'} 
             className="justify-center text-center py-2"
           >
             <User className="h-4 w-4 mx-auto mb-1" />
             <span className="text-xs">About</span>
+          </NavLink>
+          <ExternalNavLink 
+            href="https://grisma.com.np/contact" 
+            className="justify-center text-center py-2"
+          >
+            <Phone className="h-4 w-4 mx-auto mb-1" />
+            <span className="text-xs">Contact</span>
           </ExternalNavLink>
         </div>
       </div>
