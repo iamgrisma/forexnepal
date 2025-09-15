@@ -107,7 +107,7 @@ const Index = () => {
 
   return (
     <Layout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
+      <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12 animate-fade-in">
             <div className="inline-flex items-center justify-center bg-blue-100 text-forex-blue px-3 py-1 rounded-full text-sm font-medium mb-4">
@@ -319,24 +319,6 @@ const Index = () => {
           </div>
           
           <AdSense />
-          
-          <footer className="text-center text-gray-500 text-sm mt-12 pt-6 border-t border-gray-100">
-            <p>Forex data is provided by Nepal Rastra Bank</p>
-            <p className="mt-2">Made with ❤️ by <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
-            <p className="mt-1">© {new Date().getFullYear()} <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
-            <div className="mt-3 space-y-1">
-              <div>
-                <a href="/privacy-policy" className="hover:text-primary mr-4">Privacy Policy</a>
-                <a href="/about" className="hover:text-primary mr-4">About</a>
-                <a href="/disclosure" className="hover:text-primary mr-4">Disclosure</a>
-                <a href="https://grisma.com.np/contact" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Contact</a>
-              </div>
-              <p className="text-xs text-gray-400">
-                We do not collect user data. For full privacy policy, visit{' '}
-                <a href="https://grisma.com.np/privacy" target="_blank" rel="noopener noreferrer" className="hover:text-primary">grisma.com.np/privacy</a>
-              </p>
-            </div>
-          </footer>
         </div>
       </div>
     </Layout>

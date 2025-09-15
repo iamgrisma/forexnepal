@@ -126,218 +126,226 @@ const Converter = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto p-4 md:p-6">
-        <h1 className="text-3xl font-bold mb-6">Currency Converter</h1>
-        
-        {/* Ticker component */}
-        <ForexTicker rates={rates} isLoading={isLoading} />
-        
-        <Card className="w-full max-w-3xl mx-auto">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calculator className="h-5 w-5" />
-              Forex Converter
-            </CardTitle>
-            <CardDescription>
-              Convert between NPR and foreign currencies with the latest exchange rates
-            </CardDescription>
-          </CardHeader>
+      <div className="py-8 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <Calculator className="h-12 w-12 mx-auto mb-4 text-primary" />
+            <h1 className="text-4xl font-bold mb-2">Currency Converter</h1>
+            <p className="text-muted-foreground">Convert between NPR and foreign currencies with live rates</p>
+          </div>
           
-          <CardContent>
-            <Tabs value={conversionType} onValueChange={setConversionType} className="w-full">
-              <TabsList className="grid grid-cols-3 mb-6">
-                <TabsTrigger value="toNpr">Foreign → NPR</TabsTrigger>
-                <TabsTrigger value="fromNpr">NPR → Foreign</TabsTrigger>
-                <TabsTrigger value="anyToAny">Foreign → Foreign</TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="toNpr">
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div className="space-y-2">
-                      <label htmlFor="amount" className="text-sm font-medium">Amount</label>
-                      <Input
-                        id="amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amount}
-                        onChange={(e) => setAmount(Number(e.target.value))}
-                        placeholder="Enter amount"
-                      />
+          {/* Ticker component */}
+          <ForexTicker rates={rates} isLoading={isLoading} />
+          
+          <Card className="w-full max-w-3xl mx-auto">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Calculator className="h-5 w-5" />
+                Forex Converter
+              </CardTitle>
+              <CardDescription>
+                Convert between NPR and foreign currencies with the latest exchange rates
+              </CardDescription>
+            </CardHeader>
+            
+            <CardContent>
+              <Tabs value={conversionType} onValueChange={setConversionType} className="w-full">
+                <TabsList className="grid grid-cols-3 mb-6">
+                  <TabsTrigger value="toNpr">Foreign → NPR</TabsTrigger>
+                  <TabsTrigger value="fromNpr">NPR → Foreign</TabsTrigger>
+                  <TabsTrigger value="anyToAny">Foreign → Foreign</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="toNpr">
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                      <div className="space-y-2">
+                        <label htmlFor="amount" className="text-sm font-medium">Amount</label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={amount}
+                          onChange={(e) => setAmount(Number(e.target.value))}
+                          placeholder="Enter amount"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label htmlFor="fromCurrency" className="text-sm font-medium">From Currency</label>
+                        <Select value={fromCurrency} onValueChange={setFromCurrency}>
+                          <SelectTrigger id="fromCurrency">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rates.map((rate: Rate) => (
+                              <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
+                                {rate.currency.iso3} - {rate.currency.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="flex items-center justify-center md:justify-start">
+                        <ArrowRight className="h-6 w-6 text-muted-foreground" />
+                        <span className="ml-2">NPR</span>
+                      </div>
                     </div>
                     
-                    <div className="space-y-2">
-                      <label htmlFor="fromCurrency" className="text-sm font-medium">From Currency</label>
-                      <Select value={fromCurrency} onValueChange={setFromCurrency}>
-                        <SelectTrigger id="fromCurrency">
-                          <SelectValue placeholder="Select currency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rates.map((rate: Rate) => (
-                            <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
-                              {rate.currency.iso3} - {rate.currency.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Button onClick={convert} className="mt-2 w-full">
+                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+                    </Button>
                     
-                    <div className="flex items-center justify-center md:justify-start">
-                      <ArrowRight className="h-6 w-6 text-muted-foreground" />
-                      <span className="ml-2">NPR</span>
-                    </div>
+                    {result !== null && (
+                      <div className="mt-4 p-4 bg-muted rounded-md">
+                        <p className="text-lg font-medium">Result:</p>
+                        <p className="text-2xl font-bold">
+                          {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 2 })} NPR
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Exchange Rate: 1 {fromCurrency} = {(Number(findRate(fromCurrency)?.sell) / findRate(fromCurrency)?.currency.unit).toLocaleString('en-US', { maximumFractionDigits: 4 })} NPR
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  
-                  <Button onClick={convert} className="mt-2 w-full">
-                    <Calculator className="mr-2 h-4 w-4" /> Calculate
-                  </Button>
-                  
-                  {result !== null && (
-                    <div className="mt-4 p-4 bg-muted rounded-md">
-                      <p className="text-lg font-medium">Result:</p>
-                      <p className="text-2xl font-bold">
-                        {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 2 })} NPR
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Exchange Rate: 1 {fromCurrency} = {(Number(findRate(fromCurrency)?.sell) / findRate(fromCurrency)?.currency.unit).toLocaleString('en-US', { maximumFractionDigits: 4 })} NPR
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="fromNpr">
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                    <div className="space-y-2">
-                      <label htmlFor="amount" className="text-sm font-medium">Amount (NPR)</label>
-                      <Input
-                        id="amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amount}
-                        onChange={(e) => setAmount(Number(e.target.value))}
-                        placeholder="Enter amount in NPR"
-                      />
+                </TabsContent>
+                
+                <TabsContent value="fromNpr">
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                      <div className="space-y-2">
+                        <label htmlFor="amount" className="text-sm font-medium">Amount (NPR)</label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={amount}
+                          onChange={(e) => setAmount(Number(e.target.value))}
+                          placeholder="Enter amount in NPR"
+                        />
+                      </div>
+                      
+                      <div className="flex items-center justify-center md:justify-start">
+                        <span className="mr-2">NPR</span>
+                        <ArrowRight className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label htmlFor="toCurrency" className="text-sm font-medium">To Currency</label>
+                        <Select value={toCurrency} onValueChange={setToCurrency}>
+                          <SelectTrigger id="toCurrency">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rates.map((rate: Rate) => (
+                              <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
+                                {rate.currency.iso3} - {rate.currency.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     
-                    <div className="flex items-center justify-center md:justify-start">
-                      <span className="mr-2">NPR</span>
-                      <ArrowRight className="h-6 w-6 text-muted-foreground" />
-                    </div>
+                    <Button onClick={convert} className="mt-2 w-full">
+                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+                    </Button>
                     
-                    <div className="space-y-2">
-                      <label htmlFor="toCurrency" className="text-sm font-medium">To Currency</label>
-                      <Select value={toCurrency} onValueChange={setToCurrency}>
-                        <SelectTrigger id="toCurrency">
-                          <SelectValue placeholder="Select currency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rates.map((rate: Rate) => (
-                            <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
-                              {rate.currency.iso3} - {rate.currency.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {result !== null && (
+                      <div className="mt-4 p-4 bg-muted rounded-md">
+                        <p className="text-lg font-medium">Result:</p>
+                        <p className="text-2xl font-bold">
+                          {amount.toLocaleString()} NPR = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Exchange Rate: 1 NPR = {((findRate(toCurrency)?.currency.unit) / Number(findRate(toCurrency)?.buy)).toLocaleString('en-US', { maximumFractionDigits: 6 })} {toCurrency}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  
-                  <Button onClick={convert} className="mt-2 w-full">
-                    <Calculator className="mr-2 h-4 w-4" /> Calculate
-                  </Button>
-                  
-                  {result !== null && (
-                    <div className="mt-4 p-4 bg-muted rounded-md">
-                      <p className="text-lg font-medium">Result:</p>
-                      <p className="text-2xl font-bold">
-                        {amount.toLocaleString()} NPR = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Exchange Rate: 1 NPR = {((findRate(toCurrency)?.currency.unit) / Number(findRate(toCurrency)?.buy)).toLocaleString('en-US', { maximumFractionDigits: 6 })} {toCurrency}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="anyToAny">
-                <div className="grid gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
-                    <div className="space-y-2 md:col-span-2">
-                      <label htmlFor="amount" className="text-sm font-medium">Amount</label>
-                      <Input
-                        id="amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amount}
-                        onChange={(e) => setAmount(Number(e.target.value))}
-                        placeholder="Enter amount"
-                      />
+                </TabsContent>
+                
+                <TabsContent value="anyToAny">
+                  <div className="grid gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                      <div className="space-y-2 md:col-span-2">
+                        <label htmlFor="amount" className="text-sm font-medium">Amount</label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={amount}
+                          onChange={(e) => setAmount(Number(e.target.value))}
+                          placeholder="Enter amount"
+                        />
+                      </div>
+                      
+                      <div className="space-y-2 md:col-span-1">
+                        <label htmlFor="fromCurrency" className="text-sm font-medium">From</label>
+                        <Select value={fromCurrency} onValueChange={setFromCurrency}>
+                          <SelectTrigger id="fromCurrency">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rates.map((rate: Rate) => (
+                              <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
+                                {rate.currency.iso3}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div className="flex items-center justify-center">
+                        <ArrowRightLeft className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                      
+                      <div className="space-y-2 md:col-span-1">
+                        <label htmlFor="toCurrency" className="text-sm font-medium">To</label>
+                        <Select value={toCurrency} onValueChange={setToCurrency}>
+                          <SelectTrigger id="toCurrency">
+                            <SelectValue placeholder="Select currency" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {rates.map((rate: Rate) => (
+                              <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
+                                {rate.currency.iso3}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                     
-                    <div className="space-y-2 md:col-span-1">
-                      <label htmlFor="fromCurrency" className="text-sm font-medium">From</label>
-                      <Select value={fromCurrency} onValueChange={setFromCurrency}>
-                        <SelectTrigger id="fromCurrency">
-                          <SelectValue placeholder="Select currency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rates.map((rate: Rate) => (
-                            <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
-                              {rate.currency.iso3}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    <Button onClick={convert} className="mt-2 w-full">
+                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+                    </Button>
                     
-                    <div className="flex items-center justify-center">
-                      <ArrowRightLeft className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                    
-                    <div className="space-y-2 md:col-span-1">
-                      <label htmlFor="toCurrency" className="text-sm font-medium">To</label>
-                      <Select value={toCurrency} onValueChange={setToCurrency}>
-                        <SelectTrigger id="toCurrency">
-                          <SelectValue placeholder="Select currency" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {rates.map((rate: Rate) => (
-                            <SelectItem key={rate.currency.iso3} value={rate.currency.iso3}>
-                              {rate.currency.iso3}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {result !== null && (
+                      <div className="mt-4 p-4 bg-muted rounded-md">
+                        <p className="text-lg font-medium">Result:</p>
+                        <p className="text-2xl font-bold">
+                          {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Conversion via NPR as intermediate currency
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  
-                  <Button onClick={convert} className="mt-2 w-full">
-                    <Calculator className="mr-2 h-4 w-4" /> Calculate
-                  </Button>
-                  
-                  {result !== null && (
-                    <div className="mt-4 p-4 bg-muted rounded-md">
-                      <p className="text-lg font-medium">Result:</p>
-                      <p className="text-2xl font-bold">
-                        {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        Conversion via NPR as intermediate currency
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-        
-        <AdSense />
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+          
+          <div className="mt-8">
+            <AdSense />
+          </div>
+        </div>
       </div>
     </Layout>
   );
