@@ -1,2 +1,7 @@
 # Handle client-side routing
 /* /index.html 200
+# Allow direct access to index.html
+/index.html /index.html 200
+
+# Handle client-side routing for all other paths
+/* /index.html 200
