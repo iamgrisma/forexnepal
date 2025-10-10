@@ -142,40 +142,40 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
       <div className="overflow-x-auto glassmorphism rounded-xl animate-blur-in">
         <table className="w-full">
           <thead>
-            <tr className="bg-gray-50/80 backdrop-blur-sm border-b border-gray-200">
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <tr className="bg-gradient-to-r from-gray-50 to-blue-50 border-b-2 border-gray-300">
+              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 SN
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
+              <th
+                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('name')}
               >
                 Currency Name (ISO3){getSortIndicator('name')}
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
+              <th
+                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('unit')}
               >
                 Unit{getSortIndicator('unit')}
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
+              <th
+                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('buy')}
               >
                 Buying Rate{getSortIndicator('buy')}
               </th>
-              <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
+              <th
+                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('sell')}
               >
                 Selling Rate{getSortIndicator('sell')}
               </th>
               {previousDayRates && previousDayRates.length > 0 && (
                 <>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Buy Trend
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                     Sell Trend
                   </th>
                 </>

@@ -23,9 +23,9 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
 
   return (
     <>
-      <div 
-        className={`animated-border glassmorphism rounded-xl p-5 transition-all duration-300 
-          hover:shadow-lg hover:translate-y-[-2px] cursor-pointer animate-fade-in transform`}
+      <div
+        className={`animated-border bg-white/90 backdrop-blur-md border-2 border-gray-200 rounded-2xl p-6 transition-all duration-300
+          hover:shadow-2xl hover:scale-105 hover:border-blue-400 cursor-pointer animate-fade-in transform group`}
         style={{ animationDelay }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -37,28 +37,28 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
               <span className={`fi fi-${currency.iso3.toLowerCase() === 'eur' ? 'eu' : currency.iso3.substring(0, 2).toLowerCase()}`}></span>
             </span>
             <div>
-              <div className="text-xs font-medium text-primary px-2 py-1 bg-primary/10 rounded-full mb-1 inline-block">
+              <div className="text-xs font-semibold text-blue-700 px-3 py-1 bg-gradient-to-r from-blue-100 to-cyan-100 rounded-full mb-2 inline-block shadow-sm">
                 {currency.iso3}
               </div>
-              <h3 className="font-medium text-base">{currency.name}</h3>
+              <h3 className="font-semibold text-base text-gray-900 group-hover:text-blue-600 transition-colors">{currency.name}</h3>
             </div>
           </div>
-          <div className="text-sm text-gray-500">
+          <div className="text-sm font-medium text-gray-600 bg-gray-100 px-3 py-1 rounded-lg">
             {currency.unit} {currency.unit > 1 ? 'units' : 'unit'}
           </div>
         </div>
         
-        <div className="mt-4 flex justify-between">
-          <div className="text-center">
-            <div className="text-xs text-gray-500 uppercase mb-1">Buy</div>
-            <div className={`font-semibold text-lg ${isHovered ? 'text-forex-green' : ''} transition-colors duration-300`}>
+        <div className="mt-6 flex justify-between gap-4">
+          <div className="flex-1 text-center bg-green-50 rounded-xl p-3 border border-green-200 group-hover:bg-green-100 transition-colors">
+            <div className="text-xs font-semibold text-green-700 uppercase mb-1 tracking-wide">Buy</div>
+            <div className="font-bold text-xl text-green-700">
               {rate.buy}
             </div>
           </div>
-          
-          <div className="text-center">
-            <div className="text-xs text-gray-500 uppercase mb-1">Sell</div>
-            <div className={`font-semibold text-lg ${isHovered ? 'text-forex-red' : ''} transition-colors duration-300`}>
+
+          <div className="flex-1 text-center bg-red-50 rounded-xl p-3 border border-red-200 group-hover:bg-red-100 transition-colors">
+            <div className="text-xs font-semibold text-red-700 uppercase mb-1 tracking-wide">Sell</div>
+            <div className="font-bold text-xl text-red-700">
               {rate.sell}
             </div>
           </div>

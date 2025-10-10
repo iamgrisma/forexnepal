@@ -8,12 +8,16 @@ const Navigation = () => {
   const location = useLocation();
   
   return (
-    <nav className="bg-background border-b mb-6">
-      <div className="container mx-auto px-4 py-3">
+    <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 mb-8 sticky top-0 z-50 shadow-sm">
+      <div className="container mx-auto px-4 py-4">
         <div className="flex justify-between items-center">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold mr-6">Forex NPR</h1>
-            <div className="hidden md:flex space-x-4">
+            <Link to="/" className="flex items-center">
+              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-3 py-1.5 rounded-lg font-bold text-lg shadow-md hover:shadow-lg transition-shadow">
+                Forex NPR
+              </div>
+            </Link>
+            <div className="hidden md:flex space-x-2 ml-8">
               <NavLink to="/" active={location.pathname === '/'}>
                 <Home className="h-4 w-4 mr-1" />
                 Home
@@ -106,10 +110,10 @@ const NavLink = ({ to, active, children, className }: NavLinkProps) => {
     <Link
       to={to}
       className={cn(
-        "flex items-center px-3 py-1.5 rounded text-sm font-medium transition-colors",
-        active 
-          ? "bg-primary text-primary-foreground" 
-          : "text-foreground/80 hover:text-foreground hover:bg-accent",
+        "flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+        active
+          ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md"
+          : "text-gray-700 hover:text-blue-600 hover:bg-blue-50",
         className
       )}
     >
@@ -131,8 +135,8 @@ const ExternalNavLink = ({ href, children, className }: ExternalNavLinkProps) =>
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "flex items-center px-3 py-1.5 rounded text-sm font-medium transition-colors",
-        "text-foreground/80 hover:text-foreground hover:bg-accent",
+        "flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200",
+        "text-gray-700 hover:text-blue-600 hover:bg-blue-50",
         className
       )}
     >

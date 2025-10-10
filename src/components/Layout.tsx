@@ -10,9 +10,9 @@ interface LayoutProps {
 
 const Layout = ({ children, className = "" }: LayoutProps) => {
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 ${className}`}>
+    <div className={`min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 ${className}`}>
       <Navigation />
-      <main className="pb-12">
+      <main className="pb-16">
         {children}
       </main>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

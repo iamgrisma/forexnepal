@@ -157,10 +157,10 @@ const Converter = () => {
                 </TabsList>
                 
                 <TabsContent value="toNpr">
-                  <div className="grid gap-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                  <div className="grid gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                       <div className="space-y-2">
-                        <label htmlFor="amount" className="text-sm font-medium">Amount</label>
+                        <label htmlFor="amount" className="text-sm font-semibold text-gray-700">Amount</label>
                         <Input
                           id="amount"
                           type="number"
@@ -169,13 +169,14 @@ const Converter = () => {
                           value={amount}
                           onChange={(e) => setAmount(Number(e.target.value))}
                           placeholder="Enter amount"
+                          className="border-2 py-3 text-base rounded-xl"
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
-                        <label htmlFor="fromCurrency" className="text-sm font-medium">From Currency</label>
+                        <label htmlFor="fromCurrency" className="text-sm font-semibold text-gray-700">From Currency</label>
                         <Select value={fromCurrency} onValueChange={setFromCurrency}>
-                          <SelectTrigger id="fromCurrency">
+                          <SelectTrigger id="fromCurrency" className="border-2 py-3 rounded-xl">
                             <SelectValue placeholder="Select currency" />
                           </SelectTrigger>
                           <SelectContent>
@@ -187,24 +188,24 @@ const Converter = () => {
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       <div className="flex items-center justify-center md:justify-start">
-                        <ArrowRight className="h-6 w-6 text-muted-foreground" />
-                        <span className="ml-2">NPR</span>
+                        <ArrowRight className="h-6 w-6 text-blue-600" />
+                        <span className="ml-2 font-bold text-lg">NPR</span>
                       </div>
                     </div>
-                    
-                    <Button onClick={convert} className="mt-2 w-full">
-                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+
+                    <Button onClick={convert} className="mt-4 w-full py-6 text-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all rounded-xl">
+                      <Calculator className="mr-2 h-5 w-5" /> Calculate
                     </Button>
                     
                     {result !== null && (
-                      <div className="mt-4 p-4 bg-muted rounded-md">
-                        <p className="text-lg font-medium">Result:</p>
-                        <p className="text-2xl font-bold">
+                      <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 shadow-md">
+                        <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-2">Result:</p>
+                        <p className="text-3xl font-bold text-gray-900">
                           {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 2 })} NPR
                         </p>
-                        <p className="text-sm text-muted-foreground mt-2">
+                        <p className="text-sm text-gray-600 mt-3 font-medium">
                           Exchange Rate: 1 {fromCurrency} = {(Number(findRate(fromCurrency)?.sell) / findRate(fromCurrency)?.currency.unit).toLocaleString('en-US', { maximumFractionDigits: 4 })} NPR
                         </p>
                       </div>
@@ -213,10 +214,10 @@ const Converter = () => {
                 </TabsContent>
                 
                 <TabsContent value="fromNpr">
-                  <div className="grid gap-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                  <div className="grid gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                       <div className="space-y-2">
-                        <label htmlFor="amount" className="text-sm font-medium">Amount (NPR)</label>
+                        <label htmlFor="amount" className="text-sm font-semibold text-gray-700">Amount (NPR)</label>
                         <Input
                           id="amount"
                           type="number"
@@ -225,18 +226,19 @@ const Converter = () => {
                           value={amount}
                           onChange={(e) => setAmount(Number(e.target.value))}
                           placeholder="Enter amount in NPR"
+                          className="border-2 py-3 text-base rounded-xl"
                         />
                       </div>
-                      
+
                       <div className="flex items-center justify-center md:justify-start">
-                        <span className="mr-2">NPR</span>
-                        <ArrowRight className="h-6 w-6 text-muted-foreground" />
+                        <span className="mr-2 font-bold text-lg">NPR</span>
+                        <ArrowRight className="h-6 w-6 text-blue-600" />
                       </div>
-                      
+
                       <div className="space-y-2">
-                        <label htmlFor="toCurrency" className="text-sm font-medium">To Currency</label>
+                        <label htmlFor="toCurrency" className="text-sm font-semibold text-gray-700">To Currency</label>
                         <Select value={toCurrency} onValueChange={setToCurrency}>
-                          <SelectTrigger id="toCurrency">
+                          <SelectTrigger id="toCurrency" className="border-2 py-3 rounded-xl">
                             <SelectValue placeholder="Select currency" />
                           </SelectTrigger>
                           <SelectContent>
@@ -249,18 +251,18 @@ const Converter = () => {
                         </Select>
                       </div>
                     </div>
-                    
-                    <Button onClick={convert} className="mt-2 w-full">
-                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+
+                    <Button onClick={convert} className="mt-4 w-full py-6 text-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all rounded-xl">
+                      <Calculator className="mr-2 h-5 w-5" /> Calculate
                     </Button>
-                    
+
                     {result !== null && (
-                      <div className="mt-4 p-4 bg-muted rounded-md">
-                        <p className="text-lg font-medium">Result:</p>
-                        <p className="text-2xl font-bold">
+                      <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 shadow-md">
+                        <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-2">Result:</p>
+                        <p className="text-3xl font-bold text-gray-900">
                           {amount.toLocaleString()} NPR = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
                         </p>
-                        <p className="text-sm text-muted-foreground mt-2">
+                        <p className="text-sm text-gray-600 mt-3 font-medium">
                           Exchange Rate: 1 NPR = {((findRate(toCurrency)?.currency.unit) / Number(findRate(toCurrency)?.buy)).toLocaleString('en-US', { maximumFractionDigits: 6 })} {toCurrency}
                         </p>
                       </div>
@@ -269,10 +271,10 @@ const Converter = () => {
                 </TabsContent>
                 
                 <TabsContent value="anyToAny">
-                  <div className="grid gap-4">
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4 items-center">
+                  <div className="grid gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-6 items-center">
                       <div className="space-y-2 md:col-span-2">
-                        <label htmlFor="amount" className="text-sm font-medium">Amount</label>
+                        <label htmlFor="amount" className="text-sm font-semibold text-gray-700">Amount</label>
                         <Input
                           id="amount"
                           type="number"
@@ -281,13 +283,14 @@ const Converter = () => {
                           value={amount}
                           onChange={(e) => setAmount(Number(e.target.value))}
                           placeholder="Enter amount"
+                          className="border-2 py-3 text-base rounded-xl"
                         />
                       </div>
-                      
+
                       <div className="space-y-2 md:col-span-1">
-                        <label htmlFor="fromCurrency" className="text-sm font-medium">From</label>
+                        <label htmlFor="fromCurrency" className="text-sm font-semibold text-gray-700">From</label>
                         <Select value={fromCurrency} onValueChange={setFromCurrency}>
-                          <SelectTrigger id="fromCurrency">
+                          <SelectTrigger id="fromCurrency" className="border-2 py-3 rounded-xl">
                             <SelectValue placeholder="Select currency" />
                           </SelectTrigger>
                           <SelectContent>
@@ -299,15 +302,15 @@ const Converter = () => {
                           </SelectContent>
                         </Select>
                       </div>
-                      
+
                       <div className="flex items-center justify-center">
-                        <ArrowRightLeft className="h-6 w-6 text-muted-foreground" />
+                        <ArrowRightLeft className="h-6 w-6 text-blue-600" />
                       </div>
-                      
+
                       <div className="space-y-2 md:col-span-1">
-                        <label htmlFor="toCurrency" className="text-sm font-medium">To</label>
+                        <label htmlFor="toCurrency" className="text-sm font-semibold text-gray-700">To</label>
                         <Select value={toCurrency} onValueChange={setToCurrency}>
-                          <SelectTrigger id="toCurrency">
+                          <SelectTrigger id="toCurrency" className="border-2 py-3 rounded-xl">
                             <SelectValue placeholder="Select currency" />
                           </SelectTrigger>
                           <SelectContent>
@@ -320,18 +323,18 @@ const Converter = () => {
                         </Select>
                       </div>
                     </div>
-                    
-                    <Button onClick={convert} className="mt-2 w-full">
-                      <Calculator className="mr-2 h-4 w-4" /> Calculate
+
+                    <Button onClick={convert} className="mt-4 w-full py-6 text-lg font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 shadow-lg hover:shadow-xl transition-all rounded-xl">
+                      <Calculator className="mr-2 h-5 w-5" /> Calculate
                     </Button>
-                    
+
                     {result !== null && (
-                      <div className="mt-4 p-4 bg-muted rounded-md">
-                        <p className="text-lg font-medium">Result:</p>
-                        <p className="text-2xl font-bold">
+                      <div className="mt-6 p-6 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border-2 border-blue-200 shadow-md">
+                        <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-2">Result:</p>
+                        <p className="text-3xl font-bold text-gray-900">
                           {amount.toLocaleString()} {fromCurrency} = {result.toLocaleString('en-US', { maximumFractionDigits: 4 })} {toCurrency}
                         </p>
-                        <p className="text-sm text-muted-foreground mt-2">
+                        <p className="text-sm text-gray-600 mt-3 font-medium">
                           Conversion via NPR as intermediate currency
                         </p>
                       </div>

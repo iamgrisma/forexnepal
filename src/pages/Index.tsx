@@ -168,14 +168,14 @@ const Index = () => {
             
             <TabsContent value="all" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={rates} 
-                  isLoading={isLoading} 
-                  title={title} 
+                <ForexTable
+                  rates={rates}
+                  isLoading={isLoading}
+                  title={title}
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 9 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
@@ -191,14 +191,14 @@ const Index = () => {
             
             <TabsContent value="popular" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={popularCurrencies} 
-                  isLoading={isLoading} 
-                  title="Popular Foreign Currencies" 
+                <ForexTable
+                  rates={popularCurrencies}
+                  isLoading={isLoading}
+                  title="Popular Foreign Currencies"
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
@@ -214,14 +214,14 @@ const Index = () => {
             
             <TabsContent value="asian" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={asianCurrencies} 
-                  isLoading={isLoading} 
-                  title="Asian Currencies" 
+                <ForexTable
+                  rates={asianCurrencies}
+                  isLoading={isLoading}
+                  title="Asian Currencies"
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
@@ -237,14 +237,14 @@ const Index = () => {
             
             <TabsContent value="european" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={europeanCurrencies} 
-                  isLoading={isLoading} 
-                  title="European Currencies" 
+                <ForexTable
+                  rates={europeanCurrencies}
+                  isLoading={isLoading}
+                  title="European Currencies"
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
@@ -260,14 +260,14 @@ const Index = () => {
             
             <TabsContent value="middle-east" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={middleEastCurrencies} 
-                  isLoading={isLoading} 
-                  title="Middle East Currencies" 
+                <ForexTable
+                  rates={middleEastCurrencies}
+                  isLoading={isLoading}
+                  title="Middle East Currencies"
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
@@ -283,14 +283,14 @@ const Index = () => {
             
             <TabsContent value="other" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable 
-                  rates={otherCurrencies} 
-                  isLoading={isLoading} 
-                  title="Other Currencies" 
+                <ForexTable
+                  rates={otherCurrencies}
+                  isLoading={isLoading}
+                  title="Other Currencies"
                   previousDayRates={previousDayRates}
                 />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 6 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
