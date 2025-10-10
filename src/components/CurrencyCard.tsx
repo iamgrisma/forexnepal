@@ -37,7 +37,7 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
               <span className={`fi fi-${currency.iso3.toLowerCase() === 'eur' ? 'eu' : currency.iso3.substring(0, 2).toLowerCase()}`}></span>
             </span>
             <div>
-              <div className="text-xs font-medium text-forex-blue px-2 py-1 bg-blue-50 rounded-full mb-1 inline-block">
+              <div className="text-xs font-medium text-primary px-2 py-1 bg-primary/10 rounded-full mb-1 inline-block">
                 {currency.iso3}
               </div>
               <h3 className="font-medium text-base">{currency.name}</h3>

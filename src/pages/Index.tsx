@@ -110,7 +110,7 @@ const Index = () => {
       <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12 animate-fade-in">
-            <div className="inline-flex items-center justify-center bg-blue-100 text-forex-blue px-3 py-1 rounded-full text-sm font-medium mb-4">
+            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4">
               <Gitlab className="h-4 w-4 mr-1" />
               <span>Live Forex Data</span>
             </div>
@@ -124,7 +124,7 @@ const Index = () => {
             <Button 
               onClick={handleRefresh} 
               variant="outline"
-              className="flex items-center gap-2 mr-4 text-forex-blue hover:text-white hover:bg-forex-blue transition-colors"
+              className="flex items-center gap-2 mr-4 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />

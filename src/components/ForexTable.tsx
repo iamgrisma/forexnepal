@@ -124,7 +124,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
 
   return (
     <div className="animate-scale-in">
-      <h3 className="text-2xl font-semibold text-center mb-6 text-forex-blue">{title}</h3>
+      <h3 className="text-2xl font-semibold text-center mb-6 text-primary">{title}</h3>
       
       <div className="relative mb-6">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -147,25 +147,25 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
                 SN
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-forex-blue transition-colors"
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
                 onClick={() => requestSort('name')}
               >
                 Currency Name (ISO3){getSortIndicator('name')}
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-forex-blue transition-colors"
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
                 onClick={() => requestSort('unit')}
               >
                 Unit{getSortIndicator('unit')}
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-forex-blue transition-colors"
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
                 onClick={() => requestSort('buy')}
               >
                 Buying Rate{getSortIndicator('buy')}
               </th>
               <th 
-                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-forex-blue transition-colors"
+                className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider cursor-pointer hover:text-primary transition-colors"
                 onClick={() => requestSort('sell')}
               >
                 Selling Rate{getSortIndicator('sell')}
@@ -199,7 +199,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       <button 
                         onClick={() => handleCurrencyClick(rate)}
-                        className="flex items-center hover:text-forex-blue transition-colors focus:outline-none"
+                        className="flex items-center hover:text-primary transition-colors focus:outline-none"
                       >
                         <span className="mr-2">{getFlagEmoji(rate.currency.iso3)}</span>
                         <span>{rate.currency.name} ({rate.currency.iso3})</span>

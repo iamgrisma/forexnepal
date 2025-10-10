@@ -310,7 +310,7 @@ const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
   if (isLoading) {
     return (
       <div className="h-[400px] w-full flex items-center justify-center">
-        <RefreshCw className="h-12 w-12 animate-spin text-forex-blue opacity-30" />
+        <RefreshCw className="h-12 w-12 animate-spin text-primary opacity-30" />
       </div>
     );
   }

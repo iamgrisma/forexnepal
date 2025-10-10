@@ -67,9 +67,9 @@ export default {
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
 				},
-				forex: {
-					blue: '#007AFF',
-					indigo: '#5856D6',
+			forex: {
+				blue: '211 100% 42%',
+				indigo: '#5856D6',
 					purple: '#AF52DE',
 					pink: '#FF2D55',
 					red: '#FF3B30',
