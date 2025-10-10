@@ -5,26 +5,37 @@ addEventListener('fetch', (event: FetchEvent) => {
 })
 
 async function handleEvent(event: FetchEvent): Promise<Response> {
+  const request = event.request
+  const url = new URL(request.url)
+
+  // Allow any API or special prefix to bypass asset handling (adjust as needed)
+  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/.netlify') ) {
+    // Forward to origin or handle API here if your Worker does API logic
+    return fetch(request)
+  }
+
   try {
-    // Try to serve the requested static asset first.
-    // For "clean" routes (no dot/extension) map to index.html so the SPA router can handle it.
+    // Map "clean" routes (no extension in last segment) to index.html, let other paths serve as normal assets
     return await getAssetFromKV(event, {
-      mapRequestToAsset: (request: Request) => {
-        const url = new URL(request.url)
-        // If the path doesn't look like a file (no '.' in last segment), serve index.html
-        const lastSegment = url.pathname.split('/').pop() || ''
-        if (!lastSegment.includes('.')) {
-          return new Request(`${url.origin}/index.html`, request)
+      mapRequestToAsset: (req: Request) => {
+        const u = new URL(req.url)
+        const last = u.pathname.split('/').pop() || ''
+        // Treat requests with no dot in last segment as SPA routes -> index.html
+        if (!last.includes('.')) {
+          return new Request(`${u.origin}/index.html`, req)
         }
-        // Otherwise, use default mapping (serves the requested asset)
-        return mapRequestToAsset(request)
+        // Otherwise use default behavior to serve the asset
+        return mapRequestToAsset(req)
       }
     })
   } catch (err) {
-    // If getAssetFromKV throws (asset not found or other issues),
-    // explicitly serve index.html as a fallback so the SPA router receives the path.
-    const url = new URL(event.request.url)
-    const indexRequest = new Request(`${url.origin}/index.html`, event.request)
-    return await getAssetFromKV({ request: indexRequest, waitUntil: event.waitUntil })
+    // Fallback: serve index.html on any failure so client-side router can route the path
+    const indexReq = new Request(`${url.origin}/index.html`, request)
+    try {
+      return await getAssetFromKV({ request: indexReq, waitUntil: event.waitUntil })
+    } catch (err2) {
+      // If even index.html is missing, return a plain 500 or 404 to help debugging
+      return new Response('Not found', { status: 404 })
+    }
   }
 }
