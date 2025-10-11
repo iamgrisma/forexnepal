@@ -154,6 +154,14 @@ const Index = () => {
     disclaimer.style.fontSize = '12px';
     disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
     footer.appendChild(disclaimer);
+    
+    const designer = document.createElement('p');
+    designer.style.fontStyle = 'italic';
+    designer.style.fontSize = '12px';
+    designer.style.marginTop = '10px';
+    designer.style.color = '#4b5563';
+    designer.textContent = 'Data extraction and presentation designed by Grisma Bhandari';
+    footer.appendChild(designer);
 
     wrapper.appendChild(footer);
 

@@ -136,24 +136,28 @@ const CurrencyHistoricalData = () => {
     }
   };
 
-  const downloadChartAsSVG = () => {
-    const svgElement = document.querySelector('.recharts-wrapper svg');
-    if (svgElement) {
-      const svgData = new XMLSerializer().serializeToString(svgElement);
-      const blob = new Blob([svgData], { type: 'image/svg+xml' });
-      const url = URL.createObjectURL(blob);
+  const downloadChartAsSVG = async () => {
+    const downloadElement = document.getElementById('download-container');
+    if (downloadElement) {
+      const canvas = await html2canvas(downloadElement, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+      });
+      const imgData = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.href = url;
-      link.download = `${currencyCode}_historical_chart.svg`;
+      link.href = imgData;
+      link.download = `${currencyCode}_historical_chart.png`;
       link.click();
-      URL.revokeObjectURL(url);
     }
   };
 
   const downloadChartAsPDF = async () => {
-    const chartElement = document.getElementById('chart-container');
-    if (chartElement) {
-      const canvas = await html2canvas(chartElement);
+    const downloadElement = document.getElementById('download-container');
+    if (downloadElement) {
+      const canvas = await html2canvas(downloadElement, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+      });
       const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('l', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -204,7 +208,7 @@ const CurrencyHistoricalData = () => {
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={downloadChartAsSVG}>
                   <Download className="h-4 w-4 mr-2" />
-                  SVG
+                  PNG
                 </Button>
                 <Button variant="outline" size="sm" onClick={downloadChartAsPDF}>
                   <Download className="h-4 w-4 mr-2" />
@@ -212,6 +216,32 @@ const CurrencyHistoricalData = () => {
                 </Button>
               </div>
             </div>
+
+            <div id="download-container" className="bg-white p-8">
+              <div className="text-center mb-6">
+                <div className="flex items-center justify-center gap-3 mb-3">
+                  <span className="text-4xl">{getFlagEmoji(currentCurrency.currency.iso3)}</span>
+                  <h3 className="text-2xl font-bold text-gray-900">
+                    {currentCurrency.currency.name} ({currentCurrency.currency.iso3})
+                  </h3>
+                </div>
+                <p className="text-base text-gray-700">
+                  Historical data of {currentCurrency.currency.name} against NPR for{' '}
+                  {selectedPeriod === 'custom' && customDateRange.from && customDateRange.to
+                    ? `${format(customDateRange.from, 'PPP')} to ${format(customDateRange.to, 'PPP')}`
+                    : selectedPeriod === 'week'
+                    ? 'last 7 days'
+                    : selectedPeriod === 'month'
+                    ? 'last 30 days'
+                    : selectedPeriod === '3month'
+                    ? 'last 3 months'
+                    : selectedPeriod === '6month'
+                    ? 'last 6 months'
+                    : selectedPeriod === 'year'
+                    ? 'last year'
+                    : 'last 5 years'}
+                </p>
+              </div>
 
             <Tabs value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as any)} className="mb-6">
               <TabsList className="grid grid-cols-4 lg:grid-cols-7 w-full">
@@ -273,34 +303,54 @@ const CurrencyHistoricalData = () => {
               </div>
             )}
 
-            <div id="chart-container" className="w-full h-[400px]">
-              {isLoadingChart ? (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-500">Loading chart data...</p>
-                </div>
-              ) : chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="date" 
-                      tickFormatter={(date) => format(new Date(date), 'MMM dd')}
-                    />
-                    <YAxis />
-                    <Tooltip 
-                      labelFormatter={(date) => format(new Date(date), 'PPP')}
-                      formatter={(value: number) => value.toFixed(2)}
-                    />
-                    <Legend />
-                    <Line type="monotone" dataKey="buy" stroke="#10b981" name="Buy Rate" strokeWidth={2} />
-                    <Line type="monotone" dataKey="sell" stroke="#ef4444" name="Sell Rate" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-500">No data available for selected period</p>
-                </div>
-              )}
+              <div className="w-full h-[400px] mb-6">
+                {isLoadingChart ? (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-500">Loading chart data...</p>
+                  </div>
+                ) : chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="date" 
+                        tickFormatter={(date) => format(new Date(date), 'MMM dd')}
+                      />
+                      <YAxis />
+                      <Tooltip 
+                        labelFormatter={(date) => format(new Date(date), 'PPP')}
+                        formatter={(value: number) => value.toFixed(2)}
+                      />
+                      <Legend />
+                      <Line type="monotone" dataKey="buy" stroke="#10b981" name="Buying Price" strokeWidth={2} />
+                      <Line type="monotone" dataKey="sell" stroke="#ef4444" name="Selling Price" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <p className="text-gray-500">No data available for selected period</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t pt-4 text-center space-y-2">
+                <p className="text-sm text-gray-600">
+                  <strong>Source:</strong> Nepal Rastra Bank API
+                </p>
+                <p className="text-sm text-gray-600">
+                  Last updated: {new Date().toLocaleString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric', 
+                    hour: '2-digit', 
+                    minute: '2-digit', 
+                    second: '2-digit' 
+                  })}
+                </p>
+                <p className="text-sm text-gray-600 italic">
+                  Data extraction and presentation designed by Grisma Bhandari
+                </p>
+              </div>
             </div>
           </div>
         </div>
