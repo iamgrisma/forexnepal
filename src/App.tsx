@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Converter from "./pages/Converter";
+import HistoricalCharts from "./pages/HistoricalCharts";
+import CurrencyHistoricalData from "./pages/CurrencyHistoricalData";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import About from "./pages/About";
 import Disclosure from "./pages/Disclosure";
@@ -23,6 +25,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/converter" element={<Converter />} />
+          <Route path="/historical-charts" element={<HistoricalCharts />} />
+          <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
           <Route path="/privacy-policy" element={<PrivacyPolicy />} />
           <Route path="/about" element={<About />} />
           <Route path="/disclosure" element={<Disclosure />} />

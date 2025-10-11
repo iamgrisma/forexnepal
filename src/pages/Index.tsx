@@ -7,10 +7,11 @@ import ForexTicker from '../components/ForexTicker';
 import CurrencyCard from '../components/CurrencyCard';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3 } from 'lucide-react';
+import { RefreshCw, Gitlab, List, Grid3X3, Download } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
+import html2canvas from 'html2canvas';
 
 const Index = () => {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -96,6 +97,100 @@ const Index = () => {
     await refetch();
   };
 
+  const downloadTableAsImage = async () => {
+    const tableContainer = document.getElementById('forex-table-container');
+    if (!tableContainer) return;
+
+    // Create a wrapper for the image content
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '1500px';
+    wrapper.style.padding = '40px';
+    wrapper.style.backgroundColor = 'white';
+    wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+
+    // Title
+    const titleEl = document.createElement('h1');
+    titleEl.style.textAlign = 'center';
+    titleEl.style.fontSize = '32px';
+    titleEl.style.fontWeight = 'bold';
+    titleEl.style.marginBottom = '30px';
+    titleEl.style.color = '#1f2937';
+    const dateStr = ratesData?.date ? new Date(ratesData.date).toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    }) : new Date().toLocaleDateString('en-US', { 
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+    titleEl.textContent = `Foreign Exchange Rate for Nepali Currencies on ${dateStr}`;
+    wrapper.appendChild(titleEl);
+
+    // Clone and style the table
+    const tableClone = tableContainer.cloneNode(true) as HTMLElement;
+    tableClone.style.fontSize = '16px';
+    wrapper.appendChild(tableClone);
+
+    // Footer
+    const footer = document.createElement('div');
+    footer.style.marginTop = '30px';
+    footer.style.textAlign = 'center';
+    footer.style.fontSize = '14px';
+    footer.style.color = '#6b7280';
+    
+    const source = document.createElement('p');
+    source.style.marginBottom = '10px';
+    source.style.fontWeight = '600';
+    const lastUpdated = new Date().toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    source.textContent = `Source: Nepal Rastra Bank (NRB) | Last updated: ${lastUpdated}`;
+    footer.appendChild(source);
+
+    const disclaimer = document.createElement('p');
+    disclaimer.style.fontStyle = 'italic';
+    disclaimer.style.fontSize = '12px';
+    disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
+    footer.appendChild(disclaimer);
+
+    wrapper.appendChild(footer);
+
+    // Temporarily add to DOM
+    wrapper.style.position = 'absolute';
+    wrapper.style.left = '-9999px';
+    document.body.appendChild(wrapper);
+
+    try {
+      const canvas = await html2canvas(wrapper, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        width: 1500,
+        height: wrapper.offsetHeight
+      });
+
+      const link = document.createElement('a');
+      link.download = `forex-rates-${new Date().toISOString().split('T')[0]}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      toast({
+        title: "Success",
+        description: "Table downloaded as image",
+      });
+    } catch (error) {
+      console.error('Error generating image:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download table as image",
+        variant: "destructive",
+      });
+    } finally {
+      document.body.removeChild(wrapper);
+    }
+  };
+
   const ratesData: RatesData | undefined = forexData?.data?.payload?.[0];
   const rates: Rate[] = ratesData?.rates || [];
   
@@ -120,11 +215,20 @@ const Index = () => {
             </p>
           </div>
           
-          <div className="flex justify-end mb-6">
+          <div className="flex justify-end mb-6 gap-2">
+            <Button 
+              onClick={downloadTableAsImage} 
+              variant="outline"
+              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
+              disabled={isLoading || rates.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Download Table
+            </Button>
             <Button 
               onClick={handleRefresh} 
               variant="outline"
-              className="flex items-center gap-2 mr-4 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
+              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
@@ -168,12 +272,14 @@ const Index = () => {
             
             <TabsContent value="all" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable
-                  rates={rates}
-                  isLoading={isLoading}
-                  title={title}
-                  previousDayRates={previousDayRates}
-                />
+                <div id="forex-table-container">
+                  <ForexTable
+                    rates={rates}
+                    isLoading={isLoading}
+                    title={title}
+                    previousDayRates={previousDayRates}
+                  />
+                </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (

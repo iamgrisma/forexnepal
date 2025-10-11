@@ -1,10 +1,13 @@
-import { getAssetFromKV, mapRequestToAsset } from '@cloudflare/kv-asset-handler'
+import { getAssetFromKV, mapRequestToAsset } from '@cloudflare/kv-asset-handler';
 
-addEventListener('fetch', (event: FetchEvent) => {
-  event.respondWith(handleEvent(event))
-})
+// Cloudflare Workers types
+declare const addEventListener: (type: string, handler: (event: any) => void) => void;
 
-async function handleEvent(event: FetchEvent): Promise<Response> {
+addEventListener('fetch', (event: any) => {
+  event.respondWith(handleEvent(event));
+});
+
+async function handleEvent(event: any): Promise<Response> {
   const request = event.request
   const url = new URL(request.url)
 

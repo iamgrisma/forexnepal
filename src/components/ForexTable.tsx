@@ -5,7 +5,7 @@ import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, TrendingUp, TrendingDown } from 'lucide-react';
-import CurrencyChartModal from './CurrencyChartModal';
+import { useNavigate } from 'react-router-dom';
 
 interface ForexTableProps {
   rates: Rate[];
@@ -20,8 +20,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
     key: string;
     direction: 'ascending' | 'descending';
   } | null>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<Rate | null>(null);
-  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const navigate = useNavigate();
 
   // Filter the rates based on search term
   const filteredRates = rates.filter(rate => 
@@ -80,8 +79,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
   };
 
   const handleCurrencyClick = (rate: Rate) => {
-    setSelectedCurrency(rate);
-    setIsChartModalOpen(true);
+    navigate(`/historical-data/${rate.currency.iso3}`);
   };
 
   // Function to get rate change from previous day
@@ -263,14 +261,6 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
           </tbody>
         </table>
       </div>
-
-      {selectedCurrency && (
-        <CurrencyChartModal
-          currency={selectedCurrency}
-          isOpen={isChartModalOpen}
-          onClose={() => setIsChartModalOpen(false)}
-        />
-      )}
     </div>
   );
 };

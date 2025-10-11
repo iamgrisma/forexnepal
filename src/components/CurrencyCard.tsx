@@ -1,8 +1,7 @@
 
-import { useState } from 'react';
 import { Rate } from '../types/forex';
 import { getFlagEmoji } from '../services/forexService';
-import CurrencyChartModal from './CurrencyChartModal';
+import { useNavigate } from 'react-router-dom';
 
 interface CurrencyCardProps {
   rate: Rate;
@@ -10,27 +9,23 @@ interface CurrencyCardProps {
 }
 
 const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
-  const [isHovered, setIsHovered] = useState(false);
-  const [isChartModalOpen, setIsChartModalOpen] = useState(false);
+  const navigate = useNavigate();
   const currency = rate.currency;
   const flagEmoji = getFlagEmoji(currency.iso3);
   
   const animationDelay = `${index * 50}ms`;
 
   const handleCardClick = () => {
-    setIsChartModalOpen(true);
+    navigate(`/historical-data/${currency.iso3}`);
   };
 
   return (
-    <>
-      <div
-        className={`animated-border bg-white/90 backdrop-blur-md border-2 border-gray-200 rounded-2xl p-6 transition-all duration-300
-          hover:shadow-2xl hover:scale-105 hover:border-blue-400 cursor-pointer animate-fade-in transform group`}
-        style={{ animationDelay }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onClick={handleCardClick}
-      >
+    <div
+      className={`animated-border bg-white/90 backdrop-blur-md border-2 border-gray-200 rounded-2xl p-6 transition-all duration-300
+        hover:shadow-2xl hover:scale-105 hover:border-blue-400 cursor-pointer animate-fade-in transform group`}
+      style={{ animationDelay }}
+      onClick={handleCardClick}
+    >
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <span className="text-3xl mr-3">
@@ -63,14 +58,7 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
             </div>
           </div>
         </div>
-      </div>
-
-      <CurrencyChartModal 
-        currency={rate}
-        isOpen={isChartModalOpen}
-        onClose={() => setIsChartModalOpen(false)}
-      />
-    </>
+    </div>
   );
 };
 

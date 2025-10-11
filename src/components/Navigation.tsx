@@ -22,6 +22,10 @@ const Navigation = () => {
                 <Home className="h-4 w-4 mr-1" />
                 Home
               </NavLink>
+              <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
+                <BarChart className="h-4 w-4 mr-1" />
+                Historical Charts
+              </NavLink>
               <NavLink to="/converter" active={location.pathname === '/converter'}>
                 <ArrowRightLeft className="h-4 w-4 mr-1" />
                 Converter
@@ -45,6 +49,9 @@ const Navigation = () => {
             <NavLink to="/" active={location.pathname === '/'}>
               <Home className="h-4 w-4" />
             </NavLink>
+            <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
+              <BarChart className="h-4 w-4" />
+            </NavLink>
             <NavLink to="/converter" active={location.pathname === '/converter'}>
               <ArrowRightLeft className="h-4 w-4" />
             </NavLink>
@@ -60,7 +67,7 @@ const Navigation = () => {
       
       {/* Mobile navigation */}
       <div className="md:hidden border-t">
-        <div className="grid grid-cols-4 divide-x">
+        <div className="grid grid-cols-5 divide-x">
           <NavLink 
             to="/" 
             active={location.pathname === '/'} 
@@ -68,6 +75,14 @@ const Navigation = () => {
           >
             <Home className="h-4 w-4 mx-auto mb-1" />
             <span className="text-xs">Home</span>
+          </NavLink>
+          <NavLink 
+            to="/historical-charts" 
+            active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')} 
+            className="justify-center text-center py-2"
+          >
+            <BarChart className="h-4 w-4 mx-auto mb-1" />
+            <span className="text-xs">Charts</span>
           </NavLink>
           <NavLink 
             to="/converter" 
