@@ -7,5 +7,15 @@
     },
     "assets": {
         "directory": "./dist"
+    },
+    "d1_databases": [
+        {
+            "binding": "FOREX_DB",
+            "database_name": "forex-rates",
+            "database_id": "forex-rates-db"
+        }
+    ],
+    "triggers": {
+        "crons": ["0 23 * * *"]
     }
 }

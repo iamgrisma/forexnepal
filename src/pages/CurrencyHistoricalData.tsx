@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, fetchHistoricalRates, getDateRanges, splitDateRangeForRequests, getFlagEmoji, formatDate } from '../services/forexService';
+import { fetchForexRates, getDateRanges, splitDateRangeForRequests, getFlagEmoji, formatDate } from '../services/forexService';
+import { fetchHistoricalRatesFromCache } from '../services/d1ForexService';
 import { Rate, ChartDataPoint } from '../types/forex';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -101,9 +102,9 @@ const CurrencyHistoricalData = () => {
 
     for (const range of dateRangeRequests) {
       try {
-        const data = await fetchHistoricalRates(range.from, range.to);
-        if (data.payload) {
-          data.payload.forEach(dayData => {
+        const data = await fetchHistoricalRatesFromCache(currencyCode || '', range.from, range.to);
+        if (data?.data?.payload) {
+          data.data.payload.forEach(dayData => {
             const rate = dayData.rates.find(r => r.currency.iso3 === currencyCode?.toUpperCase());
             if (rate) {
               allData.push({
