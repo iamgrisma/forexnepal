@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Converter from "./pages/Converter";
 import HistoricalCharts from "./pages/HistoricalCharts";
@@ -21,20 +21,18 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/converter" element={<Converter />} />
-          <Route path="/historical-charts" element={<HistoricalCharts />} />
-          <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
-          <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/disclosure" element={<Disclosure />} />
-          <Route path="/ads.txt" element={<AdsTxt />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Index />} />
+        <Route path="/converter" element={<Converter />} />
+        <Route path="/historical-charts" element={<HistoricalCharts />} />
+        <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/disclosure" element={<Disclosure />} />
+        <Route path="/ads.txt" element={<AdsTxt />} />
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
     </TooltipProvider>
   </QueryClientProvider>
 );
