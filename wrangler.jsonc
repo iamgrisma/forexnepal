@@ -3,7 +3,7 @@
     "compatibility_date": "2025-08-14",
     "main": "dist/worker.js",
     "build": {
-        "command": "npm run build"
+        "command": "npm run build && npx esbuild src/worker.ts --bundle --outfile=dist/worker.js --platform=browser --target=es2020 --format=esm"
     },
     "assets": {
         "directory": "./dist"
