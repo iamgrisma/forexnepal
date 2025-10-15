@@ -340,20 +340,67 @@ const CurrencyHistoricalData = () => {
                   </div>
                 ) : chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" />
+                    <LineChart 
+                      data={chartData}
+                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                       <XAxis 
                         dataKey="date" 
                         tickFormatter={(date) => format(new Date(date), 'MMM dd')}
+                        tick={{ fontSize: 12 }}
                       />
-                      <YAxis />
+                      <YAxis 
+                        domain={[(dataMin: number) => {
+                          const allValues = chartData.flatMap(d => [d.buy, d.sell]);
+                          const min = Math.min(...allValues);
+                          return (min * 0.995).toFixed(2);
+                        }, (dataMax: number) => {
+                          const allValues = chartData.flatMap(d => [d.buy, d.sell]);
+                          const max = Math.max(...allValues);
+                          return (max * 1.005).toFixed(2);
+                        }]}
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => value.toFixed(2)}
+                      />
                       <Tooltip 
                         labelFormatter={(date) => format(new Date(date), 'PPP')}
-                        formatter={(value: number) => value.toFixed(2)}
+                        formatter={(value: number, name: string) => [
+                          `NPR ${value.toFixed(4)}`,
+                          name === 'buy' ? 'Buying Price' : 'Selling Price'
+                        ]}
+                        contentStyle={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '8px',
+                          padding: '12px'
+                        }}
                       />
-                      <Legend />
-                      <Line type="monotone" dataKey="buy" stroke="#10b981" name="Buying Price" strokeWidth={2} />
-                      <Line type="monotone" dataKey="sell" stroke="#ef4444" name="Selling Price" strokeWidth={2} />
+                      <Legend 
+                        wrapperStyle={{ paddingTop: '20px' }}
+                        iconType="line"
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="buy" 
+                        stroke="#10b981" 
+                        name="Buying Price" 
+                        strokeWidth={2.5}
+                        dot={{ r: 2, strokeWidth: 1 }}
+                        activeDot={{ r: 6, strokeWidth: 2 }}
+                        animationDuration={800}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="sell" 
+                        stroke="#ef4444" 
+                        name="Selling Price" 
+                        strokeWidth={2.5}
+                        strokeDasharray="5 5"
+                        dot={{ r: 2, strokeWidth: 1 }}
+                        activeDot={{ r: 6, strokeWidth: 2 }}
+                        animationDuration={800}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (

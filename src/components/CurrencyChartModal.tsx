@@ -335,42 +335,67 @@ const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
           data={data}
           margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
         >
-          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
           <XAxis 
             dataKey="date" 
             tickFormatter={(date) => {
               const d = new Date(date);
               return `${d.getDate()}/${d.getMonth() + 1}`;
             }}
+            tick={{ fontSize: 12 }}
           />
-          <YAxis domain={['auto', 'auto']} />
+          <YAxis 
+            domain={[(dataMin: number) => {
+              const allValues = data.flatMap(d => [d.buy, d.sell]);
+              const min = Math.min(...allValues);
+              return (min * 0.995).toFixed(2);
+            }, (dataMax: number) => {
+              const allValues = data.flatMap(d => [d.buy, d.sell]);
+              const max = Math.max(...allValues);
+              return (max * 1.005).toFixed(2);
+            }]}
+            tick={{ fontSize: 12 }}
+            tickFormatter={(value) => value.toFixed(2)}
+          />
           <Tooltip
             formatter={(value, name) => {
-              return [`${value} NPR`, name === 'buy' ? 'Buy Rate' : 'Sell Rate'];
+              return [`NPR ${Number(value).toFixed(4)}`, name === 'buy' ? 'Buy Rate' : 'Sell Rate'];
             }}
             labelFormatter={(label) => {
               const date = new Date(label);
               return format(date, 'MMMM d, yyyy');
             }}
+            contentStyle={{
+              backgroundColor: 'rgba(255, 255, 255, 0.95)',
+              border: '1px solid #e5e7eb',
+              borderRadius: '8px',
+              padding: '12px'
+            }}
           />
-          <Legend />
+          <Legend 
+            wrapperStyle={{ paddingTop: '20px' }}
+            iconType="line"
+          />
           <Line
             type="monotone"
             dataKey="buy"
             name={`Buy Rate (${currencyCode})`}
             stroke="#10b981"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 5 }}
+            strokeWidth={2.5}
+            dot={{ r: 2, strokeWidth: 1 }}
+            activeDot={{ r: 6, strokeWidth: 2 }}
+            animationDuration={800}
           />
           <Line
             type="monotone"
             dataKey="sell"
             name={`Sell Rate (${currencyCode})`}
             stroke="#ef4444"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 5 }}
+            strokeWidth={2.5}
+            strokeDasharray="5 5"
+            dot={{ r: 2, strokeWidth: 1 }}
+            activeDot={{ r: 6, strokeWidth: 2 }}
+            animationDuration={800}
           />
         </LineChart>
       </ResponsiveContainer>
