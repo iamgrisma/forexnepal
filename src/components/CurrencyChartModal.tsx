@@ -7,13 +7,15 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
-import { CalendarIcon, RefreshCw } from 'lucide-react';
-import { Rate, ChartDataPoint, HistoricalRates, RatesData } from '../types/forex';
-import { fetchHistoricalRates, getDateRanges, splitDateRangeForRequests } from '../services/forexService';
+import { CalendarIcon, RefreshCw, Loader2 } from 'lucide-react';
+import { Rate, ChartDataPoint } from '../types/forex';
+import { getDateRanges } from '../services/forexService';
 import { getFlagEmoji } from '../services/forexService';
 import { useToast } from '@/components/ui/use-toast';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 import { Input } from '@/components/ui/input';
+import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface CurrencyChartModalProps {
   currency: Rate;
@@ -32,51 +34,30 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
+  const [progress, setProgress] = useState<FetchProgress | null>(null);
   const { toast } = useToast();
 
   const loadHistoricalData = async (fromDate: string, toDate: string) => {
     if (!isOpen) return;
     
     setIsLoading(true);
+    setProgress(null);
+    setChartData([]);
+    
     try {
-      // Parse the dates
-      const fromDateObj = parseISO(fromDate);
-      const toDateObj = parseISO(toDate);
-      
-      // Split the date range if needed
-      const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj);
-      
-      console.log('Date ranges for API requests:', dateRanges);
-      
-      // Create an array to store all the data
-      let allData: ChartDataPoint[] = [];
-      
-      // Fetch data for each date range
-      for (const range of dateRanges) {
-        const histData: HistoricalRates = await fetchHistoricalRates(range.from, range.to);
-        
-        if (histData.status.code === 200 && histData.payload.length > 0) {
-          // Process the historical data
-          histData.payload.forEach((dayData: RatesData) => {
-            const currencyRate = dayData.rates.find(
-              (rate) => rate.currency.iso3 === currency.currency.iso3
-            );
-            
-            if (currencyRate) {
-              allData.push({
-                date: dayData.date,
-                buy: parseFloat(currencyRate.buy.toString()),
-                sell: parseFloat(currencyRate.sell.toString()),
-              });
-            }
-          });
+      const data = await fetchHistoricalRatesWithCache(
+        currency.currency.iso3,
+        fromDate,
+        toDate,
+        (progress) => {
+          setProgress(progress);
         }
-      }
+      );
       
-      if (allData.length > 0) {
+      if (data.length > 0) {
         // Sort by date chronologically
-        allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setChartData(allData);
+        data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setChartData(data);
       } else {
         toast({
           title: "No data available",
@@ -95,6 +76,8 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       setChartData([]);
     } finally {
       setIsLoading(false);
+      // Keep progress message visible for a moment after completion
+      setTimeout(() => setProgress(null), 3000);
     }
   };
 
@@ -174,6 +157,21 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
           </DialogDescription>
         </DialogHeader>
 
+        {/* Progress indicator */}
+        {progress && (
+          <Alert className="mb-4">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <AlertDescription>
+              <div className="font-medium">{progress.message}</div>
+              {progress.chunkInfo && (
+                <div className="text-sm text-muted-foreground mt-1">
+                  Chunk {progress.chunkInfo.current} of {progress.chunkInfo.total}: {progress.chunkInfo.fromDate} to {progress.chunkInfo.toDate}
+                </div>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Tabs value={selectedTab} onValueChange={handleTabChange}>
           <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
             <TabsList>
@@ -206,6 +204,9 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
                       initialFocus
                       disabled={{ after: new Date() }}
                       className="pointer-events-auto"
+                      captionLayout="dropdown-buttons"
+                      fromYear={2000}
+                      toYear={new Date().getFullYear()}
                     />
                     <div className="p-3 border-t border-border">
                       <Button size="sm" onClick={handleCustomDateApply} className="w-full">
@@ -309,8 +310,9 @@ interface ChartDisplayProps {
 const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
   if (isLoading) {
     return (
-      <div className="h-[400px] w-full flex items-center justify-center">
-        <RefreshCw className="h-12 w-12 animate-spin text-primary opacity-30" />
+      <div className="h-[400px] w-full flex flex-col items-center justify-center gap-4">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="text-muted-foreground">Loading chart data...</p>
       </div>
     );
   }

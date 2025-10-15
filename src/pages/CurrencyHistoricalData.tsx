@@ -1,20 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, getDateRanges, splitDateRangeForRequests, getFlagEmoji, formatDate } from '../services/forexService';
-import { fetchHistoricalRatesFromCache } from '../services/d1ForexService';
+import { fetchForexRates, getDateRanges, getFlagEmoji, formatDate } from '../services/forexService';
+import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
 import { Rate, ChartDataPoint } from '../types/forex';
 import Layout from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, ArrowLeft } from 'lucide-react';
+import { CalendarIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 const CurrencyHistoricalData = () => {
   const { currencyCode } = useParams<{ currencyCode: string }>();
@@ -24,6 +25,7 @@ const CurrencyHistoricalData = () => {
   const [currentCurrency, setCurrentCurrency] = useState<Rate | null>(null);
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [isLoadingChart, setIsLoadingChart] = useState(false);
+  const [progress, setProgress] = useState<FetchProgress | null>(null);
 
   const { data: forexData } = useQuery({
     queryKey: ['forexRates'],
@@ -55,6 +57,9 @@ const CurrencyHistoricalData = () => {
     if (!currencyCode) return;
     
     setIsLoadingChart(true);
+    setProgress(null);
+    setChartData([]);
+    
     try {
       const dateRanges = getDateRanges();
       let fromDate, toDate;
@@ -88,51 +93,51 @@ const CurrencyHistoricalData = () => {
           return;
       }
 
-      await fetchAndProcessData(new Date(fromDate), new Date(toDate));
+      const data = await fetchHistoricalRatesWithCache(
+        currencyCode,
+        fromDate,
+        toDate,
+        (p) => setProgress(p)
+      );
+      
+      if (data.length > 0) {
+        data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setChartData(data);
+      }
     } catch (error) {
       console.error('Error loading historical data:', error);
     } finally {
       setIsLoadingChart(false);
+      setTimeout(() => setProgress(null), 3000);
     }
-  };
-
-  const fetchAndProcessData = async (fromDate: Date, toDate: Date) => {
-    const dateRangeRequests = splitDateRangeForRequests(fromDate, toDate);
-    const allData: ChartDataPoint[] = [];
-
-    for (const range of dateRangeRequests) {
-      try {
-        const data = await fetchHistoricalRatesFromCache(currencyCode || '', range.from, range.to);
-        if (data?.data?.payload) {
-          data.data.payload.forEach(dayData => {
-            const rate = dayData.rates.find(r => r.currency.iso3 === currencyCode?.toUpperCase());
-            if (rate) {
-              allData.push({
-                date: dayData.date,
-                buy: parseFloat(rate.buy.toString()),
-                sell: parseFloat(rate.sell.toString()),
-              });
-            }
-          });
-        }
-      } catch (error) {
-        console.error(`Error fetching data for range ${range.from} to ${range.to}:`, error);
-      }
-    }
-
-    allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    setChartData(allData);
   };
 
   const handleCustomDateApply = async () => {
     if (customDateRange.from && customDateRange.to) {
       setIsLoadingChart(true);
+      setProgress(null);
+      setChartData([]);
+      
       try {
-        await fetchAndProcessData(customDateRange.from, customDateRange.to);
+        const fromDate = formatDate(customDateRange.from);
+        const toDate = formatDate(customDateRange.to);
+        
+        const data = await fetchHistoricalRatesWithCache(
+          currencyCode || '',
+          fromDate,
+          toDate,
+          (p) => setProgress(p)
+        );
+        
+        if (data.length > 0) {
+          data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          setChartData(data);
+        }
       } catch (error) {
         console.error('Error loading custom date range:', error);
       } finally {
         setIsLoadingChart(false);
+        setTimeout(() => setProgress(null), 3000);
       }
     }
   };
@@ -273,7 +278,11 @@ const CurrencyHistoricalData = () => {
                         selected={customDateRange.from}
                         onSelect={(date) => setCustomDateRange({ ...customDateRange, from: date })}
                         initialFocus
+                        disabled={{ after: new Date() }}
                         className="pointer-events-auto"
+                        captionLayout="dropdown-buttons"
+                        fromYear={2000}
+                        toYear={new Date().getFullYear()}
                       />
                     </PopoverContent>
                   </Popover>
@@ -293,7 +302,11 @@ const CurrencyHistoricalData = () => {
                         selected={customDateRange.to}
                         onSelect={(date) => setCustomDateRange({ ...customDateRange, to: date })}
                         initialFocus
+                        disabled={{ after: new Date() }}
                         className="pointer-events-auto"
+                        captionLayout="dropdown-buttons"
+                        fromYear={2000}
+                        toYear={new Date().getFullYear()}
                       />
                     </PopoverContent>
                   </Popover>
@@ -302,12 +315,28 @@ const CurrencyHistoricalData = () => {
                   Apply
                 </Button>
               </div>
-            )}
+              )}
+
+              {/* Progress indicator */}
+              {progress && (
+                <Alert className="mb-6">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <AlertDescription>
+                    <div className="font-medium">{progress.message}</div>
+                    {progress.chunkInfo && (
+                      <div className="text-sm text-muted-foreground mt-1">
+                        Chunk {progress.chunkInfo.current} of {progress.chunkInfo.total}: {progress.chunkInfo.fromDate} to {progress.chunkInfo.toDate}
+                      </div>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              )}
 
               <div className="w-full h-[400px] mb-6">
                 {isLoadingChart ? (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">Loading chart data...</p>
+                  <div className="flex flex-col items-center justify-center h-full gap-4">
+                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                    <p className="text-muted-foreground">Loading chart data...</p>
                   </div>
                 ) : chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
