@@ -12,7 +12,7 @@
         {
             "binding": "FOREX_DB",
             "database_name": "forex-rates",
-            "database_id": "forex-rates-db"
+            "database_id": "05ede330-5c35-4aee-8843-6c3527817925"
         }
     ],
     "triggers": {
