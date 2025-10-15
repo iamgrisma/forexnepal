@@ -17,7 +17,7 @@ export type ProgressCallback = (progress: FetchProgress) => void;
 // Check if data exists in D1 for given date range
 async function checkDataExists(fromDate: string, toDate: string): Promise<{
   exists: boolean;
-  missingDates: string[];
+  missingDateRanges: Array<{ from: string; to: string }>;
 }> {
   try {
     const response = await fetch(
@@ -26,16 +26,48 @@ async function checkDataExists(fromDate: string, toDate: string): Promise<{
     
     if (response.ok) {
       const data = await response.json();
+      const missingDates = data.missingDates || [];
+      
+      // Convert missing dates to contiguous date ranges
+      const missingDateRanges = groupDatesIntoRanges(missingDates);
+      
       return {
         exists: data.exists || false,
-        missingDates: data.missingDates || []
+        missingDateRanges
       };
     }
   } catch (error) {
     console.log('Error checking data existence:', error);
   }
   
-  return { exists: false, missingDates: [] };
+  return { exists: false, missingDateRanges: [{ from: fromDate, to: toDate }] };
+}
+
+// Group missing dates into contiguous ranges
+function groupDatesIntoRanges(dates: string[]): Array<{ from: string; to: string }> {
+  if (dates.length === 0) return [];
+  
+  const sortedDates = [...dates].sort();
+  const ranges: Array<{ from: string; to: string }> = [];
+  let rangeStart = sortedDates[0];
+  let rangeEnd = sortedDates[0];
+  
+  for (let i = 1; i < sortedDates.length; i++) {
+    const currentDate = new Date(sortedDates[i]);
+    const prevDate = new Date(sortedDates[i - 1]);
+    const dayDiff = (currentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
+    
+    if (dayDiff <= 1) {
+      rangeEnd = sortedDates[i];
+    } else {
+      ranges.push({ from: rangeStart, to: rangeEnd });
+      rangeStart = sortedDates[i];
+      rangeEnd = sortedDates[i];
+    }
+  }
+  
+  ranges.push({ from: rangeStart, to: rangeEnd });
+  return ranges;
 }
 
 // Fetch from API and store in D1
@@ -94,58 +126,68 @@ export async function fetchHistoricalRatesWithCache(
       message: 'Checking if data exists in database...'
     });
     
-    const { exists } = await checkDataExists(fromDate, toDate);
+    const { exists, missingDateRanges } = await checkDataExists(fromDate, toDate);
     
-    if (!exists) {
-      // Step 2: Data doesn't exist, need to fetch from API
+    if (!exists && missingDateRanges.length > 0) {
+      // Step 2: Only fetch missing date ranges
       onProgress?.({
         stage: 'fetching',
-        message: 'Data not found in database. Fetching from API...'
+        message: `Found ${missingDateRanges.length} missing date range(s). Fetching from API...`
       });
       
-      // Split into 90-day chunks
-      const fromDateObj = new Date(fromDate);
-      const toDateObj = new Date(toDate);
-      const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj);
+      let totalChunks = 0;
+      let processedChunks = 0;
       
-      console.log(`Need to fetch ${dateRanges.length} chunks`);
+      // Calculate total chunks needed
+      for (const missingRange of missingDateRanges) {
+        const rangeFromDate = new Date(missingRange.from);
+        const rangeToDate = new Date(missingRange.to);
+        const chunks = splitDateRangeForRequests(rangeFromDate, rangeToDate);
+        totalChunks += chunks.length;
+      }
       
-      // Fetch and store each chunk
-      for (let i = 0; i < dateRanges.length; i++) {
-        const range = dateRanges[i];
+      // Fetch and store each missing range
+      for (const missingRange of missingDateRanges) {
+        const rangeFromDate = new Date(missingRange.from);
+        const rangeToDate = new Date(missingRange.to);
+        const dateRanges = splitDateRangeForRequests(rangeFromDate, rangeToDate);
         
-        onProgress?.({
-          stage: 'fetching',
-          message: `Fetching data chunk ${i + 1} of ${dateRanges.length}...`,
-          chunkInfo: {
-            current: i + 1,
-            total: dateRanges.length,
-            fromDate: range.from,
-            toDate: range.to
-          }
-        });
-        
-        // Fetch and store this chunk
-        const success = await fetchAndStore(range.from, range.to);
-        
-        if (success) {
+        for (let i = 0; i < dateRanges.length; i++) {
+          const range = dateRanges[i];
+          processedChunks++;
+          
           onProgress?.({
-            stage: 'storing',
-            message: `Stored data from ${range.from} to ${range.to}`,
+            stage: 'fetching',
+            message: `Fetching chunk ${processedChunks} of ${totalChunks}...`,
             chunkInfo: {
-              current: i + 1,
-              total: dateRanges.length,
+              current: processedChunks,
+              total: totalChunks,
               fromDate: range.from,
               toDate: range.to
             }
           });
-        } else {
-          console.warn(`Failed to fetch chunk ${i + 1}`);
-        }
-        
-        // Small delay to avoid rate limiting
-        if (i < dateRanges.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const success = await fetchAndStore(range.from, range.to);
+          
+          if (success) {
+            onProgress?.({
+              stage: 'storing',
+              message: `Stored data from ${range.from} to ${range.to}`,
+              chunkInfo: {
+                current: processedChunks,
+                total: totalChunks,
+                fromDate: range.from,
+                toDate: range.to
+              }
+            });
+          } else {
+            console.warn(`Failed to fetch chunk ${processedChunks}`);
+          }
+          
+          // Small delay to avoid rate limiting
+          if (processedChunks < totalChunks) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
         }
       }
     }
@@ -156,9 +198,12 @@ export async function fetchHistoricalRatesWithCache(
       message: 'Loading data from database...'
     });
     
-    const data = await fetchFromD1(currencyCode, fromDate, toDate);
+    let data = await fetchFromD1(currencyCode, fromDate, toDate);
     
+    // Fill gaps with previous day's data
     if (data.length > 0) {
+      data = fillMissingDatesWithPreviousData(data, fromDate, toDate);
+      
       onProgress?.({
         stage: 'complete',
         message: exists 
@@ -188,6 +233,41 @@ export async function fetchHistoricalRatesWithCache(
     // Fallback to direct API call
     return await fetchFromAPIFallback(currencyCode, fromDate, toDate);
   }
+}
+
+// Fill missing dates with previous day's data
+function fillMissingDatesWithPreviousData(
+  data: ChartDataPoint[],
+  fromDate: string,
+  toDate: string
+): ChartDataPoint[] {
+  if (data.length === 0) return data;
+  
+  const filledData: ChartDataPoint[] = [];
+  const dataMap = new Map(data.map(d => [d.date, d]));
+  
+  const start = new Date(fromDate);
+  const end = new Date(toDate);
+  let previousData: ChartDataPoint | null = null;
+  
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split('T')[0];
+    
+    if (dataMap.has(dateStr)) {
+      const currentData = dataMap.get(dateStr)!;
+      filledData.push(currentData);
+      previousData = currentData;
+    } else if (previousData) {
+      // Use previous day's data for missing dates
+      filledData.push({
+        date: dateStr,
+        buy: previousData.buy,
+        sell: previousData.sell
+      });
+    }
+  }
+  
+  return filledData;
 }
 
 // Fallback: Direct API call (old method)
