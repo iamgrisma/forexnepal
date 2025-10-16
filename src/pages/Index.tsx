@@ -87,6 +87,9 @@ const Index = () => {
       setEuropeanCurrencies(european);
       setMiddleEastCurrencies(middleEast);
       setOtherCurrencies(others);
+
+      // Check and generate OG image if needed (in background)
+      checkAndGenerateOGImage();
     }
   }, [forexData]);
 
@@ -96,6 +99,51 @@ const Index = () => {
       description: "Fetching the latest forex rates...",
     });
     await refetch();
+  };
+
+  const checkAndGenerateOGImage = async () => {
+    try {
+      // Check if OG image exists and is recent (within 24 hours)
+      const { data: files } = await supabase.storage
+        .from('forex-images')
+        .list('', {
+          search: 'og-image-latest.png'
+        });
+
+      const ogImage = files?.[0];
+      const now = new Date();
+      const imageAge = ogImage ? now.getTime() - new Date(ogImage.created_at).getTime() : Infinity;
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+
+      // Only generate if image doesn't exist or is older than 24 hours
+      if (!ogImage || imageAge > twentyFourHours) {
+        // Wait a bit for the DOM to be ready
+        setTimeout(async () => {
+          try {
+            const canvas = await generateImageFromContent('forex-table-container', 1200, 630, true);
+            if (canvas) {
+              const blob = await new Promise<Blob>((resolve) => {
+                canvas.toBlob((blob) => resolve(blob!), 'image/png');
+              });
+
+              await supabase.storage
+                .from('forex-images')
+                .upload('og-image-latest.png', blob, {
+                  contentType: 'image/png',
+                  upsert: true,
+                  cacheControl: '3600'
+                });
+
+              console.log('OG image generated and uploaded successfully');
+            }
+          } catch (error) {
+            console.error('Background OG image generation failed:', error);
+          }
+        }, 2000);
+      }
+    } catch (error) {
+      console.error('Error checking OG image:', error);
+    }
   };
 
   const generateImageFromContent = async (contentId: string, width: number = 1500, height?: number, forOG: boolean = false) => {
@@ -229,13 +277,15 @@ const Index = () => {
         canvas.toBlob((blob) => resolve(blob!), 'image/png');
       });
 
-      const fileName = `og-image-${new Date().toISOString().split('T')[0]}.png`;
+      // Use a consistent filename so the URL doesn't change
+      const fileName = 'og-image-latest.png';
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('forex-images')
         .upload(fileName, blob, {
           contentType: 'image/png',
-          upsert: true
+          upsert: true,
+          cacheControl: '3600'
         });
 
       if (uploadError) throw uploadError;
@@ -244,8 +294,14 @@ const Index = () => {
         .from('forex-images')
         .getPublicUrl(fileName);
 
+      // Update meta tag dynamically
+      const ogImageMeta = document.querySelector('meta[property="og:image"]');
+      if (ogImageMeta) {
+        ogImageMeta.setAttribute('content', `${publicUrl}?t=${Date.now()}`);
+      }
+
       // Copy to clipboard for sharing
-      await navigator.clipboard.writeText(`${window.location.origin}\n\nCheck out today's forex rates!\n\nImage: ${publicUrl}`);
+      await navigator.clipboard.writeText(`${window.location.origin}\n\nCheck out today's forex rates!`);
 
       toast({
         title: "Success",
