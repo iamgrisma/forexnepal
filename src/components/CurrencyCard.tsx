@@ -6,9 +6,10 @@ import { useNavigate } from 'react-router-dom';
 interface CurrencyCardProps {
   rate: Rate;
   index: number;
+  previousDayRates?: Rate[];
 }
 
-const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
+const CurrencyCard = ({ rate, index, previousDayRates }: CurrencyCardProps) => {
   const navigate = useNavigate();
   const currency = rate.currency;
   const flagEmoji = getFlagEmoji(currency.iso3);
@@ -17,6 +18,28 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
 
   const handleCardClick = () => {
     navigate(`/historical-data/${currency.iso3}`);
+  };
+
+  const getRateChange = (type: 'buy' | 'sell') => {
+    if (!previousDayRates) return null;
+    
+    const prevRate = previousDayRates.find(r => r.currency.iso3 === currency.iso3);
+    if (!prevRate) return null;
+    
+    const currentValue = typeof rate[type] === 'number' ? rate[type] : parseFloat(rate[type]);
+    const previousValue = typeof prevRate[type] === 'number' ? prevRate[type] : parseFloat(prevRate[type]);
+    const diff = currentValue - previousValue;
+    
+    if (diff === 0) return null;
+    
+    const trend = diff > 0 ? '📈' : '📉';
+    const changeColor = diff > 0 ? 'text-green-600' : 'text-red-600';
+    
+    return (
+      <span className={`text-xs ${changeColor} ml-1`}>
+        {trend} {Math.abs(diff).toFixed(4)}
+      </span>
+    );
   };
 
   return (
@@ -48,6 +71,7 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
             <div className="text-xs font-semibold text-green-700 uppercase mb-1 tracking-wide">Buy</div>
             <div className="font-bold text-xl text-green-700">
               {rate.buy}
+              {getRateChange('buy')}
             </div>
           </div>
 
@@ -55,6 +79,7 @@ const CurrencyCard = ({ rate, index }: CurrencyCardProps) => {
             <div className="text-xs font-semibold text-red-700 uppercase mb-1 tracking-wide">Sell</div>
             <div className="font-bold text-xl text-red-700">
               {rate.sell}
+              {getRateChange('sell')}
             </div>
           </div>
         </div>

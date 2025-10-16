@@ -7,8 +7,9 @@ import ForexTicker from '../components/ForexTicker';
 import CurrencyCard from '../components/CurrencyCard';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3, Download } from 'lucide-react';
+import { RefreshCw, Gitlab, List, Grid3X3, Download, Share2 } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
 import html2canvas from 'html2canvas';
@@ -97,23 +98,21 @@ const Index = () => {
     await refetch();
   };
 
-  const downloadTableAsImage = async () => {
-    const tableContainer = document.getElementById('forex-table-container');
-    if (!tableContainer) return;
+  const generateImageFromContent = async (contentId: string, width: number = 1500, height?: number, forOG: boolean = false) => {
+    const container = document.getElementById(contentId);
+    if (!container) return null;
 
-    // Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    wrapper.style.width = '1500px';
-    wrapper.style.padding = '40px';
+    wrapper.style.width = `${width}px`;
+    wrapper.style.padding = forOG ? '30px' : '40px';
     wrapper.style.backgroundColor = 'white';
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
 
-    // Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '32px';
+    titleEl.style.fontSize = forOG ? '28px' : '32px';
     titleEl.style.fontWeight = 'bold';
-    titleEl.style.marginBottom = '30px';
+    titleEl.style.marginBottom = forOG ? '20px' : '30px';
     titleEl.style.color = '#1f2937';
     const dateStr = ratesData?.date ? new Date(ratesData.date).toLocaleDateString('en-US', { 
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
@@ -123,16 +122,14 @@ const Index = () => {
     titleEl.textContent = `Foreign Exchange Rate for Nepali Currencies on ${dateStr}`;
     wrapper.appendChild(titleEl);
 
-    // Clone and style the table
-    const tableClone = tableContainer.cloneNode(true) as HTMLElement;
-    tableClone.style.fontSize = '16px';
-    wrapper.appendChild(tableClone);
+    const contentClone = container.cloneNode(true) as HTMLElement;
+    contentClone.style.fontSize = forOG ? '14px' : '16px';
+    wrapper.appendChild(contentClone);
 
-    // Footer
     const footer = document.createElement('div');
-    footer.style.marginTop = '30px';
+    footer.style.marginTop = forOG ? '20px' : '30px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '14px';
+    footer.style.fontSize = forOG ? '12px' : '14px';
     footer.style.color = '#6b7280';
     
     const source = document.createElement('p');
@@ -149,15 +146,17 @@ const Index = () => {
     source.textContent = `Source: Nepal Rastra Bank (NRB) | Last updated: ${lastUpdated}`;
     footer.appendChild(source);
 
-    const disclaimer = document.createElement('p');
-    disclaimer.style.fontStyle = 'italic';
-    disclaimer.style.fontSize = '12px';
-    disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
-    footer.appendChild(disclaimer);
+    if (!forOG) {
+      const disclaimer = document.createElement('p');
+      disclaimer.style.fontStyle = 'italic';
+      disclaimer.style.fontSize = '12px';
+      disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
+      footer.appendChild(disclaimer);
+    }
     
     const designer = document.createElement('p');
     designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '12px';
+    designer.style.fontSize = forOG ? '10px' : '12px';
     designer.style.marginTop = '10px';
     designer.style.color = '#4b5563';
     designer.textContent = 'Data extraction and presentation designed by Grisma Bhandari';
@@ -165,7 +164,6 @@ const Index = () => {
 
     wrapper.appendChild(footer);
 
-    // Temporarily add to DOM
     wrapper.style.position = 'absolute';
     wrapper.style.left = '-9999px';
     document.body.appendChild(wrapper);
@@ -174,28 +172,92 @@ const Index = () => {
       const canvas = await html2canvas(wrapper, {
         scale: 2,
         backgroundColor: '#ffffff',
-        width: 1500,
-        height: wrapper.offsetHeight
+        width: forOG ? 1200 : width,
+        height: height || wrapper.offsetHeight
       });
 
+      document.body.removeChild(wrapper);
+      return canvas;
+    } catch (error) {
+      document.body.removeChild(wrapper);
+      throw error;
+    }
+  };
+
+  const downloadTableAsImage = async () => {
+    const contentId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
+    if (!document.getElementById(contentId)) return;
+
+    try {
+      const canvas = await generateImageFromContent(contentId);
+      if (!canvas) {
+        throw new Error('Failed to generate image');
+      }
+
       const link = document.createElement('a');
-      link.download = `forex-rates-${new Date().toISOString().split('T')[0]}.png`;
+      link.download = `forex-rates-${viewMode}-${new Date().toISOString().split('T')[0]}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
 
       toast({
         title: "Success",
-        description: "Table downloaded as image",
+        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as image`,
       });
     } catch (error) {
       console.error('Error generating image:', error);
       toast({
         title: "Error",
-        description: "Failed to download table as image",
+        description: "Failed to download as image",
         variant: "destructive",
       });
-    } finally {
-      document.body.removeChild(wrapper);
+    }
+  };
+
+  const generateAndUploadOGImage = async () => {
+    toast({
+      title: "Generating share image",
+      description: "Please wait while we create the image...",
+    });
+
+    try {
+      const canvas = await generateImageFromContent('forex-table-container', 1200, 630, true);
+      if (!canvas) {
+        throw new Error('Failed to generate image');
+      }
+
+      const blob = await new Promise<Blob>((resolve) => {
+        canvas.toBlob((blob) => resolve(blob!), 'image/png');
+      });
+
+      const fileName = `og-image-${new Date().toISOString().split('T')[0]}.png`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('forex-images')
+        .upload(fileName, blob, {
+          contentType: 'image/png',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('forex-images')
+        .getPublicUrl(fileName);
+
+      // Copy to clipboard for sharing
+      await navigator.clipboard.writeText(`${window.location.origin}\n\nCheck out today's forex rates!\n\nImage: ${publicUrl}`);
+
+      toast({
+        title: "Success",
+        description: "Share link copied to clipboard! OG image updated.",
+      });
+    } catch (error) {
+      console.error('Error generating OG image:', error);
+      toast({
+        title: "Error",
+        description: "Failed to generate share image",
+        variant: "destructive",
+      });
     }
   };
 
@@ -225,13 +287,22 @@ const Index = () => {
           
           <div className="flex justify-end mb-6 gap-2">
             <Button 
+              onClick={generateAndUploadOGImage} 
+              variant="outline"
+              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
+              disabled={isLoading || rates.length === 0}
+            >
+              <Share2 className="h-4 w-4" />
+              Share
+            </Button>
+            <Button 
               onClick={downloadTableAsImage} 
               variant="outline"
               className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
               disabled={isLoading || rates.length === 0}
             >
               <Download className="h-4 w-4" />
-              Download Table
+              Download {viewMode === 'table' ? 'Table' : 'Grid'}
             </Button>
             <Button 
               onClick={handleRefresh} 
@@ -289,14 +360,14 @@ const Index = () => {
                   />
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div id="forex-grid-container" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                   {isLoading ? (
                     Array.from({ length: 9 }).map((_, index) => (
                       <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
                     ))
                   ) : (
                     rates.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
@@ -319,7 +390,7 @@ const Index = () => {
                     ))
                   ) : (
                     popularCurrencies.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
@@ -342,7 +413,7 @@ const Index = () => {
                     ))
                   ) : (
                     asianCurrencies.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
@@ -365,7 +436,7 @@ const Index = () => {
                     ))
                   ) : (
                     europeanCurrencies.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
@@ -388,7 +459,7 @@ const Index = () => {
                     ))
                   ) : (
                     middleEastCurrencies.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
@@ -411,7 +482,7 @@ const Index = () => {
                     ))
                   ) : (
                     otherCurrencies.map((rate, index) => (
-                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} />
+                      <CurrencyCard key={rate.currency.iso3} rate={rate} index={index} previousDayRates={previousDayRates} />
                     ))
                   )}
                 </div>
