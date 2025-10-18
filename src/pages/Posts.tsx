@@ -1,24 +1,12 @@
 import React from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { supabase } from '@/integrations/supabase/client';
 import Layout from '@/components/Layout';
 
 const Posts = () => {
-  const { data: posts, isLoading } = useQuery({
-    queryKey: ['posts'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('status', 'published')
-        .order('published_at', { ascending: false });
-      
-      if (error) throw error;
-      return data;
-    }
-  });
+  // TODO: Implement with D1 database
+  const posts: any[] = [];
+  const isLoading = false;
 
   return (
     <Layout>

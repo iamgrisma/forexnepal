@@ -1,26 +1,13 @@
 import React from 'react';
 import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import Layout from '@/components/Layout';
 
 const PostDetail = () => {
   const { slug } = useParams();
 
-  const { data: post, isLoading } = useQuery({
-    queryKey: ['post', slug],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('slug', slug)
-        .eq('status', 'published')
-        .single();
-      
-      if (error) throw error;
-      return data;
-    }
-  });
+  // TODO: Implement with D1 database
+  const post: any = null;
+  const isLoading = false;
 
   if (isLoading) {
     return (

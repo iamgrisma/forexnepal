@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -12,7 +11,6 @@ const AdminLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [redirecting, setRedirecting] = useState(true);
   const [countdown, setCountdown] = useState(3);
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -29,10 +27,10 @@ const AdminLogin = () => {
   };
 
   const handleLogin = async () => {
-    // Placeholder for actual authentication
+    // TODO: Implement with D1 database authentication
     toast({
       title: "Admin login",
-      description: "Authentication system to be implemented"
+      description: "Authentication system to be implemented with D1"
     });
   };
 
