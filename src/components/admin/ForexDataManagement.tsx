@@ -3,8 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertCircle, Edit, Save, RefreshCw } from 'lucide-react';
+import { Loader2, AlertCircle, Edit, Save, RefreshCw, Info } from 'lucide-react';
 import DateInput from '@/components/DateInput'; // Assuming you have this component
 import { formatDate } from '@/services/forexService'; // Import formatDate
 

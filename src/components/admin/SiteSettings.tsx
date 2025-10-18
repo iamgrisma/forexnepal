@@ -93,7 +93,7 @@ const SiteSettings = () => {
               <Info className="h-4 w-4" />
               {/* <AlertTitle>Information</AlertTitle> */}
               <AlertDescription>
-                Enter HTML tags (like script or meta tags) to be injected into the `<head>` section of every page. Use with caution.
+                Enter HTML tags (like script or meta tags) to be injected into the head section of every page. Use with caution.
               </AlertDescription>
             </Alert> {/* Alert closed */}
 

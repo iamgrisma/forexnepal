@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 
 interface DateInputProps {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   className?: string;
@@ -10,7 +11,7 @@ interface DateInputProps {
   max?: string;
 }
 
-const DateInput = ({ value, onChange, className, placeholder = "yyyy-mm-dd", min, max }: DateInputProps) => {
+const DateInput = ({ id, value, onChange, className, placeholder = "yyyy-mm-dd", min, max }: DateInputProps) => {
   const [displayValue, setDisplayValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -59,6 +60,7 @@ const DateInput = ({ value, onChange, className, placeholder = "yyyy-mm-dd", min
 
   return (
     <Input
+      id={id}
       ref={inputRef}
       type="text"
       value={displayValue}

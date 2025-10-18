@@ -7,10 +7,37 @@ const ProtectedRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Basic check: Does the token exist?
-    // In a real app, you might want to verify the token with the backend.
-    const token = localStorage.getItem('authToken');
-    setIsAuthenticated(!!token);
+    // Verify token with backend to ensure it's valid
+    const verifyAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      if (!token) {
+        setIsAuthenticated(false);
+        return;
+      }
+
+      try {
+        // Verify token by making a request to an admin endpoint
+        const response = await fetch('/api/admin/settings', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          setIsAuthenticated(true);
+        } else {
+          // Token is invalid or expired
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('username');
+          setIsAuthenticated(false);
+        }
+      } catch (error) {
+        console.error('Auth verification failed:', error);
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('username');
+        setIsAuthenticated(false);
+      }
+    };
+
+    verifyAuth();
   }, []);
 
   if (isAuthenticated === null) {
