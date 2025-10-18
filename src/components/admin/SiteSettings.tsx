@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Info } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import AlertTitle if needed
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const SiteSettings = () => {
   const [headerTags, setHeaderTags] = useState('');
@@ -87,15 +87,18 @@ const SiteSettings = () => {
           <div className="flex justify-center items-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : ( // Correct start of the 'else' block for conditional rendering
-          <div className="space-y-4"> {/* This div wraps the actual content when not fetching */}
+        ) : (
+          // *** CORRECTED JSX STRUCTURE BELOW ***
+          <div className="space-y-4"> {/* Outer container for non-fetching state */}
             <Alert>
               <Info className="h-4 w-4" />
-              {/* <AlertTitle>Information</AlertTitle> */}
+              {/* Optional: <AlertTitle>Information</AlertTitle> */}
               <AlertDescription>
                 Enter HTML tags (like script or meta tags) to be injected into the `<head>` section of every page. Use with caution.
               </AlertDescription>
-            </Alert>
+            </Alert> {/* Alert is properly closed here */}
+
+            {/* Container for the textarea and its label */}
             <div>
               <label htmlFor="headerTags" className="block text-sm font-medium mb-1">Header Tags</label>
               <Textarea
@@ -107,13 +110,15 @@ const SiteSettings = () => {
                 className="font-mono text-xs"
                 disabled={isLoading}
               />
-            </div>
+            </div> {/* Closing div for label/textarea */}
+
+            {/* Save button */}
             <Button onClick={handleSave} disabled={isLoading || isFetching}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Saving...' : 'Save Settings'}
             </Button>
-          </div> // Closing tag for the wrapping div
-        )} {/* CORRECTED: Closing parenthesis for the conditional rendering ternary */}
+          </div> // *** Closing tag for the outer container ***
+        )} {/* Closing parenthesis and brace for the conditional rendering */}
       </CardContent>
     </Card>
   );
