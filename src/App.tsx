@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+// HashRouter is already correctly imported in your main.tsx
 import { Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import Converter from "./pages/Converter";
@@ -17,10 +18,11 @@ import AdminLogin from "./pages/AdminLogin";
 import Posts from "./pages/Posts";
 import PostDetail from "./pages/PostDetail";
 
-// Import Admin components
+// --- Ensure these imports are correct ---
 import ProtectedRoute from "./components/ProtectedRoute"; // Import the guard
-import AdminDashboard from "./pages/AdminDashboard";
-import PostEditor from "./pages/PostEditor";
+import AdminDashboard from "./pages/AdminDashboard";    // Import the dashboard page
+import PostEditor from "./pages/PostEditor";        // Import the editor page
+// --- End Ensure imports ---
 
 const queryClient = new QueryClient();
 
@@ -29,8 +31,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      {/* HashRouter should wrap this in main.tsx */}
       <Routes>
-        {/* Public Routes */}
+        {/* --- Public Routes --- */}
         <Route path="/" element={<Index />} />
         <Route path="/converter" element={<Converter />} />
         <Route path="/historical-charts" element={<HistoricalCharts />} />
@@ -43,18 +46,21 @@ const App = () => (
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
 
-        {/* Admin Login Route */}
+        {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
 
-        {/* Protected Admin Routes */}
+        {/* --- Protected Admin Routes --- */}
+        {/* The ProtectedRoute component wraps all routes that need authentication */}
         <Route element={<ProtectedRoute />}>
+           {/* Define the dashboard route HERE */}
            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-           <Route path="/admin/posts/new" element={<PostEditor />} /> {/* Route for creating new post */}
-           <Route path="/admin/posts/edit/:id" element={<PostEditor />} /> {/* Route for editing existing post */}
-           {/* Add other protected admin routes here if needed */}
+           {/* Define the post editor routes HERE */}
+           <Route path="/admin/posts/new" element={<PostEditor />} />
+           <Route path="/admin/posts/edit/:id" element={<PostEditor />} />
+           {/* Add any other future protected admin routes inside this wrapper */}
         </Route>
 
-        {/* Catch-all Not Found Route */}
+        {/* --- Catch-all Not Found Route (Must be last) --- */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </TooltipProvider>
