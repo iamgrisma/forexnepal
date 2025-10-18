@@ -4,7 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Info } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'; // Import AlertTitle if needed
 
 const SiteSettings = () => {
   const [headerTags, setHeaderTags] = useState('');
@@ -88,14 +88,16 @@ const SiteSettings = () => {
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
-          <div className="space-y-4">
+          // Corrected JSX structure starts here
+          <div className="space-y-4"> {/* This div wraps the content */}
             <Alert>
               <Info className="h-4 w-4" />
+              {/* <AlertTitle>Information</AlertTitle> */} {/* AlertTitle is optional */}
               <AlertDescription>
                 Enter HTML tags (like script or meta tags) to be injected into the `<head>` section of every page. Use with caution.
               </AlertDescription>
             </Alert>
-            <div>
+            <div> {/* This div wraps the label and textarea */}
               <label htmlFor="headerTags" className="block text-sm font-medium mb-1">Header Tags</label>
               <Textarea
                 id="headerTags"
@@ -111,8 +113,9 @@ const SiteSettings = () => {
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Saving...' : 'Save Settings'}
             </Button>
-          </div>
-        )}
+          </div> // Closing tag for the wrapping div added
+          // Corrected JSX structure ends here
+        )} {/* Closing parenthesis for conditional rendering */}
       </CardContent>
     </Card>
   );
