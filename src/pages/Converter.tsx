@@ -5,13 +5,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ArrowRightLeft, Calculator, ArrowRight } from 'lucide-react';
-import { fetchForexRates } from '@/services/forexService';
+import { ArrowRightLeft, Calculator, ArrowRight, TrendingUp } from 'lucide-react';
+import { fetchForexRates, fetchHistoricalRates, formatDate } from '@/services/forexService';
 import { Rate } from '@/types/forex';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
 import ForexTicker from '@/components/ForexTicker';
+import DateInput from '@/components/DateInput';
+import ConverterProfitCalculator from './ConverterProfitCalculator';
 
 const Converter = () => {
   const { toast } = useToast();
@@ -20,13 +22,24 @@ const Converter = () => {
   const [fromCurrency, setFromCurrency] = useState<string>('USD');
   const [toCurrency, setToCurrency] = useState<string>('NPR');
   const [result, setResult] = useState<number | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
+  
+  // Profit/Loss Calculator states
+  const [investAmount, setInvestAmount] = useState<number>(100);
+  const [investCurrency, setInvestCurrency] = useState<string>('USD');
+  const [purchaseDate, setPurchaseDate] = useState<string>(formatDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000))); // 30 days ago
+  const [sellDate, setSellDate] = useState<string>(formatDate(new Date()));
+  const [profitLossResult, setProfitLossResult] = useState<any>(null);
 
   const { data: forexData, isLoading, error } = useQuery({
-    queryKey: ['forexRates'],
-    queryFn: fetchForexRates,
+    queryKey: ['forexRates', selectedDate],
+    queryFn: async () => {
+      const data = await fetchHistoricalRates(selectedDate, selectedDate);
+      return data;
+    },
   });
 
-  const rates = forexData?.data?.payload?.[0]?.rates || [];
+  const rates = forexData?.payload?.[0]?.rates || [];
   
   const allRates = [
     { currency: { iso3: 'NPR', name: 'Nepalese Rupee', unit: 1 }, buy: 1, sell: 1 },
@@ -150,14 +163,24 @@ const Converter = () => {
             
             <CardContent>
               <Tabs value={conversionType} onValueChange={setConversionType} className="w-full">
-                <TabsList className="grid grid-cols-3 mb-6">
+                <TabsList className="grid grid-cols-4 mb-6">
                   <TabsTrigger value="toNpr">Foreign → NPR</TabsTrigger>
                   <TabsTrigger value="fromNpr">NPR → Foreign</TabsTrigger>
                   <TabsTrigger value="anyToAny">Foreign → Foreign</TabsTrigger>
+                  <TabsTrigger value="profitLoss">Profit/Loss</TabsTrigger>
                 </TabsList>
                 
                 <TabsContent value="toNpr">
                   <div className="grid gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-gray-700">Select Date</label>
+                      <DateInput
+                        value={selectedDate}
+                        onChange={setSelectedDate}
+                        className="border-2 py-3 text-base rounded-xl"
+                      />
+                    </div>
+                    
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                       <div className="space-y-2">
                         <label htmlFor="amount" className="text-sm font-semibold text-gray-700">Amount</label>
@@ -340,6 +363,9 @@ const Converter = () => {
                       </div>
                     )}
                   </div>
+                </TabsContent>
+                <TabsContent value="profitLoss">
+                  <ConverterProfitCalculator rates={rates} />
                 </TabsContent>
               </Tabs>
             </CardContent>

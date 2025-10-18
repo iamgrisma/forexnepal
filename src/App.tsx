@@ -14,6 +14,9 @@ import Contact from "./pages/Contact";
 import Disclosure from "./pages/Disclosure";
 import AdsTxt from "./pages/AdsTxt";
 import NotFound from "./pages/NotFound";
+import AdminLogin from "./pages/AdminLogin";
+import Posts from "./pages/Posts";
+import PostDetail from "./pages/PostDetail";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +35,9 @@ const App = () => (
         <Route path="/contact" element={<Contact />} />
         <Route path="/disclosure" element={<Disclosure />} />
         <Route path="/ads.txt" element={<AdsTxt />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/posts" element={<Posts />} />
+        <Route path="/posts/:slug" element={<PostDetail />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -1,12 +1,14 @@
 {
-  "name": "NRB Foreign Exchange Rate - Grisma Blog",
-  "short_name": "Forex Rates",
-  "description": "Real-time foreign exchange rates for Nepali Rupees",
+  "name": "ForexNepal - Exchange Rates",
+  "short_name": "ForexNepal",
+  "description": "Real-time foreign exchange rates for Nepali Rupees with offline support",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1e40af",
   "orientation": "portrait-primary",
+  "scope": "/",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/favicon.ico",
