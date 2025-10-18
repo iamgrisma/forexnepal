@@ -1,30 +1,35 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react'; // Removed useRef
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import Layout from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+// Keep Textarea if used for excerpt/meta_description
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Save, UploadCloud } from 'lucide-react';
+import { Loader2, ArrowLeft, Save } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+
+// --- Import ReactQuill and its CSS ---
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css'; // Import Quill styles
 
 // Define Zod schema for validation
 const postSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
-  slug: z.string().optional(), // Slug might be auto-generated or optional
+  slug: z.string().optional(),
   excerpt: z.string().optional(),
-  content: z.string().min(10, "Content must be at least 10 characters"),
+  content: z.string().min(10, "Content must be at least 10 characters"), // Keep validation for the underlying value
   featured_image_url: z.string().url("Must be a valid URL").optional().or(z.literal('')),
   author_name: z.string().optional(),
   author_url: z.string().url("Must be a valid URL").optional().or(z.literal('')),
   status: z.enum(['draft', 'published']),
   meta_title: z.string().optional(),
   meta_description: z.string().optional(),
-  meta_keywords: z.string().optional(), // Store as comma-separated string in form
+  meta_keywords: z.string().optional(),
 });
 
 type PostFormData = z.infer<typeof postSchema>;
@@ -40,30 +45,31 @@ interface PostData {
     author_name?: string | null;
     author_url?: string | null;
     status: 'draft' | 'published';
-    published_at?: string | null; // Keep track if already published
+    published_at?: string | null;
     meta_title?: string | null;
     meta_description?: string | null;
-    meta_keywords?: string | null; // Use string for backend
+    meta_keywords?: string | null;
 }
 
 
 const PostEditor = () => {
-  const { id } = useParams<{ id: string }>(); // ID is used for editing
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(!!id); // Only fetch if ID exists
+  const [isFetching, setIsFetching] = useState(!!id);
   const isEditing = !!id;
+  // No editorRef needed for ReactQuill with Controller
 
   const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<PostFormData>({
     resolver: zodResolver(postSchema),
     defaultValues: {
       title: '',
       excerpt: '',
-      content: '',
+      content: '', // Initial content for ReactQuill
       featured_image_url: '',
-      author_name: 'Grisma', // Default author
-      author_url: 'https://grisma.com.np/about', // Default URL
+      author_name: 'Grisma',
+      author_url: 'https://grisma.com.np/about',
       status: 'draft',
       meta_title: '',
       meta_description: '',
@@ -71,10 +77,10 @@ const PostEditor = () => {
     }
   });
 
-  const watchedTitle = watch('title'); // Watch title for potential slug generation
+  const watchedTitle = watch('title');
 
-  // Fetch post data if editing
-  useEffect(() => {
+  // --- Fetch post data (useEffect) remains largely the same ---
+   useEffect(() => {
     if (isEditing) {
       const fetchPostData = async () => {
         setIsFetching(true);
@@ -91,29 +97,28 @@ const PostEditor = () => {
           if (!response.ok) throw new Error("Failed to fetch post data");
           const data = await response.json();
           if (data.success && data.post) {
-            // Populate form fields
-             const postData = data.post as PostData; // Use PostData with potentially null fields
+             const postData = data.post as PostData;
              reset({
                 title: postData.title || '',
                 slug: postData.slug || '',
                 excerpt: postData.excerpt || '',
-                content: postData.content || '',
+                content: postData.content || '', // Set initial content
                 featured_image_url: postData.featured_image_url || '',
                 author_name: postData.author_name || 'Grisma',
                 author_url: postData.author_url || 'https://grisma.com.np/about',
                 status: postData.status || 'draft',
                 meta_title: postData.meta_title || '',
                 meta_description: postData.meta_description || '',
-                // Convert array back to comma-separated string for the form field
                 meta_keywords: Array.isArray(postData.meta_keywords) ? postData.meta_keywords.join(', ') : (postData.meta_keywords || ''),
              });
+             // No need to manually set editor content here, Controller handles it via 'reset'
           } else {
              throw new Error(data.error || "Could not load post");
           }
         } catch (error) {
           console.error("Fetch error:", error);
           toast({ title: "Error", description: `Could not load post: ${error instanceof Error ? error.message : 'Unknown error'}`, variant: "destructive" });
-           navigate('/admin/dashboard'); // Go back if post fails to load
+           navigate('/admin/dashboard');
         } finally {
           setIsFetching(false);
         }
@@ -122,17 +127,17 @@ const PostEditor = () => {
     }
   }, [id, isEditing, reset, navigate, toast]);
 
-   // Function to generate slug (basic version)
+
+  // --- Slug generation remains the same ---
    const generateSlug = (title: string): string => {
      return title
        .toLowerCase()
-       .replace(/[^a-z0-9\s-]/g, '') // Remove special chars except space and hyphen
+       .replace(/[^a-z0-9\s-]/g, '')
        .trim()
-       .replace(/\s+/g, '-') // Replace spaces with hyphens
-       .replace(/-+/g, '-'); // Replace multiple hyphens with single
+       .replace(/\s+/g, '-')
+       .replace(/-+/g, '-');
    };
 
-    // Update slug field when title changes (if creating new post and slug is empty)
     useEffect(() => {
         if (!isEditing && watchedTitle && !watch('slug')) {
             setValue('slug', generateSlug(watchedTitle), { shouldValidate: true });
@@ -152,16 +157,14 @@ const PostEditor = () => {
     const apiUrl = isEditing ? `/api/admin/posts/${id}` : '/api/admin/posts';
     const method = isEditing ? 'PUT' : 'POST';
 
-     // Prepare data for the backend
+     // Content is already managed by react-hook-form via Controller
      const postPayload: PostData = {
          ...formData,
-         // Slug generation is handled by backend if not provided, but we send it if available
          slug: formData.slug || (formData.title ? generateSlug(formData.title) : undefined),
-         // Convert comma-separated keywords string back to string for backend (worker expects string)
          meta_keywords: formData.meta_keywords || null,
      };
 
-     // Ensure optional fields that are empty strings become null for the DB if needed
+     // Ensure optional fields that are empty strings become null
      postPayload.excerpt = postPayload.excerpt || null;
      postPayload.featured_image_url = postPayload.featured_image_url || null;
      postPayload.meta_title = postPayload.meta_title || null;
@@ -184,7 +187,7 @@ const PostEditor = () => {
 
       if (response.ok && data.success) {
         toast({ title: "Success", description: `Post ${isEditing ? 'updated' : 'created'} successfully.` });
-        navigate('/admin/dashboard'); // Redirect back to post list
+        navigate('/admin/dashboard');
       } else {
         throw new Error(data.error || `Failed to ${isEditing ? 'update' : 'create'} post`);
       }
@@ -205,6 +208,28 @@ const PostEditor = () => {
        </Layout>
      );
    }
+
+  // --- ReactQuill Modules Configuration (Customize Toolbar) ---
+  const modules = {
+    toolbar: [
+      [{ 'header': [1, 2, 3, false] }],
+      ['bold', 'italic', 'underline','strike', 'blockquote', 'code-block'],
+      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
+      ['link', 'image', 'video'], // Added video
+      [{ 'color': [] }, { 'background': [] }], // Added color options
+      [{ 'align': [] }],
+      ['clean']
+    ],
+  };
+
+  const formats = [
+    'header',
+    'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
+    'list', 'bullet', 'indent',
+    'link', 'image', 'video',
+    'color', 'background', // Added color formats
+    'align'
+  ];
 
   return (
     <Layout>
@@ -228,7 +253,7 @@ const PostEditor = () => {
                   {errors.title && <p className="text-xs text-destructive mt-1">{errors.title.message}</p>}
                 </div>
 
-                {/* Slug (Optional, can be auto-generated) */}
+                {/* Slug */}
                 <div>
                   <label htmlFor="slug" className="block text-sm font-medium mb-1">Slug (URL)</label>
                   <Input id="slug" {...register('slug')} placeholder="e.g., my-awesome-post (optional, generated if empty)" />
@@ -244,13 +269,30 @@ const PostEditor = () => {
                   {errors.excerpt && <p className="text-xs text-destructive mt-1">{errors.excerpt.message}</p>}
                 </div>
 
-                {/* Content - REPLACE WITH RICH TEXT EDITOR */}
+                {/* --- Content - ReactQuill Editor --- */}
                 <div>
-                  <label htmlFor="content" className="block text-sm font-medium mb-1">Content</label>
-                  <Textarea id="content" {...register('content')} placeholder="Write your post content here..." rows={15} />
-                   <p className="text-xs text-muted-foreground mt-1">Consider replacing this with a rich text editor component.</p>
+                  <label htmlFor="content-editor" className="block text-sm font-medium mb-1">Content</label>
+                  <Controller
+                      name="content"
+                      control={control}
+                      // You can add rules here if needed, but Zod handles it too
+                      render={({ field }) => (
+                          <ReactQuill
+                            id="content-editor" // Assign an ID if needed for labels, etc.
+                            theme="snow" // Use the "snow" theme (includes toolbar)
+                            value={field.value}
+                            onChange={field.onChange}
+                            modules={modules} // Configure toolbar options
+                            formats={formats} // Define allowed formats
+                            placeholder="Write your post content here..."
+                            style={{ backgroundColor: 'white', minHeight: '300px' }} // Optional styling
+                          />
+                      )}
+                    />
                   {errors.content && <p className="text-xs text-destructive mt-1">{errors.content.message}</p>}
                 </div>
+                {/* --- End ReactQuill Editor --- */}
+
 
                 {/* Featured Image URL */}
                 <div>
@@ -272,7 +314,6 @@ const PostEditor = () => {
                        {errors.author_url && <p className="text-xs text-destructive mt-1">{errors.author_url.message}</p>}
                      </div>
                  </div>
-
 
                 {/* Status */}
                 <div>
