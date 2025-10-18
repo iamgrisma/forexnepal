@@ -87,17 +87,16 @@ const SiteSettings = () => {
           <div className="flex justify-center items-center py-8">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : (
-          // Corrected JSX structure starts here
-          <div className="space-y-4"> {/* This div wraps the content */}
+        ) : ( // Correct start of the 'else' block for conditional rendering
+          <div className="space-y-4"> {/* This div wraps the actual content when not fetching */}
             <Alert>
               <Info className="h-4 w-4" />
-              {/* <AlertTitle>Information</AlertTitle> */} {/* AlertTitle is optional */}
+              {/* <AlertTitle>Information</AlertTitle> */}
               <AlertDescription>
                 Enter HTML tags (like script or meta tags) to be injected into the `<head>` section of every page. Use with caution.
               </AlertDescription>
             </Alert>
-            <div> {/* This div wraps the label and textarea */}
+            <div>
               <label htmlFor="headerTags" className="block text-sm font-medium mb-1">Header Tags</label>
               <Textarea
                 id="headerTags"
@@ -113,9 +112,8 @@ const SiteSettings = () => {
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Saving...' : 'Save Settings'}
             </Button>
-          </div> // Closing tag for the wrapping div added
-          // Corrected JSX structure ends here
-        )} {/* Closing parenthesis for conditional rendering */}
+          </div> // Closing tag for the wrapping div
+        )} {/* CORRECTED: Closing parenthesis for the conditional rendering ternary */}
       </CardContent>
     </Card>
   );
