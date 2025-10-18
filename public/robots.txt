@@ -2,4 +2,4 @@ User-agent: *
 Allow: /
 Disallow: /admin/
 
-Sitemap: https://forexnepal.lovable.app/sitemap.xml
+Sitemap: https//:forex.grisma.com.np/sitemap.xml
