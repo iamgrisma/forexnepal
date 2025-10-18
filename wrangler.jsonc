@@ -1,20 +1,16 @@
 {
-    "name": "forex", // Your worker name
-    "compatibility_date": "2025-08-14", // Or your desired date
-    "main": "dist/worker.js",          // Correct path relative to build output root
+    "name": "forex",
+    "compatibility_date": "2025-08-14",
+    "main": "dist/_worker.js",
     "build": {
-        // This command builds both Vite assets AND the Worker into the ./dist folder
-        "command": "npm run build && npx esbuild src/worker.ts --bundle --outfile=dist/worker.js --platform=browser --target=es2020 --format=esm"
+        "command": "npm run build",
+        "watch_dir": "src"
     },
-    // REMOVE or comment out the "assets" section, Pages handles this
-    // "assets": {
-    //     "directory": "./dist"
-    // },
     "d1_databases": [
         {
             "binding": "FOREX_DB",
             "database_name": "forex-rates",
-            "database_id": "05ede330-5c35-4aee-8843-6c3527817925" // Ensure this is your correct ID
+            "database_id": "05ede330-5c35-4aee-8843-6c3527817925"
         }
     ],
     "triggers": {
