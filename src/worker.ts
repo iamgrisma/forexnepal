@@ -390,7 +390,7 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
       });
     }
 
-    const token = generateToken();
+    const token = await generateToken(user.username as string);
 
     return new Response(JSON.stringify({
       success: true,
@@ -464,8 +464,9 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
   try {
     const { username, currentPassword, newPassword, token } = await request.json();
 
-    if (!verifyToken(token)) {
-      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
+    const isValidToken = await verifyToken(token);
+    if (!isValidToken) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid or expired token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
@@ -478,6 +479,15 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     if (!user) {
       return new Response(JSON.stringify({ success: false, error: 'User not found' }), {
         status: 404,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Verify current password before allowing change
+    const currentPasswordValid = await simpleHashCompare(currentPassword, user.password_hash);
+    if (!currentPasswordValid) {
+      return new Response(JSON.stringify({ success: false, error: 'Current password is incorrect' }), {
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -510,9 +520,18 @@ async function handlePosts(request: Request, env: Env): Promise<Response> {
   }
 
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !verifyToken(authHeader.replace('Bearer ', ''))) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'No token provided' }), {
       status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  const isValid = await verifyToken(token);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+      status: 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
@@ -574,9 +593,18 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
   }
 
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !verifyToken(authHeader.replace('Bearer ', ''))) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'No token provided' }), {
       status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  const isValid = await verifyToken(token);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+      status: 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
@@ -658,9 +686,18 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
   }
 
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !verifyToken(authHeader.replace('Bearer ', ''))) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'No token provided' }), {
       status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  const isValid = await verifyToken(token);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+      status: 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
@@ -729,9 +766,18 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
   }
 
   const authHeader = request.headers.get('Authorization');
-  if (!authHeader || !verifyToken(authHeader.replace('Bearer ', ''))) {
-    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+  if (!authHeader) {
+    return new Response(JSON.stringify({ error: 'No token provided' }), {
       status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    });
+  }
+  
+  const token = authHeader.replace('Bearer ', '');
+  const isValid = await verifyToken(token);
+  if (!isValid) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+      status: 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
@@ -887,14 +933,74 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-function generateToken(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+// JWT token generation with expiration
+async function generateToken(username: string): Promise<string> {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const payload = {
+    username,
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours
+  };
+  
+  const encodedHeader = btoa(JSON.stringify(header));
+  const encodedPayload = btoa(JSON.stringify(payload));
+  const signatureInput = `${encodedHeader}.${encodedPayload}`;
+  
+  // Use environment secret for signing
+  const secret = 'forexnepal-jwt-secret-key-2025'; // In production, use env.JWT_SECRET
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureInput));
+  const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)));
+  
+  return `${signatureInput}.${encodedSignature}`;
 }
 
-function verifyToken(token: string): boolean {
-  return token && token.length > 20;
+async function verifyToken(token: string): Promise<boolean> {
+  if (!token || token.split('.').length !== 3) return false;
+  
+  try {
+    const [encodedHeader, encodedPayload, encodedSignature] = token.split('.');
+    
+    // Verify signature
+    const signatureInput = `${encodedHeader}.${encodedPayload}`;
+    const secret = 'forexnepal-jwt-secret-key-2025'; // Must match generation secret
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['verify']
+    );
+    
+    const signature = Uint8Array.from(atob(encodedSignature), c => c.charCodeAt(0));
+    const isValid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signature,
+      encoder.encode(signatureInput)
+    );
+    
+    if (!isValid) return false;
+    
+    // Check expiration
+    const payload = JSON.parse(atob(encodedPayload));
+    const now = Math.floor(Date.now() / 1000);
+    if (payload.exp && payload.exp < now) return false;
+    
+    return true;
+  } catch (error) {
+    console.error('Token verification error:', error);
+    return false;
+  }
 }
 
 async function simpleHash(password: string): Promise<string> {
