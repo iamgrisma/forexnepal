@@ -88,18 +88,16 @@ const SiteSettings = () => {
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
-          // *** CORRECTED JSX STRUCTURE BELOW ***
-          <div className="space-y-4"> {/* Outer container for non-fetching state */}
+          <div className="space-y-4"> {/* Wrapper for content when not fetching */}
             <Alert>
               <Info className="h-4 w-4" />
-              {/* Optional: <AlertTitle>Information</AlertTitle> */}
+              {/* <AlertTitle>Information</AlertTitle> */}
               <AlertDescription>
                 Enter HTML tags (like script or meta tags) to be injected into the `<head>` section of every page. Use with caution.
               </AlertDescription>
-            </Alert> {/* Alert is properly closed here */}
+            </Alert> {/* Alert closed */}
 
-            {/* Container for the textarea and its label */}
-            <div>
+            <div> {/* Wrapper for label + textarea */}
               <label htmlFor="headerTags" className="block text-sm font-medium mb-1">Header Tags</label>
               <Textarea
                 id="headerTags"
@@ -110,15 +108,14 @@ const SiteSettings = () => {
                 className="font-mono text-xs"
                 disabled={isLoading}
               />
-            </div> {/* Closing div for label/textarea */}
+            </div> {/* Wrapper closed */}
 
-            {/* Save button */}
             <Button onClick={handleSave} disabled={isLoading || isFetching}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isLoading ? 'Saving...' : 'Save Settings'}
             </Button>
-          </div> // *** Closing tag for the outer container ***
-        )} {/* Closing parenthesis and brace for the conditional rendering */}
+          </div> // Wrapper closed
+        )} {/* Conditional rendering correctly closed */}
       </CardContent>
     </Card>
   );
