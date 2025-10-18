@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import { HashRouter } from 'react-router-dom';
+// Import BrowserRouter instead of HashRouter
+import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import './index.css';
@@ -8,12 +9,14 @@ const queryClient = new QueryClient();
 
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={queryClient}>
-    <HashRouter>
+    {/* Use BrowserRouter */}
+    <BrowserRouter>
       <App />
-    </HashRouter>
+    </BrowserRouter>
   </QueryClientProvider>
 );
 
+// Service worker registration remains the same
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
@@ -26,10 +29,11 @@ if ('serviceWorker' in navigator) {
           if (newWorker) {
             newWorker.addEventListener('statechange', () => {
               if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                if (confirm('New version available! Reload to update?')) {
-                  newWorker.postMessage({ type: 'SKIP_WAITING' });
-                  window.location.reload();
-                }
+                // Optional: Prompt user to refresh
+                // console.log('New content is available; please refresh.');
+                // Or automatically refresh:
+                 newWorker.postMessage({ type: 'SKIP_WAITING' });
+                 // window.location.reload(); // Can sometimes cause issues, let controllerchange handle it
               }
             });
           }
@@ -44,7 +48,8 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     if (!refreshing) {
       refreshing = true;
-      window.location.reload();
+      // Debounce reload slightly to avoid race conditions
+      setTimeout(() => window.location.reload(), 50);
     }
   });
 }
