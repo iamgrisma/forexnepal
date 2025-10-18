@@ -58,7 +58,6 @@ const PostEditor = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(!!id);
   const isEditing = !!id;
-  // No editorRef needed for ReactQuill with Controller
 
   const { register, handleSubmit, control, reset, setValue, watch, formState: { errors } } = useForm<PostFormData>({
     resolver: zodResolver(postSchema),
