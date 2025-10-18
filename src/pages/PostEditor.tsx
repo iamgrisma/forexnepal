@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react'; // Removed useRef
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import Layout from '@/components/Layout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-// Keep Textarea if used for excerpt/meta_description
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@/components/ui/textarea'; // Keep for excerpt/meta_description
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
@@ -79,7 +78,7 @@ const PostEditor = () => {
 
   const watchedTitle = watch('title');
 
-  // --- Fetch post data (useEffect) remains largely the same ---
+  // --- Fetch post data (useEffect) ---
    useEffect(() => {
     if (isEditing) {
       const fetchPostData = async () => {
@@ -111,7 +110,6 @@ const PostEditor = () => {
                 meta_description: postData.meta_description || '',
                 meta_keywords: Array.isArray(postData.meta_keywords) ? postData.meta_keywords.join(', ') : (postData.meta_keywords || ''),
              });
-             // No need to manually set editor content here, Controller handles it via 'reset'
           } else {
              throw new Error(data.error || "Could not load post");
           }
@@ -128,7 +126,7 @@ const PostEditor = () => {
   }, [id, isEditing, reset, navigate, toast]);
 
 
-  // --- Slug generation remains the same ---
+  // --- Slug generation ---
    const generateSlug = (title: string): string => {
      return title
        .toLowerCase()
@@ -209,14 +207,14 @@ const PostEditor = () => {
      );
    }
 
-  // --- ReactQuill Modules Configuration (Customize Toolbar) ---
+  // --- ReactQuill Modules Configuration ---
   const modules = {
     toolbar: [
       [{ 'header': [1, 2, 3, false] }],
       ['bold', 'italic', 'underline','strike', 'blockquote', 'code-block'],
       [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
-      ['link', 'image', 'video'], // Added video
-      [{ 'color': [] }, { 'background': [] }], // Added color options
+      ['link', 'image', 'video'],
+      [{ 'color': [] }, { 'background': [] }],
       [{ 'align': [] }],
       ['clean']
     ],
@@ -227,7 +225,7 @@ const PostEditor = () => {
     'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
     'list', 'bullet', 'indent',
     'link', 'image', 'video',
-    'color', 'background', // Added color formats
+    'color', 'background',
     'align'
   ];
 
@@ -275,18 +273,18 @@ const PostEditor = () => {
                   <Controller
                       name="content"
                       control={control}
-                      // You can add rules here if needed, but Zod handles it too
+                      rules={{ required: 'Content is required', minLength: { value: 10, message: 'Content must be at least 10 characters'} }}
                       render={({ field }) => (
                           <ReactQuill
-                            id="content-editor" // Assign an ID if needed for labels, etc.
-                            theme="snow" // Use the "snow" theme (includes toolbar)
+                            id="content-editor"
+                            theme="snow"
                             value={field.value}
                             onChange={field.onChange}
-                            modules={modules} // Configure toolbar options
-                            formats={formats} // Define allowed formats
+                            modules={modules}
+                            formats={formats}
                             placeholder="Write your post content here..."
-                            style={{ backgroundColor: 'white', minHeight: '300px' }} // Optional styling
-                          />
+                            style={{ backgroundColor: 'white', minHeight: '300px' }} // Added white background
+                           />
                       )}
                     />
                   {errors.content && <p className="text-xs text-destructive mt-1">{errors.content.message}</p>}
