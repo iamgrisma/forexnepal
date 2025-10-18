@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import Layout from '@/components/Layout';
 import CurrencyCard from '@/components/CurrencyCard';
+import ForexTicker from '@/components/ForexTicker';
 
 const HistoricalCharts = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,6 +41,9 @@ const HistoricalCharts = () => {
               View historical exchange rate trends and download charts for any currency.
             </p>
           </div>
+
+          {/* Ticker component */}
+          <ForexTicker rates={rates} isLoading={isLoading} />
 
           <div className="relative mb-8">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

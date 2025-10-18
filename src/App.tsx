@@ -10,6 +10,7 @@ import HistoricalCharts from "./pages/HistoricalCharts";
 import CurrencyHistoricalData from "./pages/CurrencyHistoricalData";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import About from "./pages/About";
+import Contact from "./pages/Contact";
 import Disclosure from "./pages/Disclosure";
 import AdsTxt from "./pages/AdsTxt";
 import NotFound from "./pages/NotFound";
@@ -28,6 +29,7 @@ const App = () => (
         <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/about" element={<About />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/disclosure" element={<Disclosure />} />
         <Route path="/ads.txt" element={<AdsTxt />} />
         {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -223,44 +223,46 @@ const Index = () => {
             </p>
           </div>
           
-          <div className="flex justify-end mb-6 gap-2">
+          <div className="flex flex-wrap justify-end items-center mb-6 gap-2">
             <Button 
               onClick={downloadTableAsImage} 
               variant="outline"
+              size="sm"
               className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
               disabled={isLoading || rates.length === 0}
             >
               <Download className="h-4 w-4" />
-              Download Table
+              <span className="hidden sm:inline">Download</span>
             </Button>
             <Button 
               onClick={handleRefresh} 
               variant="outline"
+              size="sm"
               className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
+              <span className="hidden sm:inline">Refresh</span>
             </Button>
             
-            <div className="bg-white/80 backdrop-blur-sm rounded-lg p-1 flex">
+            <div className="bg-white/80 backdrop-blur-sm rounded-lg p-1 flex shadow-sm">
               <Button
                 variant={viewMode === 'table' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setViewMode('table')}
-                className="rounded-md"
+                className="rounded-md h-8"
               >
-                <List className="h-4 w-4 mr-1" />
-                Table
+                <List className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">Table</span>
               </Button>
               <Button
                 variant={viewMode === 'grid' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => setViewMode('grid')}
-                className="rounded-md"
+                className="rounded-md h-8"
               >
-                <Grid3X3 className="h-4 w-4 mr-1" />
-                Grid
+                <Grid3X3 className="h-4 w-4 sm:mr-1" />
+                <span className="hidden sm:inline">Grid</span>
               </Button>
             </div>
           </div>

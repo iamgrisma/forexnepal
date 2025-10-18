@@ -8,108 +8,93 @@ const Navigation = () => {
   const location = useLocation();
   
   return (
-    <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 mb-8 sticky top-0 z-50 shadow-sm">
-      <div className="container mx-auto px-4 py-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center">
-            <Link to="/" className="flex items-center">
-              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-3 py-1.5 rounded-lg font-bold text-lg shadow-md hover:shadow-lg transition-shadow">
-                Forex NPR
+    <>
+      {/* Desktop Navigation */}
+      <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex justify-between items-center gap-8">
+            <Link to="/" className="flex items-center flex-shrink-0">
+              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 rounded-lg font-bold text-lg shadow-md hover:shadow-lg transition-shadow">
+                ForexNepal
               </div>
             </Link>
-            <div className="hidden md:flex space-x-2 ml-8">
+            
+            <div className="hidden md:flex items-center space-x-1 flex-1 justify-end">
               <NavLink to="/" active={location.pathname === '/'}>
-                <Home className="h-4 w-4 mr-1" />
+                <Home className="h-4 w-4 mr-2" />
                 Home
               </NavLink>
               <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
-                <BarChart className="h-4 w-4 mr-1" />
-                Historical Charts
+                <BarChart className="h-4 w-4 mr-2" />
+                Charts
               </NavLink>
               <NavLink to="/converter" active={location.pathname === '/converter'}>
-                <ArrowRightLeft className="h-4 w-4 mr-1" />
+                <ArrowRightLeft className="h-4 w-4 mr-2" />
                 Converter
               </NavLink>
               <NavLink to="/about" active={location.pathname === '/about'}>
-                <User className="h-4 w-4 mr-1" />
+                <User className="h-4 w-4 mr-2" />
                 About
               </NavLink>
-              <ExternalNavLink href="https://grisma.com.np">
-                <BookOpen className="h-4 w-4 mr-1" />
-                Blogs
-              </ExternalNavLink>
-              <ExternalNavLink href="https://grisma.com.np/contact">
-                <Phone className="h-4 w-4 mr-1" />
+              <NavLink to="/contact" active={location.pathname === '/contact'}>
+                <Phone className="h-4 w-4 mr-2" />
                 Contact
+              </NavLink>
+              <ExternalNavLink href="https://grisma.com.np">
+                <BookOpen className="h-4 w-4 mr-2" />
+                Blog
               </ExternalNavLink>
             </div>
           </div>
-          
-          <div className="md:hidden flex space-x-1">
-            <NavLink to="/" active={location.pathname === '/'}>
-              <Home className="h-4 w-4" />
-            </NavLink>
-            <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
-              <BarChart className="h-4 w-4" />
-            </NavLink>
-            <NavLink to="/converter" active={location.pathname === '/converter'}>
-              <ArrowRightLeft className="h-4 w-4" />
-            </NavLink>
-            <NavLink to="/about" active={location.pathname === '/about'}>
-              <User className="h-4 w-4" />
-            </NavLink>
-            <ExternalNavLink href="https://grisma.com.np/contact">
-              <Phone className="h-4 w-4" />
-            </ExternalNavLink>
-          </div>
         </div>
-      </div>
-      
-      {/* Mobile navigation */}
-      <div className="md:hidden border-t">
-        <div className="grid grid-cols-5 divide-x">
+      </nav>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 shadow-lg z-50">
+        <div className="grid grid-cols-5 divide-x divide-gray-200">
+          <NavLink 
+            to="/about" 
+            active={location.pathname === '/about'} 
+            className="flex flex-col items-center justify-center py-3 px-2"
+          >
+            <User className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">About</span>
+          </NavLink>
+          <NavLink 
+            to="/contact" 
+            active={location.pathname === '/contact'} 
+            className="flex flex-col items-center justify-center py-3 px-2"
+          >
+            <Phone className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">Contact</span>
+          </NavLink>
           <NavLink 
             to="/" 
             active={location.pathname === '/'} 
-            className="justify-center text-center py-2"
+            className="flex flex-col items-center justify-center py-3 px-2"
           >
-            <Home className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">Home</span>
+            <Home className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">Home</span>
           </NavLink>
           <NavLink 
             to="/historical-charts" 
             active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')} 
-            className="justify-center text-center py-2"
+            className="flex flex-col items-center justify-center py-3 px-2"
           >
-            <BarChart className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">Charts</span>
+            <BarChart className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">Charts</span>
           </NavLink>
           <NavLink 
             to="/converter" 
             active={location.pathname === '/converter'} 
-            className="justify-center text-center py-2"
+            className="flex flex-col items-center justify-center py-3 px-2"
           >
-            <ArrowRightLeft className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">Converter</span>
+            <ArrowRightLeft className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium">Converter</span>
           </NavLink>
-          <NavLink 
-            to="/about" 
-            active={location.pathname === '/about'} 
-            className="justify-center text-center py-2"
-          >
-            <User className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">About</span>
-          </NavLink>
-          <ExternalNavLink 
-            href="https://grisma.com.np/contact" 
-            className="justify-center text-center py-2"
-          >
-            <Phone className="h-4 w-4 mx-auto mb-1" />
-            <span className="text-xs">Contact</span>
-          </ExternalNavLink>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 };
 
