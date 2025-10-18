@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Terminal } from 'lucide-react';
+import { Terminal, Loader2 } from 'lucide-react'; // Import Loader2
 
 const AdminLogin = () => {
   const [username, setUsername] = useState('');
@@ -14,20 +14,29 @@ const AdminLogin = () => {
   const [redirecting, setRedirecting] = useState(true);
   const [countdown, setCountdown] = useState(3);
   const [loading, setLoading] = useState(false);
+  const [checkingAttempts, setCheckingAttempts] = useState(true); // State for checking attempts
   const [attemptsInfo, setAttemptsInfo] = useState<{ attempts: number; remaining: number } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
-  const sessionIdRef = useRef(Math.random().toString(36).substring(7)); // Unique session ID
+  // Generate session ID once per component mount
+  const sessionIdRef = useRef(Math.random().toString(36).substring(7));
+  const ipAddressRef = useRef<string | null>(null); // Ref to store IP address
 
   // Fetch IP and check attempts on mount or when redirect is cancelled
   useEffect(() => {
     const fetchIpAndCheckAttempts = async () => {
+      setCheckingAttempts(true); // Start checking
+      setAttemptsInfo(null); // Reset attempts info
       try {
-        const ipResponse = await fetch('https://api.ipify.org?format=json');
-        const { ip } = await ipResponse.json();
-        sessionStorage.setItem('userIP', ip); // Store IP for login attempt
+        // Fetch IP only once if not already fetched
+        if (!ipAddressRef.current) {
+          const ipResponse = await fetch('https://api.ipify.org?format=json');
+          if (!ipResponse.ok) throw new Error('Failed to fetch IP address');
+          const { ip } = await ipResponse.json();
+          ipAddressRef.current = ip;
+        }
 
-        const attemptsResponse = await fetch(`/api/admin/check-attempts?ip=${ip}&session=${sessionIdRef.current}`);
+        const attemptsResponse = await fetch(`/api/admin/check-attempts?ip=${ipAddressRef.current}&session=${sessionIdRef.current}`);
         if (attemptsResponse.ok) {
           const data = await attemptsResponse.json();
           setAttemptsInfo(data);
@@ -36,23 +45,31 @@ const AdminLogin = () => {
               title: "Too many failed attempts",
               description: "Login is temporarily blocked. Please try again later.",
               variant: "destructive",
+              duration: 10000, // Keep message longer
             });
           }
+        } else {
+             console.error("Failed to check attempts:", attemptsResponse.statusText);
+             // Don't block login if check fails, but log it
         }
       } catch (error) {
         console.error("Error fetching IP or checking attempts:", error);
         toast({
           title: "Network Error",
-          description: "Could not check login status. Please try again.",
+          description: "Could not check login status. Please check your connection.",
           variant: "destructive",
         });
+         // Allow login attempt even if check fails
+         setAttemptsInfo({ attempts: 0, remaining: 7 }); // Assume attempts are available
+      } finally {
+          setCheckingAttempts(false); // Finish checking
       }
     };
 
     if (!redirecting) {
       fetchIpAndCheckAttempts();
     }
-  }, [redirecting, toast]);
+  }, [redirecting, toast]); // Rerun effect if redirecting state changes
 
   // Countdown timer effect
   useEffect(() => {
@@ -68,9 +85,8 @@ const AdminLogin = () => {
     };
   }, [redirecting, countdown]);
 
-
   const cancelRedirect = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault(); // Prevent potential form submission if wrapped in form
+    e.preventDefault();
     setRedirecting(false);
   };
 
@@ -78,15 +94,15 @@ const AdminLogin = () => {
     e.preventDefault();
     setLoading(true);
 
-    const ipAddress = sessionStorage.getItem('userIP');
+    const ipAddress = ipAddressRef.current; // Get IP from ref
     if (!ipAddress) {
-      toast({ title: "Error", description: "Could not retrieve IP address. Please refresh.", variant: "destructive" });
+      toast({ title: "Error", description: "IP address not available. Please refresh and try again.", variant: "destructive" });
       setLoading(false);
       return;
     }
 
     if (attemptsInfo && attemptsInfo.remaining <= 0) {
-       toast({ title: "Login Blocked", description: "Too many failed attempts. Try again later.", variant: "destructive" });
+       toast({ title: "Login Blocked", description: "Too many failed attempts. Please try again later.", variant: "destructive" });
        setLoading(false);
        return;
     }
@@ -106,27 +122,50 @@ const AdminLogin = () => {
       const data = await response.json();
 
       if (response.ok && data.success) {
-        localStorage.setItem('authToken', data.token); // Store token
+        localStorage.setItem('authToken', data.token);
         localStorage.setItem('username', data.username);
         toast({ title: "Login Successful", description: `Welcome, ${data.username}!` });
-        navigate('/admin/dashboard'); // Redirect to dashboard
+        // TODO: Replace '/admin/dashboard' with your actual dashboard route if different
+        navigate('/admin/dashboard');
       } else {
+        // Handle specific error statuses
+        let description = data.error || 'Invalid credentials or login issue.';
+        if (response.status === 429) {
+            description = "Too many failed attempts. Please try again later.";
+        } else if (response.status === 401) {
+            description = "Invalid username or password.";
+        }
+
         toast({
           title: "Login Failed",
-          description: data.error || 'Invalid credentials or too many attempts.',
+          description: description,
           variant: "destructive",
         });
-        // Refresh attempts count after failed login
-         const attemptsResponse = await fetch(`/api/admin/check-attempts?ip=${ipAddress}&session=${sessionIdRef.current}`);
-         if (attemptsResponse.ok) {
-           setAttemptsInfo(await attemptsResponse.json());
+
+        // Refresh attempts count immediately after a failed login
+         try {
+           const attemptsResponse = await fetch(`/api/admin/check-attempts?ip=${ipAddress}&session=${sessionIdRef.current}`);
+           if (attemptsResponse.ok) {
+             const newAttemptsData = await attemptsResponse.json();
+              setAttemptsInfo(newAttemptsData);
+               if (newAttemptsData.remaining <= 0) {
+                 toast({
+                   title: "Login Blocked",
+                   description: "Maximum login attempts reached. Please try again later.",
+                   variant: "destructive",
+                   duration: 10000,
+                 });
+               }
+           }
+         } catch (attemptsError) {
+             console.error("Failed to re-check attempts:", attemptsError);
          }
       }
     } catch (error) {
-      console.error("Login error:", error);
+      console.error("Login network/fetch error:", error);
       toast({
         title: "Login Error",
-        description: "An error occurred during login. Check console for details.",
+        description: "A network error occurred. Please check your connection and try again.",
         variant: "destructive",
       });
     } finally {
@@ -171,16 +210,21 @@ const AdminLogin = () => {
             <CardDescription>Access the ForexNepal dashboard.</CardDescription>
           </CardHeader>
           <CardContent>
-             {attemptsInfo && attemptsInfo.remaining < 7 && attemptsInfo.remaining > 0 && (
+             {checkingAttempts && (
+                 <div className="flex items-center justify-center text-muted-foreground text-sm mb-4">
+                     <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Checking login status...
+                 </div>
+             )}
+             {!checkingAttempts && attemptsInfo && attemptsInfo.remaining < 7 && attemptsInfo.remaining > 0 && (
                <Alert variant="destructive" className="mb-4">
                  <Terminal className="h-4 w-4" />
                  <AlertTitle>Warning</AlertTitle>
                  <AlertDescription>
-                   {attemptsInfo.remaining} login attempt{attemptsInfo.remaining > 1 ? 's' : ''} remaining before temporary block.
+                   {attemptsInfo.remaining} login attempt{attemptsInfo.remaining !== 1 ? 's' : ''} remaining before temporary block.
                  </AlertDescription>
                </Alert>
              )}
-             {attemptsInfo && attemptsInfo.remaining <= 0 && (
+             {!checkingAttempts && attemptsInfo && attemptsInfo.remaining <= 0 && (
                 <Alert variant="destructive" className="mb-4">
                   <Terminal className="h-4 w-4" />
                   <AlertTitle>Login Blocked</AlertTitle>
@@ -199,7 +243,9 @@ const AdminLogin = () => {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Enter username"
                   required
-                  disabled={loading || (attemptsInfo && attemptsInfo.remaining <= 0)}
+                  disabled={loading || checkingAttempts || (attemptsInfo && attemptsInfo.remaining <= 0)}
+                  autoCapitalize="none" // Prevent auto-capitalization issues
+                  autoComplete="username"
                 />
               </div>
               <div>
@@ -211,10 +257,16 @@ const AdminLogin = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter password"
                   required
-                  disabled={loading || (attemptsInfo && attemptsInfo.remaining <= 0)}
+                  disabled={loading || checkingAttempts || (attemptsInfo && attemptsInfo.remaining <= 0)}
+                   autoComplete="current-password"
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || (attemptsInfo && attemptsInfo.remaining <= 0)}>
+              <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading || checkingAttempts || (attemptsInfo && attemptsInfo.remaining <= 0)}
+                >
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 {loading ? 'Logging in...' : 'Login'}
               </Button>
             </form>
