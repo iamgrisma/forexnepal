@@ -12,9 +12,8 @@ import { Loader2, ArrowLeft, Save } from 'lucide-react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
-// --- Import ReactQuill and its CSS ---
 import ReactQuill from 'react-quill';
-import 'react-quill/dist/quill.snow.css'; // Import Quill styles
+import 'react-quill/dist/quill.snow.css';
 
 // Define Zod schema for validation
 const postSchema = z.object({
@@ -206,24 +205,29 @@ const PostEditor = () => {
      );
    }
 
-  // --- ReactQuill Modules Configuration ---
   const modules = {
     toolbar: [
-      [{ 'header': [1, 2, 3, false] }],
-      ['bold', 'italic', 'underline','strike', 'blockquote', 'code-block'],
-      [{'list': 'ordered'}, {'list': 'bullet'}, {'indent': '-1'}, {'indent': '+1'}],
-      ['link', 'image', 'video'],
+      [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+      ['bold', 'italic', 'underline', 'strike'],
+      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+      [{ 'indent': '-1'}, { 'indent': '+1' }],
+      ['blockquote', 'code-block'],
+      ['link', 'image'],
       [{ 'color': [] }, { 'background': [] }],
       [{ 'align': [] }],
       ['clean']
     ],
+    clipboard: {
+      matchVisual: false,
+    }
   };
 
   const formats = [
     'header',
-    'bold', 'italic', 'underline', 'strike', 'blockquote', 'code-block',
+    'bold', 'italic', 'underline', 'strike',
+    'blockquote', 'code-block',
     'list', 'bullet', 'indent',
-    'link', 'image', 'video',
+    'link', 'image',
     'color', 'background',
     'align'
   ];
@@ -266,29 +270,30 @@ const PostEditor = () => {
                   {errors.excerpt && <p className="text-xs text-destructive mt-1">{errors.excerpt.message}</p>}
                 </div>
 
-                {/* --- Content - ReactQuill Editor --- */}
                 <div>
-                  <label htmlFor="content-editor" className="block text-sm font-medium mb-1">Content</label>
+                  <label htmlFor="content-editor" className="block text-sm font-medium mb-2">Content</label>
                   <Controller
                       name="content"
                       control={control}
                       rules={{ required: 'Content is required', minLength: { value: 10, message: 'Content must be at least 10 characters'} }}
                       render={({ field }) => (
-                          <ReactQuill
-                            id="content-editor"
-                            theme="snow"
-                            value={field.value}
-                            onChange={field.onChange}
-                            modules={modules}
-                            formats={formats}
-                            placeholder="Write your post content here..."
-                            style={{ backgroundColor: 'white', minHeight: '300px' }} // Added white background
+                          <div className="bg-white rounded-md border">
+                            <ReactQuill
+                              id="content-editor"
+                              theme="snow"
+                              value={field.value}
+                              onChange={field.onChange}
+                              modules={modules}
+                              formats={formats}
+                              placeholder="Write your post content here... Use the toolbar above to format text, add links, images, and more."
+                              className="min-h-[400px]"
                            />
+                          </div>
                       )}
                     />
-                  {errors.content && <p className="text-xs text-destructive mt-1">{errors.content.message}</p>}
+                  {errors.content && <p className="text-xs text-destructive mt-2">{errors.content.message}</p>}
+                  <p className="text-xs text-muted-foreground mt-2">Use the rich text editor above for formatting. Supports headings, bold, italic, links, images, code blocks, lists, and more.</p>
                 </div>
-                {/* --- End ReactQuill Editor --- */}
 
 
                 {/* Featured Image URL */}
