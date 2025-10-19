@@ -1,20 +1,22 @@
-const CACHE_NAME = 'forex-pwa-v1';
+const CACHE_NAME = 'forex-pwa-v2';
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
 const urlsToCache = [
   '/',
   '/index.html',
-  '/src/main.tsx',
-  '/src/App.tsx',
-  '/src/index.css',
   '/manifest.json',
   '/favicon.ico',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(urlsToCache);
+      return cache.addAll(urlsToCache).catch((err) => {
+        console.warn('Cache addAll failed:', err);
+        return Promise.resolve();
+      });
     })
   );
   self.skipWaiting();
