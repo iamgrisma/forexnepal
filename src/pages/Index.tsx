@@ -1,47 +1,56 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, fetchPreviousDayRates, formatDateLong } from '../services/forexService';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient
+import { fetchForexRates, fetchPreviousDayRates, formatDateLong, fetchForexRatesByDate } from '../services/forexService'; // Add fetchForexRatesByDate
 import { Rate, RatesData } from '../types/forex';
 import ForexTable from '../components/ForexTable';
+import CurrencyCard from '../components/CurrencyCard';
 import ForexTicker from '../components/ForexTicker';
-import CurrencyCard from '../components/CurrencyCard'; // Ensure correct import
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3, Download } from 'lucide-react';
+import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight } from 'lucide-react'; // Add Chevron icons
 import { useToast } from '@/components/ui/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
 import html2canvas from 'html2canvas';
-import { cn } from "@/lib/utils"; // Import cn utility
+import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For date picker
+import { Calendar } from '@/components/ui/calendar'; // For date picker
+import { format, subDays, addDays } from 'date-fns'; // For date manipulation
 
 const Index = () => {
+  const queryClient = useQueryClient(); // Initialize useQueryClient
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [popularCurrencies, setPopularCurrencies] = useState<Rate[]>([]);
   const [asianCurrencies, setAsianCurrencies] = useState<Rate[]>([]);
   const [europeanCurrencies, setEuropeanCurrencies] = useState<Rate[]>([]);
   const [middleEastCurrencies, setMiddleEastCurrencies] = useState<Rate[]>([]);
   const [otherCurrencies, setOtherCurrencies] = useState<Rate[]>([]);
-  const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]); // Keep this state
+  const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // State for selected date
   const { toast } = useToast();
 
+  // Fetch current day's rates based on selectedDate
   const {
     data: forexData,
     isLoading,
     isError,
     error,
-    refetch
+    refetch: refetchCurrentRates
   } = useQuery({
-    queryKey: ['forexRates'],
-    queryFn: fetchForexRates,
+    queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]], // Key includes date
+    queryFn: () => fetchForexRatesByDate(selectedDate), // Use fetchForexRatesByDate
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 15, // 15 minutes
   });
 
+  // Fetch previous day's rates based on selectedDate
   const {
     data: prevDayData,
+    isLoading: isLoadingPrevDay,
+    refetch: refetchPrevDayRates
   } = useQuery({
-    queryKey: ['previousDayRates'],
-    queryFn: fetchPreviousDayRates,
+    queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]], // Key includes date
+    queryFn: () => fetchPreviousDayRates(subDays(selectedDate, 1)), // Fetch for the day before selectedDate
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 60, // 1 hour
   });
@@ -61,7 +70,7 @@ const Index = () => {
     if (prevDayData?.data?.payload?.[0]?.rates) {
       setPreviousDayRates(prevDayData.data.payload[0].rates);
     } else {
-        setPreviousDayRates([]); // Clear if no data
+      setPreviousDayRates([]); // Clear if no data
     }
   }, [prevDayData]);
 
@@ -69,19 +78,16 @@ const Index = () => {
     if (forexData?.data?.payload?.[0]?.rates) {
       const allRates = forexData.data.payload[0].rates;
 
-      // Define currency categories
       const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
       const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
       const europeanCodes = ['EUR', 'GBP', 'CHF', 'SEK', 'DKK'];
       const middleEastCodes = ['SAR', 'QAR', 'AED', 'KWD', 'BHD', 'OMR'];
 
-      // Filter rates to get categorized currencies
       const popular = allRates.filter(rate => popularCodes.includes(rate.currency.iso3));
       const asian = allRates.filter(rate => asianCodes.includes(rate.currency.iso3));
       const european = allRates.filter(rate => europeanCodes.includes(rate.currency.iso3));
       const middleEast = allRates.filter(rate => middleEastCodes.includes(rate.currency.iso3));
 
-      // Other currencies (not in any other category)
       const allCategorizedCodes = [...new Set([...popularCodes, ...asianCodes, ...europeanCodes, ...middleEastCodes])];
       const others = allRates.filter(rate => !allCategorizedCodes.includes(rate.currency.iso3));
 
@@ -90,6 +96,12 @@ const Index = () => {
       setEuropeanCurrencies(european);
       setMiddleEastCurrencies(middleEast);
       setOtherCurrencies(others);
+    } else {
+        setPopularCurrencies([]);
+        setAsianCurrencies([]);
+        setEuropeanCurrencies([]);
+        setMiddleEastCurrencies([]);
+        setOtherCurrencies([]);
     }
   }, [forexData]);
 
@@ -98,44 +110,83 @@ const Index = () => {
       title: "Refreshing data",
       description: "Fetching the latest forex rates...",
     });
-    // Refetch both current and previous day rates
+    // Invalidate and refetch queries for the current selected date
     await Promise.all([
-        refetch(), // Refetches 'forexRates' query
-        queryClient.invalidateQueries({ queryKey: ['previousDayRates'] }) // Invalidate and refetch previous day rates
+      queryClient.invalidateQueries({ queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]] }),
+      queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]] })
     ]);
   };
 
-  const downloadTableAsImage = async () => {
-    // ... (downloadTableAsImage function remains the same)
-    const tableContainer = document.getElementById('forex-table-container');
-    if (!tableContainer) return;
+  const ratesData: RatesData | undefined = forexData?.data?.payload?.[0];
+  const rates: Rate[] = ratesData?.rates || [];
 
-    // Create a wrapper for the image content
+  const handleDateChange = (date: Date | undefined) => {
+    if (date) {
+      setSelectedDate(date);
+    }
+  };
+
+  const navigateDate = (direction: 'prev' | 'next') => {
+    if (direction === 'prev') {
+      setSelectedDate(subDays(selectedDate, 1));
+    } else {
+      const nextDate = addDays(selectedDate, 1);
+      // Prevent navigating past today's date
+      if (nextDate <= new Date()) {
+        setSelectedDate(nextDate);
+      }
+    }
+  };
+
+  const downloadContentAsImage = async () => {
+    const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
+    const targetElement = document.getElementById(targetElementId);
+
+    if (!targetElement) {
+        toast({
+            title: "Error",
+            description: "Content for download not found.",
+            variant: "destructive",
+        });
+        return;
+    }
+
+    // Create a temporary wrapper to include the title and footer for both views
     const wrapper = document.createElement('div');
-    wrapper.style.width = '1500px';
+    wrapper.style.width = 'fit-content'; // Adjust width based on content
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = 'white';
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.alignItems = 'center'; // Center the content
 
-    // Title
+    // Title for the image
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
     titleEl.style.fontSize = '32px';
     titleEl.style.fontWeight = 'bold';
     titleEl.style.marginBottom = '30px';
     titleEl.style.color = '#1f2937';
-    const dateStr = ratesData?.date ? new Date(ratesData.date).toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    }) : new Date().toLocaleDateString('en-US', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-    });
-    titleEl.textContent = `Foreign Exchange Rate for Nepali Currencies on ${dateStr}`;
+    titleEl.style.whiteSpace = 'pre-wrap'; // Allows line breaks
+    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(selectedDate)}`;
     wrapper.appendChild(titleEl);
 
-    // Clone and style the table
-    const tableClone = tableContainer.cloneNode(true) as HTMLElement;
-    tableClone.style.fontSize = '16px';
-    wrapper.appendChild(tableClone);
+    // Clone the actual content (table or grid)
+    const contentClone = targetElement.cloneNode(true) as HTMLElement;
+    contentClone.style.fontSize = '16px'; // Standardize font size for image
+    // Ensure grid layout works well for image by potentially adjusting column count if too wide
+    if (viewMode === 'grid') {
+        contentClone.style.display = 'grid';
+        contentClone.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))'; // Adjust as needed
+        contentClone.style.gap = '20px'; // Adjust gap
+        contentClone.style.width = '1200px'; // Fixed width for consistent image output
+        contentClone.style.padding = '20px';
+    } else {
+        contentClone.style.width = '1200px'; // Fixed width for table
+        contentClone.style.padding = '20px';
+    }
+    wrapper.appendChild(contentClone);
 
     // Footer
     const footer = document.createElement('div');
@@ -143,6 +194,7 @@ const Index = () => {
     footer.style.textAlign = 'center';
     footer.style.fontSize = '14px';
     footer.style.color = '#6b7280';
+    footer.style.width = '100%'; // Ensure footer stretches if needed
 
     const source = document.createElement('p');
     source.style.marginBottom = '10px';
@@ -174,55 +226,46 @@ const Index = () => {
 
     wrapper.appendChild(footer);
 
-    // Temporarily add to DOM
+    // Temporarily add to DOM to render for html2canvas
     wrapper.style.position = 'absolute';
     wrapper.style.left = '-9999px';
     document.body.appendChild(wrapper);
 
     try {
       const canvas = await html2canvas(wrapper, {
-        scale: 2,
+        scale: 2, // High resolution
         backgroundColor: '#ffffff',
-        width: 1500,
-        height: wrapper.offsetHeight
+        width: wrapper.offsetWidth, // Use wrapper's actual rendered width
+        height: wrapper.offsetHeight // Use wrapper's actual rendered height
       });
 
       const link = document.createElement('a');
-      link.download = `forex-rates-${new Date().toISOString().split('T')[0]}.png`;
+      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
 
       toast({
         title: "Success",
-        description: "Table downloaded as image",
+        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as image.`,
       });
     } catch (error) {
       console.error('Error generating image:', error);
       toast({
         title: "Error",
-        description: "Failed to download table as image",
+        description: `Failed to download ${viewMode === 'table' ? 'table' : 'grid'} as image.`,
         variant: "destructive",
       });
     } finally {
-      document.body.removeChild(wrapper);
+      document.body.removeChild(wrapper); // Clean up
     }
   };
 
 
-  const ratesData: RatesData | undefined = forexData?.data?.payload?.[0];
-  const rates: Rate[] = ratesData?.rates || [];
-
-  let title = "Foreign Exchange Rates";
-  if (ratesData?.date) {
-    const headerDate = new Date(ratesData.date);
-    title = `Foreign Exchange Rates as Per Nepal Rastra Bank for ${formatDateLong(headerDate)}`;
-  }
-
   // Helper function to render grid cards
   const renderGridCards = (currencyList: Rate[]) => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {isLoading ? (
-        Array.from({ length: 6 }).map((_, index) => ( // Adjust skeleton count as needed
+    <div id="forex-grid-container" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      {isLoading || isLoadingPrevDay ? ( // Indicate loading for prev day rates too
+        Array.from({ length: 9 }).map((_, index) => (
           <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
         ))
       ) : (
@@ -238,12 +281,11 @@ const Index = () => {
     </div>
   );
 
-
   return (
     <Layout>
       <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
-          {/* Header section remains the same */}
+          {/* Header section */}
           <div className="text-center mb-12 animate-fade-in">
             <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4">
               <Gitlab className="h-4 w-4 mr-1" />
@@ -255,17 +297,84 @@ const Index = () => {
             </p>
           </div>
 
-          {/* Buttons section remains the same */}
+          {/* New: Main Title with Date Navigation */}
+          <div className="text-center mb-8">
+            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
+              Foreign Exchange Rates as Per Nepal Rastra Bank
+            </h2>
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigateDate('prev')}
+                title="Previous Day"
+                className="group relative"
+              >
+                <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
+                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
+                  Previous Day
+                </span>
+              </Button>
+
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-[240px] justify-center text-left font-normal group relative",
+                      !selectedDate && "text-muted-foreground"
+                    )}
+                  >
+                    <span className="text-lg font-semibold text-gray-700">
+                      {formatDateLong(selectedDate)}
+                    </span>
+                    <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
+                      Click to change date
+                    </span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={handleDateChange}
+                    initialFocus
+                    captionLayout="dropdown-buttons" // For month/year dropdowns
+                    fromYear={2000} // Start year
+                    toYear={new Date().getFullYear()} // End year
+                    disabled={(date) => date > new Date()} // Disable future dates
+                  />
+                </PopoverContent>
+              </Popover>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigateDate('next')}
+                title="Next Day"
+                className="group relative"
+                disabled={format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')} // Disable if already today
+              >
+                <ChevronRight className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
+                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
+                  Next Day
+                </span>
+              </Button>
+            </div>
+          </div>
+
+
+          {/* Action buttons (Download, Refresh, View Mode) */}
           <div className="flex flex-wrap justify-end items-center mb-6 gap-2">
             <Button
-              onClick={downloadTableAsImage}
+              onClick={downloadContentAsImage}
               variant="outline"
               size="sm"
               className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
-              disabled={isLoading || rates.length === 0 || viewMode !== 'table'}
+              disabled={isLoading || rates.length === 0} // Enabled for both views
             >
               <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Download</span>
+              <span className="hidden sm:inline">Download Image</span>
             </Button>
             <Button
               onClick={handleRefresh}
@@ -301,79 +410,79 @@ const Index = () => {
           </div>
 
 
-          {/* Ticker component remains the same */}
+          {/* Ticker component */}
           <ForexTicker rates={rates} isLoading={isLoading} />
 
           <Tabs defaultValue="all" className="mb-12">
-             {/* Scrollable TabsList remains the same */}
-             <div className="w-full overflow-x-auto pb-2 mb-8 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-               <TabsList className={cn(
-                   "mb-0 w-max bg-white/80 backdrop-blur-sm border border-gray-100",
-                   "sm:w-full sm:inline-flex"
-                 )}>
-                 <TabsTrigger value="all">All Currencies</TabsTrigger>
-                 <TabsTrigger value="popular">Popular</TabsTrigger>
-                 <TabsTrigger value="asian">Asian</TabsTrigger>
-                 <TabsTrigger value="european">European</TabsTrigger>
-                 <TabsTrigger value="middle-east">Middle East</TabsTrigger>
-                 <TabsTrigger value="other">Other</TabsTrigger>
-               </TabsList>
-             </div>
+            {/* Scrollable TabsList */}
+            <div className="w-full overflow-x-auto pb-2 mb-8 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+              <TabsList className={cn(
+                  "mb-0 w-max bg-white/80 backdrop-blur-sm border border-gray-100",
+                  "sm:w-full sm:inline-flex"
+                )}>
+                <TabsTrigger value="all">All Currencies</TabsTrigger>
+                <TabsTrigger value="popular">Popular</TabsTrigger>
+                <TabsTrigger value="asian">Asian</TabsTrigger>
+                <TabsTrigger value="european">European</TabsTrigger>
+                <TabsTrigger value="middle-east">Middle East</TabsTrigger>
+                <TabsTrigger value="other">Other</TabsTrigger>
+              </TabsList>
+            </div>
 
 
-            {/* TabsContent sections now use renderGridCards helper */}
+            {/* TabsContent sections */}
             <TabsContent value="all" className="animate-fade-in">
               {viewMode === 'table' ? (
                 <div id="forex-table-container">
-                  <ForexTable rates={rates} isLoading={isLoading} title={title} previousDayRates={previousDayRates} />
+                  <ForexTable rates={rates} isLoading={isLoading} title="" previousDayRates={previousDayRates} /> {/* Title moved globally */}
                 </div>
               ) : (
-                renderGridCards(rates) // Use helper
+                renderGridCards(rates)
               )}
             </TabsContent>
 
             <TabsContent value="popular" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={popularCurrencies} isLoading={isLoading} title="Popular Foreign Currencies" previousDayRates={previousDayRates} />
+                <ForexTable rates={popularCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
               ) : (
-                renderGridCards(popularCurrencies) // Use helper
+                renderGridCards(popularCurrencies)
               )}
             </TabsContent>
 
             <TabsContent value="asian" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={asianCurrencies} isLoading={isLoading} title="Asian Currencies" previousDayRates={previousDayRates} />
+                <ForexTable rates={asianCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
               ) : (
-                 renderGridCards(asianCurrencies) // Use helper
+                 renderGridCards(asianCurrencies)
               )}
             </TabsContent>
 
             <TabsContent value="european" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={europeanCurrencies} isLoading={isLoading} title="European Currencies" previousDayRates={previousDayRates} />
+                <ForexTable rates={europeanCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
               ) : (
-                 renderGridCards(europeanCurrencies) // Use helper
+                 renderGridCards(europeanCurrencies)
               )}
             </TabsContent>
 
             <TabsContent value="middle-east" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={middleEastCurrencies} isLoading={isLoading} title="Middle East Currencies" previousDayRates={previousDayRates} />
+                <ForexTable rates={middleEastCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
               ) : (
-                 renderGridCards(middleEastCurrencies) // Use helper
+                 renderGridCards(middleEastCurrencies)
               )}
             </TabsContent>
 
              <TabsContent value="other" className="animate-fade-in">
                {viewMode === 'table' ? (
-                 <ForexTable rates={otherCurrencies} isLoading={isLoading} title="Other Currencies" previousDayRates={previousDayRates} />
+                 <ForexTable rates={otherCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
                ) : (
-                  renderGridCards(otherCurrencies) // Use helper
+                  renderGridCards(otherCurrencies)
                )}
              </TabsContent>
           </Tabs>
 
-          {/* Info and AdSense sections remain the same */}
+          {/* Info and AdSense sections */}
            <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8 border border-gray-100">
              <h2 className="text-xl font-semibold mb-3 text-gray-900">About Nepal's Foreign Exchange Rates</h2>
              <p className="text-gray-600 leading-relaxed">
