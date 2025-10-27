@@ -17,6 +17,7 @@ import NotFound from "./pages/NotFound";
 import AdminLogin from "./pages/AdminLogin";
 import Posts from "./pages/Posts";
 import PostDetail from "./pages/PostDetail";
+import ChangePassword from "./pages/ChangePassword";
 
 // --- Ensure these imports are correct ---
 import ProtectedRoute from "./components/ProtectedRoute"; // Import the guard
@@ -54,6 +55,8 @@ const App = () => (
         <Route element={<ProtectedRoute />}>
            {/* Define the dashboard route HERE */}
            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+           {/* Define the change password route HERE */}
+           <Route path="/admin/change-password" element={<ChangePassword />} />
            {/* Define the post editor routes HERE */}
            <Route path="/admin/posts/new" element={<PostEditor />} />
            <Route path="/admin/posts/edit/:id" element={<PostEditor />} />

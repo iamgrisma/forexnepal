@@ -5,7 +5,8 @@
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
+  plaintext_password TEXT,
+  password_hash TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -62,10 +63,10 @@ CREATE TABLE IF NOT EXISTS site_settings (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Insert default admin user (username: ForexAdmin, password: Administrator)
--- Password hash is bcrypt hash of "Administrator"
-INSERT OR IGNORE INTO users (username, password_hash)
-VALUES ('ForexAdmin', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+-- Insert default admin user (username: admin, plaintext password: admin)
+-- User will be forced to change password on first login
+INSERT OR IGNORE INTO users (username, plaintext_password)
+VALUES ('admin', 'admin');
 
 -- Insert default header tags setting
 INSERT OR IGNORE INTO site_settings (setting_key, setting_value)

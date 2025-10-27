@@ -6,7 +6,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
 
 const ChangePasswordForm = () => {
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,7 +29,6 @@ const ChangePasswordForm = () => {
     if (!token || !username) {
       toast({ title: "Error", description: "Authentication error. Please log in again.", variant: "destructive" });
       setLoading(false);
-      // Optional: redirect to login
       return;
     }
 
@@ -42,10 +40,9 @@ const ChangePasswordForm = () => {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          username, // Send username for backend verification if needed
-          currentPassword, // Backend currently doesn't verify old pw, but we send it
+          username,
           newPassword,
-          token, // Send token again in body as per worker logic (though header should suffice)
+          keepSamePassword: false,
         }),
       });
 
@@ -53,8 +50,6 @@ const ChangePasswordForm = () => {
 
       if (response.ok && data.success) {
         toast({ title: "Success", description: "Password changed successfully." });
-        // Clear fields after success
-        setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       } else {
@@ -62,7 +57,7 @@ const ChangePasswordForm = () => {
       }
     } catch (error) {
       console.error("Password change error:", error);
-      toast({ title: "Error", description: "An network error occurred.", variant: "destructive" });
+      toast({ title: "Error", description: "A network error occurred.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -72,22 +67,10 @@ const ChangePasswordForm = () => {
     <Card>
       <CardHeader>
         <CardTitle>Change Admin Password</CardTitle>
-        <CardDescription>Update your login password. Your current password isn't verified by the backend, but enter your new password carefully.</CardDescription>
+        <CardDescription>Update your login password with a new secure password.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* We keep current password field even if backend doesn't use it for now */}
-          <div>
-            <label className="text-sm font-medium mb-1 block" htmlFor="currentPassword">Current Password (Optional)</label>
-            <Input
-              id="currentPassword"
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Enter current password (not verified)"
-              disabled={loading}
-            />
-          </div>
           <div>
             <label className="text-sm font-medium mb-1 block" htmlFor="newPassword">New Password</label>
             <Input

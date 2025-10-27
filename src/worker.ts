@@ -187,17 +187,10 @@ async function simpleHash(password: string): Promise<string> {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function simpleHashCompare(password: string, storedHash: string | null, env: Env, username: string): Promise<boolean> {
-    // If hash is null or empty, compare against the default password AND check recovery status
+async function simpleHashCompare(password: string, storedHash: string | null): Promise<boolean> {
     if (!storedHash) {
-       const recoveryCheck = await env.FOREX_DB.prepare(`SELECT COUNT(*) as count FROM user_recovery`).first<{ count: number }>();
-       const passwordHasBeenSet = recoveryCheck && recoveryCheck.count > 0;
-       if (!passwordHasBeenSet && password === 'Administrator') {
-           return true; // Valid default password before first change
-       }
-       return false; // Hash missing and it's not the valid default scenario
+        return false;
     }
-    // Compare against the stored hash
     const inputHash = await simpleHash(password);
     return inputHash === storedHash;
 }
@@ -571,22 +564,27 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         }
 
         const user = await env.FOREX_DB.prepare(
-            `SELECT username, password_hash FROM users WHERE username = ?`
-        ).bind(username).first<{ username: string; password_hash: string | null }>();
+            `SELECT username, plaintext_password, password_hash FROM users WHERE username = ?`
+        ).bind(username).first<{ username: string; plaintext_password: string | null; password_hash: string | null }>();
 
         let isValid = false;
+        let mustChangePassword = false;
+
         if (user) {
-            // Pass env and username for the DB check inside simpleHashCompare
-            isValid = await simpleHashCompare(password, user.password_hash, env, username);
-             // If login is valid using default password AND hash is missing, store hash now
-             if (isValid && password === 'Administrator' && !user.password_hash) {
-                const defaultHash = await simpleHash('Administrator');
-                await env.FOREX_DB.prepare(`UPDATE users SET password_hash = ? WHERE username = ?`).bind(defaultHash, username).run();
-                // Also mark recovery state as password set
-                 await env.FOREX_DB.prepare(
-                     `INSERT OR IGNORE INTO user_recovery (id, recovery_token) VALUES (1, 'default_hash_set') ON CONFLICT(id) DO UPDATE SET recovery_token = excluded.recovery_token`
-                 ).run();
-             }
+            if (user.plaintext_password && user.password_hash) {
+                if (password === user.plaintext_password || await simpleHashCompare(password, user.password_hash)) {
+                    isValid = true;
+                    mustChangePassword = true;
+                }
+            } else if (user.plaintext_password && !user.password_hash) {
+                if (password === user.plaintext_password) {
+                    isValid = true;
+                    mustChangePassword = true;
+                }
+            } else if (!user.plaintext_password && user.password_hash) {
+                isValid = await simpleHashCompare(password, user.password_hash);
+                mustChangePassword = false;
+            }
         }
 
         await env.FOREX_DB.prepare(
@@ -598,7 +596,12 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         }
 
         const token = await generateToken(username);
-        return new Response(JSON.stringify({ success: true, token, username }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        return new Response(JSON.stringify({
+            success: true,
+            token,
+            username,
+            mustChangePassword
+        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
         console.error('Login error:', error.message, error.cause);
@@ -637,32 +640,27 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
-        const { username, currentPassword, newPassword } = await request.json();
+        const { username, newPassword, keepSamePassword } = await request.json();
         if (!newPassword || newPassword.length < 8) {
              return new Response(JSON.stringify({ success: false, error: 'New password must be >= 8 chars.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
         const user = await env.FOREX_DB.prepare(
-            `SELECT username, password_hash FROM users WHERE username = ?`
-        ).bind(username).first<{ username: string; password_hash: string | null }>();
+            `SELECT username, plaintext_password, password_hash FROM users WHERE username = ?`
+        ).bind(username).first<{ username: string; plaintext_password: string | null; password_hash: string | null }>();
         if (!user) {
             return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // --- VERIFY CURRENT PASSWORD ---
-        const isCurrentPasswordValid = await simpleHashCompare(currentPassword, user.password_hash, env, username);
-         if (!isCurrentPasswordValid) {
-              return new Response(JSON.stringify({ success: false, error: 'Incorrect current password' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-         }
-        // --- END VERIFY CURRENT PASSWORD ---
+        let newPasswordHash: string;
+        if (keepSamePassword && user.password_hash) {
+            newPasswordHash = user.password_hash;
+        } else {
+            newPasswordHash = await simpleHash(newPassword);
+        }
 
-        const newPasswordHash = await simpleHash(newPassword);
         await env.FOREX_DB.prepare(
-            `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?` // Use UTC 'now' for consistency
+            `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
-        // Update recovery status using INSERT OR REPLACE for simplicity
-         await env.FOREX_DB.prepare(
-             `INSERT OR REPLACE INTO user_recovery (id, recovery_token) VALUES (1, ?)`
-         ).bind(`password_set_at_${Date.now()}`).run(); // Store timestamp or indicator
 
         return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {

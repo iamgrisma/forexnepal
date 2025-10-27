@@ -1,12 +1,19 @@
 import Layout from '@/components/Layout';
 import { User, Mail, ExternalLink, TrendingUp, Calculator, BarChart3, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Link } from 'react-router-dom';
 
 const About = () => {
   return (
     <Layout>
       <div className="py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-4xl mx-auto relative">
+          <Link
+            to="/admin/login"
+            className="absolute top-0 right-0 text-xs text-muted-foreground/40 hover:text-muted-foreground/60 transition-colors"
+          >
+            login
+          </Link>
           <div className="text-center mb-8">
             <User className="h-12 w-12 mx-auto mb-4 text-primary" />
             <h1 className="text-4xl font-bold mb-2">About Forex NPR</h1>

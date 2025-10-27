@@ -12,7 +12,6 @@ const AdminLogin = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [redirecting, setRedirecting] = useState(true);
-  // Extended countdown to 5 seconds (was 3)
   const [countdown, setCountdown] = useState(5);
   const [loading, setLoading] = useState(false);
   const [checkingAttempts, setCheckingAttempts] = useState(true);
