@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, isBefore } from 'date-fns';
+import Layout from '@/components/Layout';
 
 const ITEMS_PER_PAGE = 60; // 2 months worth of days
 
@@ -95,9 +96,14 @@ const Archive = () => {
     window.history.pushState({}, '', '/archive');
   };
 
+  useEffect(() => {
+    document.title = `Daily Archive - Page ${currentPage} | Nepal Rastra Bank`;
+  }, [currentPage]);
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
+    <Layout>
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
         <div className="mb-8">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
             Daily Archive
@@ -233,6 +239,7 @@ const Archive = () => {
         )}
       </div>
     </div>
+    </Layout>
   );
 };
 

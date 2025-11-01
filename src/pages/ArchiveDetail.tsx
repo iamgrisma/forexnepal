@@ -6,7 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, TrendingUp, TrendingDown } from 'lucide-react';
 import { fetchForexRatesByDate, fetchPreviousDayRates, formatDateLong, getFlagEmoji } from '@/services/forexService';
-import { format, parseISO, subDays, subWeeks, subMonths, subYears } from 'date-fns';
+import { format, parseISO, subDays, subWeeks, subMonths, subYears, isValid } from 'date-fns';
+import Layout from '@/components/Layout';
+import ForexTicker from '@/components/ForexTicker';
 
 const ArchiveDetail = () => {
   const { date } = useParams<{ date: string }>();
@@ -14,32 +16,52 @@ const ArchiveDetail = () => {
   // Parse date from URL format forex-for-YYYY-MM-DD
   const dateMatch = date?.match(/forex-for-(\d{4}-\d{2}-\d{2})/);
   const targetDateStr = dateMatch ? dateMatch[1] : null;
-  const targetDate = targetDateStr ? parseISO(targetDateStr) : new Date();
+  
+  // Validate the parsed date
+  let targetDate = new Date();
+  let isValidDate = false;
+  
+  if (targetDateStr) {
+    try {
+      const parsedDate = parseISO(targetDateStr);
+      if (isValid(parsedDate)) {
+        targetDate = parsedDate;
+        isValidDate = true;
+      }
+    } catch (e) {
+      console.error('Error parsing date:', e);
+    }
+  }
 
   const { data: currentData, isLoading: currentLoading } = useQuery({
     queryKey: ['forex-archive', targetDateStr],
     queryFn: () => fetchForexRatesByDate(targetDate),
-    enabled: !!targetDateStr,
+    enabled: isValidDate,
+    staleTime: 1000 * 60 * 60, // 1 hour
+    retry: 2,
   });
 
   const { data: previousData } = useQuery({
     queryKey: ['forex-previous', targetDateStr],
     queryFn: () => fetchPreviousDayRates(targetDate),
-    enabled: !!targetDateStr,
+    enabled: isValidDate,
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
 
-  if (!targetDateStr) {
+  if (!isValidDate) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <Card>
-          <CardContent className="p-8 text-center">
-            <p className="text-muted-foreground">Invalid date format</p>
-            <Button asChild className="mt-4">
-              <Link to="/archive">Back to Archives</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <p className="text-muted-foreground">Invalid date format. Please use the format: forex-for-YYYY-MM-DD</p>
+              <Button asChild className="mt-4">
+                <Link to="/archive">Back to Archives</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </Layout>
     );
   }
 
@@ -76,7 +98,15 @@ const ArchiveDetail = () => {
   }, [shortDate]);
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <Layout>
+      {/* Ticker component */}
+      <div className="container mx-auto px-4 pt-8">
+        <div className="max-w-7xl mx-auto">
+          <ForexTicker rates={currentRates} isLoading={currentLoading} />
+        </div>
+      </div>
+      
+      <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
           <Button variant="outline" asChild className="mb-4">
             <Link to="/archive" className="flex items-center gap-2">
@@ -231,6 +261,7 @@ const ArchiveDetail = () => {
           )}
         </div>
       </div>
+    </Layout>
   );
 };
 
