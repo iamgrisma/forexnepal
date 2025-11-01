@@ -456,12 +456,14 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                  ORDER BY date ASC`
             ).bind(fromDate, toDate);
 
-            const { results, success: querySuccess, error: queryError } = await query.all();
+            const queryResult = await query.all();
 
-            if (!querySuccess) {
-                 console.error(`D1 Query Error fetching ${currencyCode}:`, queryError);
+            if (!queryResult.success) {
+                 console.error(`D1 Query Error fetching ${currencyCode}`);
                  throw new Error('Database query failed for specific currency');
             }
+            
+            const { results } = queryResult;
 
             // Map results, preserving nulls from DB
             const chartData = results.map((item: any) => ({
@@ -834,11 +836,12 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
             `SELECT id, title, slug, excerpt, featured_image_url, author_name, author_url, published_at
              FROM posts WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC`
         );
-        const { results, success: querySuccess, error: queryError } = await query.all();
-        if (!querySuccess) {
-            console.error('D1 Error fetching public posts:', queryError);
+        const queryResult = await query.all();
+        if (!queryResult.success) {
+            console.error('D1 Error fetching public posts');
             throw new Error('Database query failed');
         }
+        const { results } = queryResult;
         return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } catch (error: any) {
         console.error('Error fetching public posts:', error.message, error.cause);

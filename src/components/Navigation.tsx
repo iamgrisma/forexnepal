@@ -25,6 +25,10 @@ const Navigation = () => {
                 <Home className="h-4 w-4 mr-2" />
                 Home
               </NavLink>
+              <NavLink to="/archive" active={location.pathname.startsWith('/archive')}>
+                <BookOpen className="h-4 w-4 mr-2" />
+                Daily Archive
+              </NavLink>
               <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
                 <BarChart className="h-4 w-4 mr-2" />
                 Charts

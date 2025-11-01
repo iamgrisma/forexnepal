@@ -155,14 +155,19 @@ const PostEditor = () => {
 
      // Content is already managed by react-hook-form via Controller
      const postPayload: PostData = {
-         ...formData,
-         slug: formData.slug || (formData.title ? generateSlug(formData.title) : undefined),
+         title: formData.title || '',
+         content: formData.content || '',
+         slug: formData.slug || (formData.title ? generateSlug(formData.title) : ''),
+         excerpt: formData.excerpt || null,
+         featured_image_url: formData.featured_image_url || null,
+         author_name: formData.author_name,
+         author_url: formData.author_url,
+         status: formData.status || 'draft',
+         meta_title: formData.meta_title,
+         meta_description: formData.meta_description,
          meta_keywords: formData.meta_keywords || null,
      };
 
-     // Ensure optional fields that are empty strings become null
-     postPayload.excerpt = postPayload.excerpt || null;
-     postPayload.featured_image_url = postPayload.featured_image_url || null;
      postPayload.meta_title = postPayload.meta_title || null;
      postPayload.meta_description = postPayload.meta_description || null;
      postPayload.author_name = postPayload.author_name || 'Grisma';

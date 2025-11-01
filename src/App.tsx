@@ -18,6 +18,8 @@ import AdminLogin from "./pages/AdminLogin";
 import Posts from "./pages/Posts";
 import PostDetail from "./pages/PostDetail";
 import ChangePassword from "./pages/ChangePassword";
+import Archive from "./pages/Archive";
+import ArchiveDetail from "./pages/ArchiveDetail";
 
 // --- Ensure these imports are correct ---
 import ProtectedRoute from "./components/ProtectedRoute"; // Import the guard
@@ -46,6 +48,9 @@ const App = () => (
         <Route path="/ads.txt" element={<AdsTxt />} />
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
+        <Route path="/archive" element={<Archive />} />
+        <Route path="/archive/page-:pageNumber" element={<Archive />} />
+        <Route path="/archive/:date" element={<ArchiveDetail />} />
 
         {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
