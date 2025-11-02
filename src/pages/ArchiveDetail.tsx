@@ -1,5 +1,3 @@
-// Filename: src/pages/ArchiveDetail.tsx
-
 import React, { useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -229,16 +227,19 @@ const ArchiveDetail = () => {
     });
     
     const filteredRates = analyzedRates.filter(r => r.currency.iso3 !== 'INR');
+    
+    // Handle edge case where only INR exists
+    const safeFilteredRates = filteredRates.length > 0 ? filteredRates : analyzedRates;
 
     // Top 10 High, Top 12 Low
-    const sortedRatesHigh = [...filteredRates].sort((a, b) => b.normalizedSell - a.normalizedSell);
+    const sortedRatesHigh = [...safeFilteredRates].sort((a, b) => b.normalizedSell - a.normalizedSell);
     const top10High = sortedRatesHigh.slice(0, 10);
     
-    const sortedRatesLow = [...filteredRates].sort((a, b) => a.normalizedSell - b.normalizedSell);
+    const sortedRatesLow = [...safeFilteredRates].sort((a, b) => a.normalizedSell - b.normalizedSell);
     const top12Low = sortedRatesLow.slice(0, 12);
 
-    const topGainer = [...filteredRates].sort((a, b) => b.dailyChangePercent - a.dailyChangePercent)[0] || analyzedRates[0];
-    const topLoser = [...filteredRates].sort((a, b) => a.dailyChangePercent - b.dailyChangePercent)[0] || analyzedRates[0];
+    const topGainer = [...safeFilteredRates].sort((a, b) => b.dailyChangePercent - a.dailyChangePercent)[0] || analyzedRates[0];
+    const topLoser = [...safeFilteredRates].sort((a, b) => a.dailyChangePercent - b.dailyChangePercent)[0] || analyzedRates[0];
 
     return {
       allRates: analyzedRates,
@@ -251,10 +252,13 @@ const ArchiveDetail = () => {
 
   // Helper to process historical data
   const processHistoricalData = (data: HistoricalRates | undefined, allCurrentRates: AnalyzedRate[]): HistoricalChange[] => {
-    if (!data?.payload || data.payload.length < 2 || !allCurrentRates) return [];
+    if (!data?.payload || data.payload.length < 1 || !allCurrentRates) return [];
     
+    // Find oldest and latest *valid* days
     const oldestDay = data.payload[0];
     const latestDay = data.payload[data.payload.length - 1];
+
+    if (!oldestDay || !latestDay) return [];
 
     return allCurrentRates
       .filter(r => r.currency.iso3 !== 'INR')
@@ -342,7 +346,7 @@ const ArchiveDetail = () => {
   }, [yearData, yearLoading, analysisData]);
 
   // --- Render Logic ---
-  const isLoading = currentDayLoading || prevDayLoading || !analysisData;
+  const isLoading = currentDayLoading || prevDayLoading; // We wait for current/prev, but not all historicals
   const previousDate = format(subDays(targetDate, 1), 'yyyy-MM-dd');
   const nextDate = format(addDays(targetDate, 1), 'yyyy-MM-dd');
   const today = startOfDay(new Date());
@@ -697,6 +701,46 @@ const YearlyHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string })
   );
 };
 
+// --- DYNAMIC CONTENT HELPERS ---
+
+const getDynamicIntro = (date: string, gainer: AnalyzedRate, loser: AnalyzedRate) => {
+  const intros = [
+    `Nepal Rastra Bank (NRB) has published the official foreign exchange rates for <strong>${date}</strong>. This report provides a complete analysis of today's currency values, daily fluctuations, and long-term historical trends.`,
+    `Here is the definitive breakdown of Nepal's foreign exchange market for <strong>${date}</strong>, based on the reference rates set by Nepal Rastra Bank. Today's market shows mixed results, with the ${gainer.currency.name} gaining ground while the ${loser.currency.name} faced a slight decline.`,
+    `On <strong>${date}</strong>, the Nepali Rupee (NPR) sees varied performance against major world currencies. This daily analysis from ForexNepal details the official NRB rates, tracks the day's biggest movers, and provides historical context for importers, exporters, and remitters.`,
+    `Welcome to the daily forex bulletin for <strong>${date}</strong>. Today's rates from Nepal Rastra Bank are now available, and this report dives deep into the numbers, offering a simplified table, market rankings, and a comprehensive historical analysis against the Nepali Rupee.`,
+  ];
+  return intros[new Date(date).getDate() % intros.length]; // Use day of month for variety
+};
+
+const getDynamicCommentary = (gainer: AnalyzedRate, loser: AnalyzedRate, usd: AnalyzedRate) => {
+  const gainerColor = "text-green-600";
+  const loserColor = "text-red-600";
+  const usdColor = getChangeColor(usd.dailyChange);
+  
+  const gainerLink = `<a href="/#/historical-data/${gainer.currency.iso3}" class="font-bold ${gainerColor} hover:underline">${gainer.currency.name} (${gainer.currency.iso3})</a>`;
+  const loserLink = `<a href="/#/historical-data/${loser.currency.iso3}" class="font-bold ${loserColor} hover:underline">${loser.currency.name} (${loser.currency.iso3})</a>`;
+  const usdLink = `<a href="/#/historical-data/USD" class="font-bold ${usdColor} hover:underline">U.S. Dollar (USD)</a>`;
+
+  const sentences = [
+    `The primary benchmark, the ${usdLink}, opened today at a buy rate of <strong>Rs. ${usd.buy.toFixed(2)}</strong> and a sell rate of <strong>Rs. ${usd.sell.toFixed(2)}</strong>, reflecting a daily (per-unit) change of <span class="font-medium ${usdColor}">${usd.dailyChange.toFixed(3)}</span>.`,
+    `In today's trading, the standout performer was the ${gainerLink}, which appreciated by a notable <strong>${gainer.dailyChangePercent.toFixed(2)}%</strong> against the NPR.`,
+    `Conversely, the ${loserLink} experienced the most significant decline, depreciating by <strong>${loser.dailyChangePercent.toFixed(2)}%</strong>.`,
+    `This volatility highlights the dynamic nature of the forex market. For those looking to convert currency, it's crucial to check these daily changes. You can plan your conversions using our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">currency converter</a>.`,
+    `The ${usdLink} showed a ${usd.dailyChange > 0 ? "gain" : "loss"} of <strong>Rs. ${Math.abs(usd.dailyChange).toFixed(3)}</strong>, a key metric for Nepal's import-driven economy.`,
+    `Today's biggest gainer was the ${gainerLink}, surging by <strong>${gainer.dailyChangePercent.toFixed(2)}%</strong>. Meanwhile, the ${loserLink} saw the steepest drop at <strong>${loser.dailyChangePercent.toFixed(2)}%</strong>.`,
+    `Fluctuations were seen across the board, with the ${gainerLink} leading the gains. The <strong>${loser.currency.name}</strong> posted the largest loss for the day.`,
+  ];
+
+  // Pick a few to make a paragraph
+  const day = new Date().getDate();
+  return `
+    <p>${sentences[day % 3]}</p>
+    <p>${sentences[3 + (day % 3)]}</p>
+    <p>${sentences[3]}</p>
+  `;
+};
+
 
 // === THE NEW DYNAMIC ARTICLE COMPONENT ===
 
@@ -709,6 +753,7 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
     shortDate,
   } = props;
 
+  // This check is vital. analysisData might exist but be empty if the API failed.
   if (!analysisData || analysisData.allRates.length === 0) {
     return null; // The parent component handles the "No Data" card
   }
@@ -719,26 +764,39 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   const sarRate = allRates.find(r => r.currency.iso3 === 'SAR');
   const aedRate = allRates.find(r => r.currency.iso3 === 'AED');
 
+  // Guard against undefined rates if API somehow fails to return them
+  if (!usdRate || !eurRate || !sarRate || !aedRate || !topGainer || !topLoser) {
+    return (
+      <Card className="not-prose bg-red-50 border-red-200">
+        <CardHeader><CardTitle className="text-destructive">Data Analysis Incomplete</CardTitle></CardHeader>
+        <CardContent><p className="text-muted-foreground">Could not analyze data for this day. Key currencies (USD, EUR, etc.) might be missing from the report.</p></CardContent>
+      </Card>
+    );
+  }
+
   return (
     <>
       {/* 1. Dynamic Title */}
       <h1>Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
       
       {/* 2. Dynamic Intro Paragraph */}
-      <p className="text-lg lead text-muted-foreground">
-        Nepal Rastra Bank (NRB) has released the official foreign exchange rates for <strong>{formattedDate}</strong>. This daily report is the official benchmark for all banks and financial institutions in Nepal, influencing international trade, foreign investment, and personal remittances. This detailed analysis provides a complete overview of today's currency values, daily fluctuations, and long-term historical trends to help you make informed decisions.
-      </p>
+      <p 
+        className="text-lg lead text-muted-foreground"
+        dangerouslySetInnerHTML={{ __html: getDynamicIntro(formattedDate, topGainer, topLoser) }}
+      />
       
       {/* 3. Daily Market Commentary */}
       <h2>Daily Market Summary</h2>
       <p>
-        On this day, the market shows varied movements against the Nepali Rupee (NPR). The <strong>U.S. Dollar ({getFlagEmoji('USD')} USD)</strong>, a primary indicator for Nepal's economy, is set at a buy rate of <strong>Rs. {usdRate?.buy.toFixed(2)}</strong> and a sell rate of <strong>Rs. {usdRate?.sell.toFixed(2)}</strong>. This represents a per-unit daily change of <ChangeIndicator value={usdRate?.dailyChange || 0} decimals={4} />, signaling a {usdRate?.dailyChange ?? 0 > 0 ? "slight strengthening" : "slight weakening"} against the NPR compared to the previous trading day.
+        On this day, the market shows varied movements against the Nepali Rupee (NPR). The <strong>U.S. Dollar ({getFlagEmoji('USD')} USD)</strong>, a primary indicator for Nepal's economy, is set at a buy rate of <strong>Rs. {usdRate.buy.toFixed(2)}</strong> and a sell rate of <strong>Rs. {usdRate.sell.toFixed(2)}</strong>. This represents a per-unit daily change of <ChangeIndicator value={usdRate.dailyChange || 0} decimals={4} />, signaling a {usdRate.dailyChange > 0 ? "slight strengthening" : (usdRate.dailyChange < 0 ? "slight weakening" : "hold")} against the NPR compared to the previous trading day.
       </p>
       <p>
-        Today's most significant gainer among major currencies is the <strong>{getFlagEmoji(topGainer.currency.iso3)} {topGainer.currency.name} ({topGainer.currency.iso3})</strong>, which has appreciated by a notable <ChangeIndicator value={topGainer.dailyChangePercent} unit="%" />. This upward movement could impact importers dealing with {topGainer.currency.name}. On the other side of the spectrum, the <strong>{getFlagEmoji(loser.currency.iso3)} {loser.currency.name} ({loser.currency.iso3})</strong> saw the largest decline, depreciating by <ChangeIndicator value={loser.dailyChangePercent} unit="%" />.
+        Today's most significant gainer among major currencies is the <strong>{getFlagEmoji(topGainer.currency.iso3)} {topGainer.currency.name} ({topGainer.currency.iso3})</strong>, which has appreciated by a notable <ChangeIndicator value={topGainer.dailyChangePercent} unit="%" />. This upward movement could impact importers dealing with {topGainer.currency.name}. On the other side of the spectrum, the 
+        {/* --- THIS IS THE FIX --- */}
+        <strong>{getFlagEmoji(topLoser.currency.iso3)} {topLoser.currency.name} ({topLoser.currency.iso3})</strong> saw the largest decline, depreciating by <ChangeIndicator value={topLoser.dailyChangePercent} unit="%" />.
       </p>
       <p>
-        Other key currencies also show notable figures. The <strong>{getFlagEmoji('EUR')} European Euro (EUR)</strong> is trading at <strong>Rs. {eurRate?.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {eurRate?.sell.toFixed(2)}</strong> (Sell), with a daily change of <ChangeIndicator value={eurRate?.dailyChange || 0} decimals={4} />. For the crucial remittance market from the Gulf, the <strong>{getFlagEmoji('SAR')} Saudi Riyal (SAR)</strong> is at <strong>Rs. {sarRate?.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {sarRate?.sell.toFixed(2)}</strong> (Sell), and the <strong>{getFlagEmoji('AED')} U.A.E Dirham (AED)</strong> is at <strong>Rs. {aedRate?.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {aedRate?.sell.toFixed(2)}</strong>.
+        Other key currencies also show notable figures. The <strong>{getFlagEmoji('EUR')} European Euro (EUR)</strong> is trading at <strong>Rs. {eurRate.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {eurRate.sell.toFixed(2)}</strong> (Sell), with a daily change of <ChangeIndicator value={eurRate.dailyChange || 0} decimals={4} />. For the crucial remittance market from the Gulf, the <strong>{getFlagEmoji('SAR')} Saudi Riyal (SAR)</strong> is at <strong>Rs. {sarRate.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {sarRate.sell.toFixed(2)}</strong> (Sell), and the <strong>{getFlagEmoji('AED')} U.A.E Dirham (AED)</strong> is at <strong>Rs. {aedRate.buy.toFixed(2)}</strong> (Buy) / <strong>Rs. {aedRate.sell.toFixed(2)}</strong>.
       </p>
       <p>
         These daily fluctuations are critical. For precise calculations for tuition fees, travel, or business invoices, you can use our <Link to='/converter' className='text-blue-600 hover:underline font-medium'>currency conversion tool</Link>.
@@ -758,6 +816,5 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
     </>
   );
 };
-
 
 export default ArchiveDetail;
