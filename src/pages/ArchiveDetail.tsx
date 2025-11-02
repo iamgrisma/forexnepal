@@ -14,9 +14,8 @@ import { Rate } from '@/types/forex';
 const ArchiveDetail = () => {
   const { date } = useParams<{ date: string }>();
   
-  // Parse date from URL format forex-for-YYYY-MM-DD
-  const dateMatch = date?.match(/forex-for-(\d{4}-\d{2}-\d{2})/);
-  const targetDateStr = dateMatch ? dateMatch[1] : null;
+  // Date string comes directly from the route param (YYYY-MM-DD)
+  const targetDateStr = date ?? null;
   
   // Validate the parsed date
   let targetDate = new Date();

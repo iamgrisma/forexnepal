@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, isBefore } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, isBefore, isAfter } from 'date-fns';
 import Layout from '@/components/Layout';
 
 const ITEMS_PER_PAGE = 60; // 2 months worth of days
@@ -41,7 +41,7 @@ const Archive = () => {
         const start = new Date(yearNum, month - 1, 1);
         const end = endOfMonth(start);
         const monthDates = eachDayOfInterval({ start, end });
-        dates.push(...monthDates.filter(date => !isBefore(date, currentDate)));
+        dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
       }
     } else {
       // Generate days for selected month
@@ -49,7 +49,7 @@ const Archive = () => {
       const start = new Date(yearNum, monthNum - 1, 1);
       const end = endOfMonth(start);
       const monthDates = eachDayOfInterval({ start, end });
-      dates.push(...monthDates.filter(date => !isBefore(date, currentDate)));
+      dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
     }
     
     return dates.sort((a, b) => b.getTime() - a.getTime()); // Newest first
