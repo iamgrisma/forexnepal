@@ -10,8 +10,11 @@ import Layout from '@/components/Layout';
 const ITEMS_PER_PAGE = 60; // 2 months worth of days
 
 const Archive = () => {
-  const { pageNumber } = useParams<{ pageNumber?: string }>();
-  const currentPage = pageNumber ? parseInt(pageNumber) : 1;
+  // --- UPDATED to read splat route ---
+  const params = useParams();
+  const pageSlug = params["*"] || ""; // Get the value from the splat (e.g., "2")
+  const currentPage = pageSlug ? parseInt(pageSlug) : 1;
+  // ---
   
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();
@@ -175,9 +178,9 @@ const Archive = () => {
                 <ul className="space-y-2">
                   {dates.map(date => (
                     <li key={date.toISOString()}>
-                      {/* --- THIS IS THE UPDATED LINK --- */}
+                      {/* This link format is correct for your desired URL */}
                       <Link
-                        to={`/daily-update/forex-for/${format(date, 'yyyy-MM-dd')}`}
+                        to={`/daily-update/forex-for-${format(date, 'yyyy-MM-dd')}`}
                         className="block p-3 rounded-lg hover:bg-accent transition-colors"
                       >
                         <span className="text-blue-600 hover:text-blue-700 font-medium">
