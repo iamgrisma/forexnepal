@@ -15,11 +15,11 @@ const Navigation = () => {
           <div className="flex justify-between items-center gap-8">
             <Link to="/" className="flex items-center flex-shrink-0">
               <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 rounded-lg font-bold text-lg shadow-md hover:shadow-lg transition-shadow">
-                ForexNepal {/* Updated Name */}
+                ForexNepal
               </div>
             </Link>
 
-            {/* UPDATED: Desktop menu is now 'flex' (not 'hidden md:flex') and scrolls on mobile */}
+            {/* UPDATED: Now 'flex' (not 'hidden md:flex') and scrolls horizontally on small screens */}
             <div className="flex items-center space-x-1 flex-1 justify-end overflow-x-auto scrollbar-hide">
               <NavLink to="/" active={location.pathname === '/'}>
                 <Home className="h-4 w-4 mr-2" />
@@ -37,7 +37,6 @@ const Navigation = () => {
                 <ArrowRightLeft className="h-4 w-4 mr-2" />
                 Converter
               </NavLink>
-              {/* Added Posts Link */}
               <NavLink to="/posts" active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}>
                   <BookText className="h-4 w-4 mr-2" />
                   Posts
@@ -155,6 +154,4 @@ const ExternalNavLink = ({ href, children, className }: ExternalNavLinkProps) =>
     </a>
   );
 };
-
-
 export default Navigation;
