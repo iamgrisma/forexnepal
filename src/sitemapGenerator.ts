@@ -1,7 +1,7 @@
 import { D1Database } from './worker'; // Import D1 type
 import { format, addDays, differenceInDays, startOfDay } from 'date-fns';
 
-const BASE_URL = 'https://forexnepal.grisma.com.np';
+const BASE_URL = 'https://forex.grisma.com.np';
 const SITEMAP_PAGE_SIZE = 500;
 
 // --- XML Helper Functions ---
