@@ -177,7 +177,7 @@ const Archive = () => {
                     <li key={date.toISOString()}>
                       {/* --- THIS IS THE UPDATED LINK --- */}
                       <Link
-                        to={`/daily-update/forex-for-${format(date, 'yyyy-MM-dd')}`}
+                        to={`/daily-update/forex/${format(date, 'yyyy-MM-dd')}`}
                         className="block p-3 rounded-lg hover:bg-accent transition-colors"
                       >
                         <span className="text-blue-600 hover:text-blue-700 font-medium">
@@ -207,7 +207,7 @@ const Archive = () => {
                   Previous
                 </span>
               ) : (
-                <Link to={currentPage === 2 ? '/archive' : `/archive/page-${currentPage - 1}`} className="flex items-center gap-1">
+                <Link to={currentPage === 2 ? '/archive' : `/archive/page/${currentPage - 1}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
                   Previous
                 </Link>
@@ -230,7 +230,7 @@ const Archive = () => {
                   <ChevronRight className="h-4 w-4" />
                 </span>
               ) : (
-                <Link to={`/archive/page-${currentPage + 1}`} className="flex items-center gap-1">
+                <Link to={`/archive/page/${currentPage + 1}`} className="flex items-center gap-1">
                   Next
                   <ChevronRight className="h-4 w-4" />
                 </Link>
