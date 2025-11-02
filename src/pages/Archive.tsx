@@ -177,7 +177,7 @@ const Archive = () => {
                     <li key={date.toISOString()}>
                       {/* --- THIS IS THE UPDATED LINK --- */}
                       <Link
-                        to={`/daily-update/forex/${format(date, 'yyyy-MM-dd')}`}
+                        to={`/daily-update/forex-for/${format(date, 'yyyy-MM-dd')}`}
                         className="block p-3 rounded-lg hover:bg-accent transition-colors"
                       >
                         <span className="text-blue-600 hover:text-blue-700 font-medium">
