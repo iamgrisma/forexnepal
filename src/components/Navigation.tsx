@@ -19,8 +19,8 @@ const Navigation = () => {
               </div>
             </Link>
 
-            {/* Adjusted spacing: space-x-1, added justify-end */}
-            <div className="hidden md:flex items-center space-x-1 flex-1 justify-end">
+            {/* Desktop menu - horizontally scrollable on smaller screens */}
+            <div className="hidden md:flex items-center space-x-1 flex-1 justify-end overflow-x-auto scrollbar-hide">
               <NavLink to="/" active={location.pathname === '/'}>
                 <Home className="h-4 w-4 mr-2" />
                 Home
@@ -61,9 +61,7 @@ const Navigation = () => {
 
       {/* Mobile Bottom Navigation */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 shadow-lg z-50">
-        {/* Updated grid to 6 columns */}
         <div className="grid grid-cols-6 divide-x divide-gray-200">
-           {/* Order: About, Contact, Home, Charts, Converter, Posts */}
           <NavLink
             to="/about"
             active={location.pathname === '/about'}
@@ -73,12 +71,12 @@ const Navigation = () => {
             <span className="text-xs font-medium leading-tight">About</span>
           </NavLink>
           <NavLink
-            to="/contact"
-            active={location.pathname === '/contact'}
+            to="/archive"
+            active={location.pathname.startsWith('/archive')}
             className="flex flex-col items-center justify-center py-3 px-1 text-center"
           >
-            <Phone className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Contact</span>
+            <BookOpen className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium leading-tight">Archive</span>
           </NavLink>
           <NavLink
             to="/"
@@ -104,15 +102,14 @@ const Navigation = () => {
             <ArrowRightLeft className="h-5 w-5 mb-1" />
             <span className="text-xs font-medium leading-tight">Convert</span>
           </NavLink>
-           {/* Added Posts Link for Mobile */}
-           <NavLink
-              to="/posts"
-              active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}
-              className="flex flex-col items-center justify-center py-3 px-1 text-center"
-            >
-              <BookText className="h-5 w-5 mb-1" />
-              <span className="text-xs font-medium leading-tight">Posts</span>
-            </NavLink>
+          <NavLink
+            to="/posts"
+            active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}
+            className="flex flex-col items-center justify-center py-3 px-1 text-center"
+          >
+            <BookText className="h-5 w-5 mb-1" />
+            <span className="text-xs font-medium leading-tight">Posts</span>
+          </NavLink>
         </div>
       </nav>
     </>

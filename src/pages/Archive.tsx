@@ -41,7 +41,7 @@ const Archive = () => {
         const start = new Date(yearNum, month - 1, 1);
         const end = endOfMonth(start);
         const monthDates = eachDayOfInterval({ start, end });
-        dates.push(...monthDates.filter(date => !isBefore(currentDate, date)));
+        dates.push(...monthDates.filter(date => !isBefore(date, currentDate)));
       }
     } else {
       // Generate days for selected month
@@ -49,7 +49,7 @@ const Archive = () => {
       const start = new Date(yearNum, monthNum - 1, 1);
       const end = endOfMonth(start);
       const monthDates = eachDayOfInterval({ start, end });
-      dates.push(...monthDates.filter(date => !isBefore(currentDate, date)));
+      dates.push(...monthDates.filter(date => !isBefore(date, currentDate)));
     }
     
     return dates.sort((a, b) => b.getTime() - a.getTime()); // Newest first

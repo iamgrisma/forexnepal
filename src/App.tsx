@@ -38,6 +38,9 @@ const App = () => (
       <Routes>
         {/* --- Public Routes --- */}
         <Route path="/" element={<Index />} />
+        <Route path="/archive" element={<Archive />} />
+        <Route path="/archive/page-:pageNumber" element={<Archive />} />
+        <Route path="/archive/forex-for-:date" element={<ArchiveDetail />} />
         <Route path="/converter" element={<Converter />} />
         <Route path="/historical-charts" element={<HistoricalCharts />} />
         <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
@@ -48,9 +51,6 @@ const App = () => (
         <Route path="/ads.txt" element={<AdsTxt />} />
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
-        <Route path="/archive" element={<Archive />} />
-        <Route path="/archive/page-:pageNumber" element={<Archive />} />
-        <Route path="/archive/:date" element={<ArchiveDetail />} />
 
         {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
