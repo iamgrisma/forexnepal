@@ -9,7 +9,7 @@ const Navigation = () => {
 
   return (
     <>
-      {/* Desktop Navigation */}
+      {/* Desktop/Scrollable Mobile Navigation */}
       <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center gap-8">
@@ -19,13 +19,13 @@ const Navigation = () => {
               </div>
             </Link>
 
-            {/* Desktop menu - horizontally scrollable on smaller screens */}
-            <div className="hidden md:flex items-center space-x-1 flex-1 justify-end overflow-x-auto scrollbar-hide">
+            {/* UPDATED: Desktop menu is now 'flex' (not 'hidden md:flex') and scrolls on mobile */}
+            <div className="flex items-center space-x-1 flex-1 justify-end overflow-x-auto scrollbar-hide">
               <NavLink to="/" active={location.pathname === '/'}>
                 <Home className="h-4 w-4 mr-2" />
                 Home
               </NavLink>
-              <NavLink to="/archive" active={location.pathname.startsWith('/archive')}>
+              <NavLink to="/archive" active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}>
                 <BookOpen className="h-4 w-4 mr-2" />
                 Daily Archive
               </NavLink>
@@ -59,20 +59,12 @@ const Navigation = () => {
         </div>
       </nav>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile Bottom Navigation - UPDATED to 5 items */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 shadow-lg z-50">
-        <div className="grid grid-cols-6 divide-x divide-gray-200">
-          <NavLink
-            to="/about"
-            active={location.pathname === '/about'}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <User className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">About</span>
-          </NavLink>
+        <div className="grid grid-cols-5 divide-x divide-gray-200">
           <NavLink
             to="/archive"
-            active={location.pathname.startsWith('/archive')}
+            active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}
             className="flex flex-col items-center justify-center py-3 px-1 text-center"
           >
             <BookOpen className="h-5 w-5 mb-1" />
