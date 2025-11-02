@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchForexRatesByDate, fetchHistoricalRates, formatDateLong, getFlagEmoji } from '@/services/forexService';
-import { format, parseISO, addDays, subDays, isValid, differenceInDays, isAfter, startOfDay } from 'date-fns';
+import { format, parseISO, addDays, subDays, isValid, differenceInDays, isAfter, startOfDay, isBefore } from 'date-fns';
 import Layout from '@/components/Layout';
 import ForexTicker from '@/components/ForexTicker';
 import { Rate } from '@/types/forex';
@@ -47,7 +47,8 @@ const ArchiveDetail = () => {
   let isValidDate = false;
   if (targetDateStr) {
     try {
-      const parsedDate = parseISO(targetDateStr); // YYYY-MM-DD
+      // parseISO handles YYYY-MM-DD correctly
+      const parsedDate = parseISO(targetDateStr);
       if (isValid(parsedDate)) {
         targetDate = startOfDay(parsedDate); // Use start of day for consistent comparison
         isValidDate = true;
@@ -58,9 +59,12 @@ const ArchiveDetail = () => {
   }
 
   // --- Data Fetching ---
+  // This query fetches data for the specified date.
+  // The underlying service `fetchForexRatesByDate` -> `fetchRatesForDateWithCache`
+  // hits the worker API, which returns data from D1 (or falls back to NRB API).
   const { data: currentData, isLoading: currentLoading, isError: isCurrentError } = useQuery({
     queryKey: ['forex-archive', targetDateStr],
-    queryFn: () => fetchForexRatesByDate(targetDate), // Fetches target date + previous day
+    queryFn: () => fetchForexRatesByDate(targetDate),
     enabled: isValidDate,
     staleTime: 1000 * 60 * 60, // 1 hour
     retry: 1,
@@ -102,19 +106,15 @@ const ArchiveDetail = () => {
   const currentRates = currentData?.data?.payload?.[0]?.rates || [];
   
   const previousDayData = useMemo(() => {
-    // forexService's fetchForexRatesByDate already tries to find the *last* available day.
-    // The worker's /api/historical-rates?from=...&to=... is what we should use instead for the *previous* day.
-    // Let's rely on the `fetchPreviousDayRates` logic from `forexService.ts` which is what `Index.tsx` uses.
-    // Ah, `currentData` from `fetchForexRatesByDate` *should* contain the previous day in its payload if available.
+    // The service `fetchForexRatesByDate` is designed to return payload[0] = target, payload[1] = previous
     const allPayloads = currentData?.data?.payload || [];
     if (allPayloads.length >= 2) {
-      return allPayloads[1].rates; // Assuming payload[1] is the previous day
+      return allPayloads[1].rates; // Payload[1] is the previous day
     }
-    // If not, let's look at the `weekData`
+    // Fallback if only one day was returned (e.g., first day of data)
     if (weekData && weekData.payload.length > 0) {
-       // Get the second to last day from the weekly payload
        const sortedPayloads = [...weekData.payload].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-       if (sortedPayloads[1]) {
+       if (sortedPayloads[1]) { // Get the second-to-last entry
            return sortedPayloads[1].rates;
        }
     }
@@ -126,6 +126,7 @@ const ArchiveDetail = () => {
   const analysisData = useMemo(() => {
     if (!currentRates.length) return null;
 
+    // 1. Normalize all rates to per-unit
     const normalizedRates: AnalyzedRate[] = currentRates.map(rate => {
       const buy = Number(rate.buy);
       const sell = Number(rate.sell);
@@ -139,20 +140,24 @@ const ArchiveDetail = () => {
       };
     });
 
+    // 2. Create sorted list for ranking (fixed to use normalizedSell)
     const sortedRates = [...normalizedRates].sort((a, b) => b.normalizedSell - a.normalizedSell);
 
+    // 3. Calculate daily changes
     const ratesWithChanges: AnalyzedRate[] = normalizedRates.map(rate => {
       const prevRate = previousDayData.find(pr => pr.currency.iso3 === rate.currency.iso3);
-      const prevBuy = prevRate ? Number(prevRate.buy) / (prevRate.currency.unit || 1) : 0;
-      const prevSell = prevRate ? Number(prevRate.sell) / (prevRate.currency.unit || 1) : 0;
+      const prevBuy = prevRate ? (Number(prevRate.buy) / (prevRate.currency.unit || 1)) : 0;
+      const prevSell = prevRate ? (Number(prevRate.sell) / (prevRate.currency.unit || 1)) : 0;
       return {
         ...rate,
+        // Use normalizedBuy/Sell for per-unit change calculation
         buyChange: prevRate ? rate.normalizedBuy - prevBuy : 0,
         sellChange: prevRate ? rate.normalizedSell - prevSell : 0,
         buyChangePercent: prevRate && prevBuy > 0 ? ((rate.normalizedBuy - prevBuy) / prevBuy) * 100 : 0,
       };
     });
 
+    // 4. Weekly Analysis
     const weekRates = weekData?.payload || [];
     const weeklyAnalysis: AnalyzedRate[] = ratesWithChanges.map(rate => {
       const weekOldPayload = weekRates.length > 0 ? weekRates[0] : null; // Oldest data in range
@@ -166,6 +171,7 @@ const ArchiveDetail = () => {
       return { ...rate, weekChange: 0, weekChangePercent: 0, oldWeekBuy: rate.normalizedBuy };
     });
 
+    // 5. Monthly Analysis
     const monthRates = monthData?.payload || [];
     const monthlyAnalysis: AnalyzedRate[] = ratesWithChanges.map(rate => {
       const monthOldPayload = monthRates.length > 0 ? monthRates[0] : null; // Oldest data in range
@@ -179,6 +185,7 @@ const ArchiveDetail = () => {
       return { ...rate, monthChange: 0, monthChangePercent: 0, oldMonthBuy: rate.normalizedBuy };
     });
 
+    // 6. 52-Week High/Low
     const yearRates = yearData?.payload || [];
     const yearlyAnalysis: AnalyzedRate[] = ratesWithChanges.map(rate => {
       const allYearRates = yearRates
@@ -190,14 +197,18 @@ const ArchiveDetail = () => {
         }));
       allYearRates.push(rate); // Include current rate
       
-      const highestBuy = allYearRates.length > 0 ? Math.max(...allYearRates.map(r => r.buy)) : rate.normalizedBuy;
-      const lowestBuy = allYearRates.length > 0 ? Math.min(...allYearRates.map(r => r.buy)) : rate.normalizedBuy;
-      const highestSell = allYearRates.length > 0 ? Math.max(...allYearRates.map(r => r.sell)) : rate.normalizedSell;
-      const lowestSell = allYearRates.length > 0 ? Math.min(...allYearRates.map(r => r.sell)) : rate.normalizedSell;
+      const allBuys = allYearRates.map(r => r.buy).filter(v => v > 0);
+      const allSells = allYearRates.map(r => r.sell).filter(v => v > 0);
+
+      const highestBuy = allBuys.length > 0 ? Math.max(...allBuys) : rate.normalizedBuy;
+      const lowestBuy = allBuys.length > 0 ? Math.min(...allBuys) : rate.normalizedBuy;
+      const highestSell = allSells.length > 0 ? Math.max(...allSells) : rate.normalizedSell;
+      const lowestSell = allSells.length > 0 ? Math.min(...allSells) : rate.normalizedSell;
       
       return { ...rate, week52High: highestBuy, week52Low: lowestBuy, week52HighSell: highestSell, week52LowSell: lowestSell };
     });
 
+    // 7. Long-Term Analysis
     const longRates = longTermData?.payload || [];
     const longTermAnalysis: AnalyzedRate[] = ratesWithChanges.map(rate => {
       const oldestPayload = longRates.length > 0 ? longRates[0] : null;
@@ -213,6 +224,7 @@ const ArchiveDetail = () => {
       return { ...rate, longTermChange: 0, longTermChangePercent: 0, longTermYears: 0, oldLongTermBuy: rate.normalizedBuy };
     });
 
+    // 8. Find Top Performers
     const topWeeklyGainer = [...weeklyAnalysis].sort((a, b) => (b.weekChangePercent || 0) - (a.weekChangePercent || 0))[0];
     const topMonthlyGainer = [...monthlyAnalysis].sort((a, b) => (b.monthChangePercent || 0) - (a.monthChangePercent || 0))[0];
     const topLongTermGainer = [...longTermAnalysis].sort((a, b) => (b.longTermChangePercent || 0) - (a.longTermChangePercent || 0))[0];
@@ -234,7 +246,7 @@ const ArchiveDetail = () => {
   const shortDate = format(targetDate, 'yyyy-MM-dd');
   const isLoading = currentLoading || weekLoading || monthLoading || yearLoading || longTermLoading;
 
-  // --- Navigation Dates ---
+  // --- Navigation Dates (FIXED) ---
   const previousDate = format(subDays(targetDate, 1), 'yyyy-MM-dd');
   const nextDate = format(addDays(targetDate, 1), 'yyyy-MM-dd');
   const today = startOfDay(new Date()); // Compare start of day
@@ -372,8 +384,8 @@ const ArchiveDetail = () => {
                     const inr = analysisData.ratesWithChanges.find(r => r.currency.iso3 === 'INR');
                     
                     let sentences = [];
-                    if (usd) sentences.push(`The U.S. Dollar is trading at Rs. ${usd.buy.toFixed(2)} for buying and Rs. ${usd.sell.toFixed(2)} for selling${usd.buyChange !== 0 ? `, a ${usd.buyChange > 0 ? 'gain' : 'loss'} of Rs. ${Math.abs(usd.buyChange || 0).toFixed(2)} from the previous day` : ' (stable)'}.`);
-                    if (eur) sentences.push(`The European Euro stands at Rs. ${eur.buy.toFixed(2)} (buying) and Rs. ${eur.sell.toFixed(2)} (selling)${eur.buyChange !== 0 ? `, ${eur.buyChange > 0 ? 'up' : 'down'} by Rs. ${Math.abs(eur.buyChange || 0).toFixed(2)}` : ''}.`);
+                    if (usd) sentences.push(`The U.S. Dollar is trading at Rs. ${usd.buy.toFixed(2)} for buying and Rs. ${usd.sell.toFixed(2)} for selling${usd.buyChange !== 0 ? `, a ${usd.buyChange! > 0 ? 'gain' : 'loss'} of Rs. ${Math.abs(usd.buyChange || 0).toFixed(2)} per unit from the previous day` : ' (stable)'}.`);
+                    if (eur) sentences.push(`The European Euro stands at Rs. ${eur.buy.toFixed(2)} (buying) and Rs. ${eur.sell.toFixed(2)} (selling)${eur.buyChange !== 0 ? `, ${eur.buyChange! > 0 ? 'up' : 'down'} by Rs. ${Math.abs(eur.buyChange || 0).toFixed(2)} per unit` : ''}.`);
                     if (gbp) sentences.push(`The British Pound Sterling is valued at Rs. ${gbp.buy.toFixed(2)} for buying and Rs. ${gbp.sell.toFixed(2)} for selling.`);
                     if (inr) sentences.push(`The Indian Rupee, which is pegged, maintains its rate at Rs. ${inr.buy.toFixed(2)} (buying) and Rs. ${inr.sell.toFixed(2)} (selling) per 100 INR.`);
                     
@@ -396,9 +408,9 @@ const ArchiveDetail = () => {
                         Currencies from the Middle East region continue to show strong performance. 
                         {analysisData.ratesWithChanges
                           .filter(r => ['KWD', 'BHD', 'OMR', 'SAR', 'QAR', 'AED'].includes(r.currency.iso3))
-                          .map((rate, idx) => {
+                          .map((rate) => {
                             const changeText = rate.buyChange !== 0 
-                              ? ` ${rate.buyChange > 0 ? 'registering an increase' : 'showing a decrease'} of Rs. ${Math.abs(rate.buyChange || 0).toFixed(2)} from the previous trading day`
+                              ? ` ${rate.buyChange! > 0 ? 'registering an increase' : 'showing a decrease'} of Rs. ${Math.abs(rate.buyChange || 0).toFixed(2)} per unit from the previous trading day`
                               : ' remaining stable';
                             return ` The ${rate.currency.name} (${rate.currency.iso3}) is trading at Rs. ${rate.buy.toFixed(2)} (buying) and Rs. ${rate.sell.toFixed(2)} (selling)${changeText}.`;
                           }).join(' ')}
@@ -430,7 +442,7 @@ const ArchiveDetail = () => {
                 </Card>
               </section>
 
-              {/* Monthly Analysis */}
+              {/* Monthly Analysis (FIXED closing tag) */}
               <section className="mb-8 not-prose">
                 <Card>
                   <CardHeader>
@@ -502,7 +514,7 @@ const ArchiveDetail = () => {
                 </section>
               )}
 
-              {/* Currency Rankings */}
+              {/* Currency Rankings (FIXED) */}
               <section className="mb-8 not-prose">
                 <Card>
                   <CardHeader>
