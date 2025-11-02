@@ -1,10 +1,5 @@
-// public/sw.js
 const CACHE_NAME = 'forex-pwa-v3'; // Increment cache version to force update
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-
-// Add API endpoints that should be network-first but NOT cached if they are POST/PUT etc.
-// Or just check the method directly as done below.
-
 const urlsToCache = [
   '/', // Cache the root path served by index.html due to HashRouter
   '/index.html',
@@ -54,16 +49,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Skip non-GET requests for API caching logic specifically
-  if (request.method !== 'GET' && (url.pathname.includes('/api/') || url.pathname.includes('supabase'))) {
-      // For non-GET API requests (like POST), just fetch from network, don't cache.
+  // --- THIS IS THE FIX ---
+  // If it's not a GET request, just fetch it from the network.
+  // Do not try to cache POST, PUT, DELETE, etc.
+  if (request.method !== 'GET') {
       event.respondWith(fetch(request));
       return;
   }
+  // --- END OF FIX ---
 
 
   // Network-first strategy for GET API calls
-  if (request.method === 'GET' && (url.pathname.includes('/api/') || url.pathname.includes('supabase'))) {
+  if (url.pathname.includes('/api/') || url.pathname.includes('supabase')) {
     event.respondWith(
       fetch(request)
         .then((response) => {
@@ -72,6 +69,7 @@ self.addEventListener('fetch', (event) => {
             const responseToCache = response.clone();
             caches.open(CACHE_NAME).then((cache) => {
               // --- Only cache GET requests ---
+              // (This check is now redundant due to the main fix above, but safe to keep)
               if (request.method === 'GET') {
                   cache.put(request, responseToCache);
                   // Store timestamp only for GET requests
