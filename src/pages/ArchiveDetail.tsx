@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { fetchForexRatesByDate, fetchHistoricalRates, formatDateLong, getFlagEmoji } from '@/services/forexService';
-import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore, differenceInDays, startOfQuarter, startOfYear,, getDay } from 'date-fns';
+import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore, differenceInDays, getDay } from 'date-fns';
 import Layout from '@/components/Layout';
 import ForexTicker from '@/components/ForexTicker';
 import { Rate, RatesData } from '@/types/forex';
@@ -612,8 +612,7 @@ const ArchiveDetail = () => {
 
                 {/* 52-Week High/Low */}
                 <h2>52-Week High & Low Analysis</h2>
-                <p>
-                  {highLowData && highLowData.length > 0 ? 
+                <p dangerouslySetInnerHTML={{ __html: (highLowData && highLowData.length > 0) ?
                     textVariations.highLowSummary[dayOfWeek % textVariations.highLowSummary.length]
                       .replace('{currency}', `<strong>${highLowData[0].name} (${highLowData[0].iso3})</strong>`)
                       .replace('{highBuy}', `<strong>Rs. ${highLowData[0].highBuy.toFixed(2)}</strong>`)
@@ -621,8 +620,8 @@ const ArchiveDetail = () => {
                       .replace('{highSell}', `<strong>Rs. ${highLowData[0].highSell.toFixed(2)}</strong>`)
                       .replace('{lowSell}', `<strong>Rs. ${highLowData[0].lowSell.toFixed(2)}</strong>`)
                     : "Analyzing the 52-week data provides insights into annual currency performance."
-                  }
-                </p>
+                  }}
+                />
                 <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {yearLoading && Array(6).fill(0).map((_, i) => <Skeleton key={i} className="h-28 w-full" />)}
                   {highLowData && highLowData.map((item) => (
@@ -719,3 +718,4 @@ const HistoricalTabContent: React.FC<HistoricalTabContentProps> = ({ data, isLoa
 };
 
 export default ArchiveDetail;
+
