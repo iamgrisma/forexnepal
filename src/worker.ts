@@ -45,7 +45,7 @@ interface ScheduledEvent {
     cron: string;
 }
 
-interface Env {
+export interface Env { // Exported Env for sitemapGenerator
     FOREX_DB: D1Database;
     __STATIC_CONTENT: KVNamespace;
     // Add JWT_SECRET here if using environment variables
@@ -134,38 +134,40 @@ export default {
             return handlePublicPostBySlug(request, env);
         }
 
-        // --- SITEMAP ROUTING (NEW) ---
+        // --- SITEMAP ROUTING (NEW & UPDATED) ---
         // Placed *before* the static asset fallback
-        const sitemapCache = {
-          "content-type": "application/xml; charset=utf-8",
+        
+        // UPDATED: Changed content-type to text/html
+        const htmlCache = {
+          "content-type": "text/html; charset=utf-8",
           "cache-control": "public, max-age=3600", // Cache for 1 hour
         };
 
         if (pathname === '/sitemap.xml') {
           const archiveSitemapCount = getArchiveSitemapCount();
-          const xml = generateSitemapIndex(archiveSitemapCount);
-          return new Response(xml, { headers: sitemapCache });
+          const html = generateSitemapIndex(archiveSitemapCount);
+          return new Response(html, { headers: htmlCache }); // UPDATED
         }
 
         if (pathname === '/page-sitemap.xml') {
-          const xml = generatePageSitemap();
-          return new Response(xml, { headers: sitemapCache });
+          const html = generatePageSitemap();
+          return new Response(html, { headers: htmlCache }); // UPDATED
         }
 
         if (pathname === '/post-sitemap.xml') {
-          const xml = await generatePostSitemap(env.FOREX_DB);
-          return new Response(xml, { headers: sitemapCache });
+          const html = await generatePostSitemap(env.FOREX_DB);
+          return new Response(html, { headers: htmlCache }); // UPDATED
         }
         
         // Regex to match /archive-sitemap1.xml, /archive-sitemap2.xml, etc.
         const archiveMatch = pathname.match(/\/archive-sitemap(\d+)\.xml$/);
         if (archiveMatch && archiveMatch[1]) {
           const id = parseInt(archiveMatch[1]);
-          const xml = generateArchiveSitemap(id);
-          if (!xml) {
+          const html = generateArchiveSitemap(id); // This now returns HTML
+          if (!html) {
             return new Response('Sitemap not found', { status: 404 });
           }
-          return new Response(xml, { headers: sitemapCache });
+          return new Response(html, { headers: htmlCache }); // UPDATED
         }
         // --- END SITEMAP ROUTING ---
 
@@ -960,7 +962,7 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
         return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } catch (error: any) {
         console.error('Error fetching public posts:', error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Server error fetching posts.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: false, error: 'Server error fetching posts.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
 
