@@ -19,40 +19,42 @@ const Navigation = () => {
               </div>
             </Link>
 
-            {/* UPDATED: Now 'flex' (not 'hidden md:flex') and scrolls horizontally on small screens */}
-            <div className="flex items-center space-x-1 flex-1 justify-end overflow-x-auto scrollbar-hide">
-              <NavLink to="/" active={location.pathname === '/'}>
-                <Home className="h-4 w-4 mr-2" />
-                Home
-              </NavLink>
-              <NavLink to="/archive" active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}>
-                <BookOpen className="h-4 w-4 mr-2" />
-                Daily Archive
-              </NavLink>
-              <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
-                <BarChart className="h-4 w-4 mr-2" />
-                Charts
-              </NavLink>
-              <NavLink to="/converter" active={location.pathname === '/converter'}>
-                <ArrowRightLeft className="h-4 w-4 mr-2" />
-                Converter
-              </NavLink>
-              <NavLink to="/posts" active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}>
-                  <BookText className="h-4 w-4 mr-2" />
-                  Posts
-              </NavLink>
-              <NavLink to="/about" active={location.pathname === '/about'}>
-                <User className="h-4 w-4 mr-2" />
-                About
-              </NavLink>
-              <NavLink to="/contact" active={location.pathname === '/contact'}>
-                <Phone className="h-4 w-4 mr-2" />
-                Contact
-              </NavLink>
-              <ExternalNavLink href="https://grisma.com.np">
-                <BookOpen className="h-4 w-4 mr-2" />
-                Blog
-              </ExternalNavLink>
+            {/* UPDATED: Wrapper div allows flex-1 behavior while inner div handles scrolling */}
+            <div className="flex-1 min-w-0 flex justify-end">
+              <div className="flex items-center space-x-1 overflow-x-auto scrollbar-hide">
+                <NavLink to="/" active={location.pathname === '/'}>
+                  <Home className="h-4 w-4 mr-2" />
+                  Home
+                </NavLink>
+                <NavLink to="/archive" active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}>
+                  <BookOpen className="h-4 w-4 mr-2" />
+                  Daily Archive
+                </NavLink>
+                <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
+                  <BarChart className="h-4 w-4 mr-2" />
+                  Charts
+                </NavLink>
+                <NavLink to="/converter" active={location.pathname === '/converter'}>
+                  <ArrowRightLeft className="h-4 w-4 mr-2" />
+                  Converter
+                </NavLink>
+                <NavLink to="/posts" active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}>
+                    <BookText className="h-4 w-4 mr-2" />
+                    Posts
+                </NavLink>
+                <NavLink to="/about" active={location.pathname === '/about'}>
+                  <User className="h-4 w-4 mr-2" />
+                  About
+                </NavLink>
+                <NavLink to="/contact" active={location.pathname === '/contact'}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  Contact
+                </NavLink>
+                <ExternalNavLink href="https://grisma.com.np">
+                  <BookOpen className="h-4 w-4 mr-2" />
+                  Blog
+                </ExternalNavLink>
+              </div>
             </div>
           </div>
         </div>
