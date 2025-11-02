@@ -1,6 +1,15 @@
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import type { Rate, RatesData } from './types/forex'; // Ensure Rate and RatesData types are imported
 
+// --- SITEMAP IMPORTS (NEW) ---
+import {
+    generateSitemapIndex,
+    generatePageSitemap,
+    generatePostSitemap,
+    generateArchiveSitemap,
+    getArchiveSitemapCount
+} from './sitemapGenerator'; // Make sure sitemapGenerator.ts is in the same directory
+
 // --- D1 & KV Interfaces ---
 interface D1Database {
     prepare(query: string): D1PreparedStatement;
@@ -124,6 +133,42 @@ export default {
         if (pathname.startsWith('/api/posts/')) {
             return handlePublicPostBySlug(request, env);
         }
+
+        // --- SITEMAP ROUTING (NEW) ---
+        // Placed *before* the static asset fallback
+        const sitemapCache = {
+          "content-type": "application/xml; charset=utf-8",
+          "cache-control": "public, max-age=3600", // Cache for 1 hour
+        };
+
+        if (pathname === '/sitemap.xml') {
+          const archiveSitemapCount = getArchiveSitemapCount();
+          const xml = generateSitemapIndex(archiveSitemapCount);
+          return new Response(xml, { headers: sitemapCache });
+        }
+
+        if (pathname === '/page-sitemap.xml') {
+          const xml = generatePageSitemap();
+          return new Response(xml, { headers: sitemapCache });
+        }
+
+        if (pathname === '/post-sitemap.xml') {
+          const xml = await generatePostSitemap(env.FOREX_DB);
+          return new Response(xml, { headers: sitemapCache });
+        }
+        
+        // Regex to match /archive-sitemap1.xml, /archive-sitemap2.xml, etc.
+        const archiveMatch = pathname.match(/\/archive-sitemap(\d+)\.xml$/);
+        if (archiveMatch && archiveMatch[1]) {
+          const id = parseInt(archiveMatch[1]);
+          const xml = generateArchiveSitemap(id);
+          if (!xml) {
+            return new Response('Sitemap not found', { status: 404 });
+          }
+          return new Response(xml, { headers: sitemapCache });
+        }
+        // --- END SITEMAP ROUTING ---
+
 
         // --- Static Asset Serving (SPA Fallback) ---
         try {
