@@ -38,7 +38,10 @@ type AnalyzedRate = Rate & {
 };
 
 const ArchiveDetail = () => {
-  const { date } = useParams<{ date: string }>();
+  // --- UPDATED to read splat route ---
+  const params = useParams();
+  const date = params["*"]; // Get the date (e.g., "2025-01-07") from the splat
+  // ---
   
   const targetDateStr = date ?? null;
   
@@ -286,7 +289,7 @@ const ArchiveDetail = () => {
     );
   }
 
-return (
+  return (
     <Layout>
       <div className="container mx-auto px-4 pt-8">
         <div className="max-w-7xl mx-auto">
@@ -307,16 +310,16 @@ return (
             
             <div className="flex gap-2">
               <Button variant="outline" size="sm" asChild>
-                {/* --- UPDATED LINK --- */}
-                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1">
+                {/* --- UPDATED LINK to match splat route --- */}
+                <Link to={`/daily-update/forex-for-${previousDate}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
                   Previous Day
                 </Link>
               </Button>
               {canGoNext && (
                 <Button variant="outline" size="sm" asChild>
-                  {/* --- UPDATED LINK --- */}
-                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1">
+                  {/* --- UPDATED LINK to match splat route --- */}
+                  <Link to={`/daily-update/forex-for-${nextDate}`} className="flex items-center gap-1">
                     Next Day
                     <ChevronRight className="h-4 w-4" />
                   </Link>
