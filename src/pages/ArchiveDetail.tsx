@@ -68,14 +68,20 @@ const ArchiveDetail = () => {
   const currentRates = currentData?.data?.payload?.[0]?.rates || [];
   const previousRates = previousData?.data?.payload?.[0]?.rates || [];
 
-  // Calculate changes
+  // Calculate changes and ensure buy/sell are numbers
   const ratesWithChanges = currentRates.map(rate => {
     const prevRate = previousRates.find(pr => pr.currency.iso3 === rate.currency.iso3);
-    const buyChange = prevRate ? rate.buy - prevRate.buy : 0;
-    const sellChange = prevRate ? rate.sell - prevRate.sell : 0;
+    const buyNum = Number(rate.buy);
+    const sellNum = Number(rate.sell);
+    const prevBuyNum = prevRate ? Number(prevRate.buy) : 0;
+    const prevSellNum = prevRate ? Number(prevRate.sell) : 0;
+    const buyChange = prevRate ? buyNum - prevBuyNum : 0;
+    const sellChange = prevRate ? sellNum - prevSellNum : 0;
     
     return {
       ...rate,
+      buy: buyNum,
+      sell: sellNum,
       buyChange,
       sellChange,
     };
