@@ -228,7 +228,9 @@ const ArchiveDetail = () => {
   const previousDate = format(subDays(targetDate, 1), 'yyyy-MM-dd');
   const nextDate = format(addDays(targetDate, 1), 'yyyy-MM-dd');
   const today = new Date();
-  const canGoNext = targetDate < today;
+  // Fix: Check if nextDate is > today
+  const canGoNext = isBefore(targetDate, today) && !isAfter(nextDate, today);
+
 
   // Set page title
   useEffect(() => {
@@ -268,7 +270,6 @@ const ArchiveDetail = () => {
             </Button>
             
             <div className="flex gap-2">
-              {/* --- THIS IS THE UPDATED LINK --- */}
               <Button variant="outline" size="sm" asChild>
                 <Link to={`/daily-update/forex-for-${previousDate}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
@@ -276,7 +277,6 @@ const ArchiveDetail = () => {
                 </Link>
               </Button>
               {canGoNext && (
-                /* --- THIS IS THE UPDATED LINK --- */
                 <Button variant="outline" size="sm" asChild>
                   <Link to={`/daily-update/forex-for-${nextDate}`} className="flex items-center gap-1">
                     Next Day
@@ -410,3 +410,164 @@ const ArchiveDetail = () => {
                         a change of Rs. {Math.abs(analysisData.topMonthlyGainer.monthChange || 0).toFixed(2)}.
                         {' '}This monthly trend data is valuable for businesses planning international transactions. 
                         Use our <Link to="/converter" className="text-blue-600 hover:underline">currency converter</Link> to calculate amounts based on these rates.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </section>
+              )}
+
+              {/* 52-Week High/Low Analysis */}
+              <section className="mb-8 not-prose">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-2xl">52-Week Trading Range</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-base leading-relaxed mb-4">
+                      Looking at the annual perspective, here are the 52-week highest and lowest rates for major currencies as of {shortDate}:
+                    </p>
+                    <div className="space-y-3">
+                      {analysisData.yearlyAnalysis.filter(r => ['USD', 'EUR', 'GBP', 'KWD', 'BHD'].includes(r.currency.iso3)).map(rate => (
+                        <div key={rate.currency.iso3} className="border-l-4 border-blue-500 pl-4">
+                          <p className="font-semibold">{rate.currency.name} ({rate.currency.iso3})</p>
+                          <p className="text-sm text-muted-foreground">
+                            52-week High: Rs. {rate.week52High.toFixed(2)} (buying) / Rs. {rate.week52HighSell.toFixed(2)} (selling) | 
+                            52-week Low: Rs. {rate.week52Low.toFixed(2)} (buying) / Rs. {rate.week52LowSell.toFixed(2)} (selling)
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+
+              {/* Long-term Analysis (25 years / from 2000) */}
+              {analysisData.topLongTermGainer && analysisData.topLongTermGainer.longTermYears > 1 && (
+                <section className="mb-8 not-prose">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-2xl">Long-Term Investment Perspective</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-base leading-relaxed">
+                        Examining the long-term trajectory over approximately {Math.floor(analysisData.topLongTermGainer.longTermYears)} years 
+                        (since {format(effectiveStartDate, 'yyyy')}), the {analysisData.topLongTermGainer.currency.name} ({analysisData.topLongTermGainer.currency.iso3}) 
+                        has demonstrated {analysisData.topLongTermGainer.longTermChangePercent > 0 ? 'remarkable appreciation' : 'significant depreciation'} 
+                        of {Math.abs(analysisData.topLongTermGainer.longTermChangePercent).toFixed(2)}% against the Nepali Rupee. 
+                        Starting from Rs. {analysisData.topLongTermGainer.oldLongTermBuy?.toFixed(2)}, the currency now stands at Rs. {analysisData.topLongTermGainer.buy.toFixed(2)}, 
+                        representing {analysisData.topLongTermGainer.longTermChangePercent > 0 ? 'a gain' : 'a loss'} of Rs. {Math.abs(analysisData.topLongTermGainer.longTermChange || 0).toFixed(2)} 
+                        per unit over this extended period. 
+                        This historical data underscores the importance of understanding currency trends for long-term financial planning and investment decisions.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </section>
+              )}
+
+              {/* Currency Rankings */}
+              <section className="mb-8 not-prose">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-2xl">Currency Strength Rankings</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-base leading-relaxed mb-4">
+                      Based on the normalized per-unit selling rates for {shortDate}, here is the ranking of the strongest currencies traded against the Nepali Rupee. 
+                      This ranking accounts for currency units, providing an accurate comparison on a per-unit basis:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2">
+                      {analysisData.sortedRates.slice(0, 10).map((rate, index) => (
+                        <li key={rate.currency.iso3} className="text-base">
+                          {getFlagEmoji(rate.currency.iso3)} <strong>{rate.currency.name} ({rate.currency.iso3})</strong>: 
+                          Rs. {rate.normalizedSell.toFixed(2)} per unit 
+                          <span className="text-sm text-muted-foreground"> (trading at Rs. {rate.sell.toFixed(2)} for {rate.currency.unit} {rate.currency.unit > 1 ? 'units' : 'unit'})</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="text-sm text-muted-foreground mt-4">
+                      Note: Rankings are normalized to per-unit basis for accurate comparison. 
+                      Calculate conversion amounts using our <Link to="/converter" className="text-blue-600 hover:underline">currency converter tool</Link>.
+                    </p>
+                  </CardContent>
+                </Card>
+              </section>
+
+              {/* Exchange Rates Table */}
+              <section className="not-prose">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-2xl">Complete Exchange Rate Table for {shortDate}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">SN</TableHead>
+                            <TableHead>Currency</TableHead>
+                            <TableHead className="text-center">Unit</TableHead>
+                            <TableHead className="text-right">Buying Rate (NPR)</TableHead>
+                            <TableHead className="text-right">Selling Rate (NPR)</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analysisData.ratesWithChanges.map((rate, index) => (
+                            <TableRow key={rate.currency.iso3}>
+                              <TableCell>{index + 1}</TableCell>
+                              <TableCell className="font-medium">
+                                {getFlagEmoji(rate.currency.iso3)} {rate.currency.name} ({rate.currency.iso3})
+                              </TableCell>
+                              <TableCell className="text-center">{rate.currency.unit}</TableCell>
+                              <TableCell className="text-right">Rs. {rate.buy.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">Rs. {rate.sell.toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    
+                    <div className="mt-6 p-4 bg-muted rounded-lg">
+                      <p className="text-sm text-muted-foreground mb-2">
+                        <strong>Important Disclaimer:</strong> The foreign exchange rates published by Nepal Rastra Bank are indicative rates. 
+                        Under open market operations, actual rates offered by commercial banks, money exchangers, and forex traders may vary from these NRB rates. 
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        This information is provided for general reference purposes only and should not be construed as financial, investment, or trading advice. 
+                        Always verify current rates with authorized financial institutions before conducting any foreign exchange transactions.
+                      </p>
+                    </div>
+
+                    {/* Internal Links for SEO */}
+                    <div className="mt-6 pt-6 border-t">
+                      <p className="text-sm font-semibold mb-3">Related Tools & Resources:</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/">Today's Rates</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/converter">Currency Converter</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/historical-charts">Historical Charts</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/converter-profit-calculator">Profit Calculator</Link>
+                        </Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to="/archive">View All Archives</Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </section>
+            </>
+          ) : null}
+          </article>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
+export default ArchiveDetail;
