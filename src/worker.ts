@@ -1,5 +1,3 @@
-// src/worker.ts
-
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import type { Rate, RatesData } from './types/forex'; // Ensure Rate and RatesData types are imported
 
@@ -46,11 +44,33 @@ interface Env {
 }
 
 // --- CURRENCIES List ---
-const CURRENCIES = [
-    'INR', 'USD', 'EUR', 'GBP', 'CHF', 'AUD', 'CAD', 'SGD',
-    'JPY', 'CNY', 'SAR', 'QAR', 'THB', 'AED', 'MYR', 'KRW',
-    'SEK', 'DKK', 'HKD', 'KWD', 'BHD', 'OMR'
-];
+// This map includes units for correct normalization.
+const CURRENCY_MAP: { [key: string]: { name: string, unit: number } } = {
+    'INR': { name: 'Indian Rupee', unit: 100 },
+    'USD': { name: 'U.S. Dollar', unit: 1 },
+    'EUR': { name: 'European Euro', unit: 1 },
+    'GBP': { name: 'UK Pound Sterling', unit: 1 },
+    'CHF': { name: 'Swiss Franc', unit: 1 },
+    'AUD': { name: 'Australian Dollar', unit: 1 },
+    'CAD': { name: 'Canadian Dollar', unit: 1 },
+    'SGD': { name: 'Singapore Dollar', unit: 1 },
+    'JPY': { name: 'Japanese Yen', unit: 10 },
+    'CNY': { name: 'Chinese Yuan', unit: 1 },
+    'SAR': { name: 'Saudi Arabian Riyal', unit: 1 },
+    'QAR': { name: 'Qatari Riyal', unit: 1 },
+    'THB': { name: 'Thai Baht', unit: 1 },
+    'AED': { name: 'U.A.E Dirham', unit: 1 },
+    'MYR': { name: 'Malaysian Ringgit', unit: 1 },
+    'KRW': { name: 'South Korean Won', unit: 100 },
+    'SEK': { name: 'Swedish Kroner', unit: 1 },
+    'DKK': { name: 'Danish Kroner', unit: 1 },
+    'HKD': { name: 'Hong Kong Dollar', unit: 1 },
+    'KWD': { name: 'Kuwaity Dinar', unit: 1 },
+    'BHD': { name: 'Bahrain Dinar', unit: 1 },
+    'OMR': { name: 'Omani Rial', unit: 1 }
+};
+const CURRENCIES = Object.keys(CURRENCY_MAP);
+
 
 // --- JWT Secret (Use Environment Variable in Production) ---
 const JWT_SECRET = 'forexnepal-jwt-secret-key-2025'; // Replace with env.JWT_SECRET in real deployment
@@ -75,7 +95,7 @@ export default {
             return handleFetchAndStore(request, env);
         }
         if (pathname === '/api/historical-rates') {
-            return handleHistoricalRates(request, env); // <<< CORRECTED FUNCTION
+            return handleHistoricalRates(request, env); // <<< THIS IS THE MODIFIED FUNCTION
         }
         if (pathname === '/api/admin/login') {
             return handleAdminLogin(request, env);
@@ -99,7 +119,7 @@ export default {
             return handleSiteSettings(request, env);
         }
         if (pathname === '/api/posts') {
-            return handlePublicPosts(request, env); // <<< CORRECTED FUNCTION
+            return handlePublicPosts(request, env);
         }
         if (pathname.startsWith('/api/posts/')) {
             return handlePublicPostBySlug(request, env);
@@ -139,7 +159,7 @@ export default {
 
     // --- Scheduled Task ---
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-        console.log(`[cron ${event.cron}] Triggered at ${new Date(event.scheduledTime).toISOString()}`);
+        console.log(`[cron ${event.cron}] Triggered at ${new Date(event.scheduledTime).toISOString()} (Nepal Time: ${new Date(event.scheduledTime + (5.75 * 60 * 60 * 1000)).toISOString()})`);
         ctx.waitUntil(updateForexData(env));
     }
 };
@@ -248,7 +268,6 @@ function generateSlug(title: string): string {
 
 // --- API Route Handlers ---
 
-// handleCheckData (Keep the robust version from previous step)
 async function handleCheckData(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
@@ -312,7 +331,6 @@ async function handleCheckData(request: Request, env: Env): Promise<Response> {
     }
 }
 
-// handleFetchAndStore (Keep the robust version from previous step)
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
@@ -412,8 +430,7 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     }
 }
 
-
-// --- CORRECTED handleHistoricalRates FUNCTION ---
+// --- MODIFIED handleHistoricalRates FUNCTION ---
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency'); // Might be null
@@ -437,7 +454,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
         let responsePayload: any;
 
         if (currencyCode) {
-            // --- Logic for SPECIFIC currency (for charts & profit/loss) ---
+            // --- Logic for SPECIFIC currency (for charts) ---
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
                 return new Response(JSON.stringify({ success: false, error: 'Invalid currency code specified.', data: [] }), {
@@ -445,7 +462,6 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 });
             }
 
-            // Quoted column names are safer
             const buyCol = `"${upperCaseCurrencyCode}_buy"`;
             const sellCol = `"${upperCaseCurrencyCode}_sell"`;
 
@@ -465,35 +481,29 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             
             const { results } = queryResult;
 
-            // Map results, preserving nulls from DB
             const chartData = results.map((item: any) => ({
                 date: item.date,
                 buy: item.buy_rate, // Will be null if column doesn't exist or value is NULL
                 sell: item.sell_rate
             }));
-            // Note: Frontend (e.g., fillMissingDates) should handle nulls appropriately if needed
 
             responsePayload = {
                 success: true,
                 data: chartData,
                 currency: currencyCode
             };
-            // Return structure expected by fetchHistoricalRatesWithCache
             return new Response(JSON.stringify(responsePayload), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
 
-        } else {
-            // --- Logic for ALL currencies (for converter, expects single date) ---
-            if (fromDate !== toDate) {
-                console.warn(`handleHistoricalRates called without currency for range ${fromDate}-${toDate}. Returning data only for ${fromDate}.`);
-            }
-
+        } else if (fromDate === toDate) {
+             // --- Logic for ALL currencies, SINGLE date (for converter) ---
             query = env.FOREX_DB.prepare(
                 `SELECT * FROM forex_rates WHERE date = ? LIMIT 1`
             ).bind(fromDate);
 
             const result = await query.first<any>();
+            let ratesDataPayload: RatesData | null = null;
 
             if (result) {
                 const rates: Rate[] = [];
@@ -501,11 +511,11 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 CURRENCIES.forEach(code => {
                     const buyRate = result[`${code}_buy`];
                     const sellRate = result[`${code}_sell`];
-                    // Stricter check: ensure both are numbers and > 0 (or adjust as needed)
+                    const currencyInfo = CURRENCY_MAP[code];
+
                     if (typeof buyRate === 'number' && typeof sellRate === 'number' && buyRate >= 0 && sellRate >= 0) {
                         rates.push({
-                            // TODO: Add proper name/unit lookup if possible, maybe from a const map
-                            currency: { iso3: code, name: code, unit: 1 },
+                            currency: { iso3: code, name: currencyInfo.name, unit: currencyInfo.unit },
                             buy: buyRate,
                             sell: sellRate,
                         });
@@ -514,30 +524,76 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 });
 
                 if (hasValidData) {
-                    responsePayload = {
+                    ratesDataPayload = {
                         date: result.date,
-                        published_on: result.updated_at || result.date, // Use updated_at if available
+                        published_on: result.updated_at || result.date,
                         modified_on: result.updated_at || result.date,
                         rates: rates,
                     };
                 } else {
                     console.log(`D1 row found for ${fromDate}, but no valid currency rates found.`);
-                    responsePayload = null;
                 }
             } else {
                 console.log(`No D1 record found for date ${fromDate}.`);
-                responsePayload = null;
             }
+            // Return RatesData object directly or null
+            return new Response(JSON.stringify(ratesDataPayload), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
 
-            // Return RatesData object directly or null, as expected by fetchRatesForDateWithCache
-            return new Response(JSON.stringify(responsePayload), {
+        } else {
+            // --- NEW: Logic for ALL currencies, DATE RANGE (for ArchiveDetail) ---
+            query = env.FOREX_DB.prepare(
+                `SELECT * FROM forex_rates WHERE date >= ? AND date <= ? ORDER BY date ASC`
+            ).bind(fromDate, toDate);
+
+            const queryResult = await query.all<any>();
+
+            if (!queryResult.success || !queryResult.results) {
+                 console.error(`D1 Query Error fetching all rates for range ${fromDate}-${toDate}`);
+                 throw new Error('Database query failed for date range');
+            }
+            
+            const { results } = queryResult;
+            
+            // De-normalize the flat D1 rows back into the `RatesData[]` structure.
+            const payloads: RatesData[] = results.map(row => {
+                const rates: Rate[] = [];
+                CURRENCIES.forEach(code => {
+                    const buyRate = row[`${code}_buy`];
+                    const sellRate = row[`${code}_sell`];
+                    const currencyInfo = CURRENCY_MAP[code];
+
+                    // Only include if data exists
+                    if (typeof buyRate === 'number' && typeof sellRate === 'number') {
+                         rates.push({
+                            currency: { iso3: code, name: currencyInfo.name, unit: currencyInfo.unit },
+                            buy: buyRate,
+                            sell: sellRate
+                        });
+                    }
+                });
+                return {
+                    date: row.date,
+                    published_on: row.updated_at || row.date,
+                    modified_on: row.updated_at || row.date,
+                    rates: rates
+                };
+            }).filter(p => p.rates.length > 0); // Filter out days that might have been stored with no rates
+
+            // Return in the { success: true, payload: ... } structure
+            responsePayload = {
+                success: true,
+                payload: payloads
+            };
+             return new Response(JSON.stringify(responsePayload), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
         }
 
     } catch (error: any) {
-        console.error(`Database error in handleHistoricalRates (currency: ${currencyCode}, date: ${fromDate}):`, error.message, error.cause);
-        const errorPayload = currencyCode ? { success: false, error: 'Database query failed', data: [] } : null;
+        console.error(`Database error in handleHistoricalRates (currency: ${currencyCode}, range: ${fromDate}-${toDate}):`, error.message, error.cause);
+        const errorPayload = currencyCode ? { success: false, error: 'Database query failed', data: [] } : { success: false, error: 'Database query failed', payload: [] };
         return new Response(JSON.stringify(errorPayload), {
             status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
@@ -643,9 +699,13 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
     try {
         const { username, newPassword, keepSamePassword } = await request.json();
-        if (!newPassword || newPassword.length < 8) {
+        if (!username) {
+             return new Response(JSON.stringify({ success: false, error: 'Username is required.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        if (!keepSamePassword && (!newPassword || newPassword.length < 8)) {
              return new Response(JSON.stringify({ success: false, error: 'New password must be >= 8 chars.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
+
         const user = await env.FOREX_DB.prepare(
             `SELECT username, plaintext_password, password_hash FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; plaintext_password: string | null; password_hash: string | null }>();
@@ -653,9 +713,15 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
             return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        let newPasswordHash: string;
-        if (keepSamePassword && user.password_hash) {
-            newPasswordHash = user.password_hash;
+        let newPasswordHash: string | null = null;
+        if (keepSamePassword) {
+            if (user.password_hash) {
+                newPasswordHash = user.password_hash;
+            } else if (user.plaintext_password) {
+                newPasswordHash = await simpleHash(user.plaintext_password);
+            } else {
+                 return new Response(JSON.stringify({ success: false, error: 'Cannot keep password, no hash or plaintext found.' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
         } else {
             newPasswordHash = await simpleHash(newPassword);
         }
@@ -663,6 +729,10 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
+        
+        // Also log recovery
+        await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_data, created_at) VALUES (?, datetime('now'))`).bind(username).run();
+
 
         return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
@@ -671,7 +741,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
 }
 
-// --- Admin Posts CRUD (Keep versions from previous steps) ---
+// --- Admin Posts CRUD ---
 async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -752,7 +822,7 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
     }
 }
 
-// --- Admin Forex Data (Keep version from previous step) ---
+// --- Admin Forex Data ---
 async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -804,7 +874,7 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
     }
 }
 
-// --- Admin Site Settings (Keep version from previous step) ---
+// --- Admin Site Settings ---
 async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -829,7 +899,7 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
     }
 }
 
-// --- CORRECTED Public Posts List ---
+// --- Public Posts List ---
 async function handlePublicPosts(request: Request, env: Env): Promise<Response> {
     try {
         const query = env.FOREX_DB.prepare(
@@ -849,7 +919,7 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
     }
 }
 
-// --- Public Post Detail (Keep version from previous step) ---
+// --- Public Post Detail ---
 async function handlePublicPostBySlug(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const slug = url.pathname.split('/').pop();
@@ -870,13 +940,13 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
     }
 }
 
-// --- Scheduled NRB Data Update (Keep robust version from previous step) ---
+// --- Scheduled NRB Data Update ---
 async function updateForexData(env: Env): Promise<void> {
     console.log("Starting scheduled forex data update...");
     try {
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 7);
+        startDate.setDate(endDate.getDate() - 7); // Fetch last 7 days to catch up
         const fromDateStr = formatDate(startDate);
         const toDateStr = formatDate(endDate);
         console.log(`Scheduled fetch: NRB data from ${fromDateStr} to ${toDateStr}`);
