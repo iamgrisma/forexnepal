@@ -389,14 +389,14 @@ const ArchiveDetail = () => {
             </Button>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/daily-update/forex-for-${previousDate}`} className="flex items-center gap-1">
+                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
                   Previous Day
                 </Link>
               </Button>
               {canGoNext && (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/daily-update/forex-for-${nextDate}`} className="flex items-center gap-1">
+                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1">
                     Next Day
                     <ChevronRight className="h-4 w-4" />
                   </Link>
