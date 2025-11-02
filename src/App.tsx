@@ -43,7 +43,7 @@ const App = () => (
         <Route path="/archive/page/:pageNumber" element={<Archive />} />
         
         {/* --- UPDATED ROUTE --- */}
-        <Route path="/daily-update/forex/:date" element={<ArchiveDetail />} />
+        <Route path="/daily-update/forex-for/:date" element={<ArchiveDetail />} />
         
         <Route path="/converter" element={<Converter />} />
         <Route path="/historical-charts" element={<HistoricalCharts />} />
