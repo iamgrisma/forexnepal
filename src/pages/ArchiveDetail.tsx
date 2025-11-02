@@ -278,7 +278,7 @@ const ArchiveDetail = () => {
           <Card>
             <CardContent className="p-8 text-center">
               <p className="text-muted-foreground">Invalid date format in URL.</p>
-              <p className="text-sm text-muted-foreground">Please use the format: .../daily-update/forex-for-YYYY-MM-DD</p>
+              <p className="text-sm text-muted-foreground">Please use the format: .../daily-update/forex-for/YYYY-MM-DD</p>
               <Button asChild className="mt-4">
                 <Link to="/archive">Back to Archives</Link>
               </Button>
@@ -311,7 +311,7 @@ const ArchiveDetail = () => {
             <div className="flex gap-2">
               <Button variant="outline" size="sm" asChild>
                 {/* --- UPDATED LINK to match splat route --- */}
-                <Link to={`/daily-update/forex-for-${previousDate}`} className="flex items-center gap-1">
+                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
                   Previous Day
                 </Link>
@@ -319,7 +319,7 @@ const ArchiveDetail = () => {
               {canGoNext && (
                 <Button variant="outline" size="sm" asChild>
                   {/* --- UPDATED LINK to match splat route --- */}
-                  <Link to={`/daily-update/forex-for-${nextDate}`} className="flex items-center gap-1">
+                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1">
                     Next Day
                     <ChevronRight className="h-4 w-4" />
                   </Link>
