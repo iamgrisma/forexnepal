@@ -286,7 +286,7 @@ const ArchiveDetail = () => {
     );
   }
 
-  return (
+return (
     <Layout>
       <div className="container mx-auto px-4 pt-8">
         <div className="max-w-7xl mx-auto">
@@ -307,14 +307,16 @@ const ArchiveDetail = () => {
             
             <div className="flex gap-2">
               <Button variant="outline" size="sm" asChild>
-                <Link to={`/daily-update/forex-for-${previousDate}`} className="flex items-center gap-1">
+                {/* --- UPDATED LINK --- */}
+                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1">
                   <ChevronLeft className="h-4 w-4" />
                   Previous Day
                 </Link>
               </Button>
               {canGoNext && (
                 <Button variant="outline" size="sm" asChild>
-                  <Link to={`/daily-update/forex-for-${nextDate}`} className="flex items-center gap-1">
+                  {/* --- UPDATED LINK --- */}
+                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1">
                     Next Day
                     <ChevronRight className="h-4 w-4" />
                   </Link>
