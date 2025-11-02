@@ -1,5 +1,6 @@
 User-agent: *
 Allow: /
-Disallow: /admin/
+Sitemap: https://forex.grisma.com.np/sitemap.xml
 
-Sitemap: https//:forex.grisma.com.np/sitemap.xml
+# Disallow admin areas
+Disallow: /admin/
