@@ -26,6 +26,8 @@ const Archive = () => {
   // Generate year options (from 2000 to current year)
   const years = useMemo(() => {
     const yearList = [];
+    // --- UPDATED: Add "All Years" option ---
+    yearList.push('all');
     for (let year = currentYear; year >= 2000; year--) {
       yearList.push(year.toString());
     }
@@ -35,24 +37,40 @@ const Archive = () => {
   // Generate all dates from selected filters
   const allDates = useMemo(() => {
     const dates: Date[] = [];
-    const yearNum = parseInt(selectedYear);
     
-    if (selectedMonth === 'all') {
-      // Generate all days for the entire year
-      const maxMonth = yearNum === currentYear ? currentMonth : 12;
-      for (let month = 1; month <= maxMonth; month++) {
-        const start = new Date(yearNum, month - 1, 1);
+    // --- UPDATED: Handle "All Years" ---
+    if (selectedYear === 'all') {
+      const startYear = 2000;
+      const endYear = currentYear;
+      for (let yearNum = endYear; yearNum >= startYear; yearNum--) {
+        const maxMonth = yearNum === currentYear ? currentMonth : 12;
+        for (let month = 1; month <= maxMonth; month++) {
+          const start = new Date(yearNum, month - 1, 1);
+          const end = endOfMonth(start);
+          const monthDates = eachDayOfInterval({ start, end });
+          dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
+        }
+      }
+    } else {
+      // Original logic for a specific year
+      const yearNum = parseInt(selectedYear);
+      if (selectedMonth === 'all') {
+        // Generate all days for the entire year
+        const maxMonth = yearNum === currentYear ? currentMonth : 12;
+        for (let month = 1; month <= maxMonth; month++) {
+          const start = new Date(yearNum, month - 1, 1);
+          const end = endOfMonth(start);
+          const monthDates = eachDayOfInterval({ start, end });
+          dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
+        }
+      } else {
+        // Generate days for selected month
+        const monthNum = parseInt(selectedMonth);
+        const start = new Date(yearNum, monthNum - 1, 1);
         const end = endOfMonth(start);
         const monthDates = eachDayOfInterval({ start, end });
         dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
       }
-    } else {
-      // Generate days for selected month
-      const monthNum = parseInt(selectedMonth);
-      const start = new Date(yearNum, monthNum - 1, 1);
-      const end = endOfMonth(start);
-      const monthDates = eachDayOfInterval({ start, end });
-      dates.push(...monthDates.filter(date => !isAfter(date, currentDate)));
     }
     
     return dates.sort((a, b) => b.getTime() - a.getTime()); // Newest first
@@ -96,7 +114,8 @@ const Archive = () => {
 
   const handleFilterChange = () => {
     // Reset to page 1 when filters change
-    window.history.pushState({}, '', '/archive');
+    // --- UPDATED: Use react-router navigation for HashRouter ---
+    window.location.hash = '/archive';
   };
 
   useEffect(() => {
@@ -134,7 +153,7 @@ const Archive = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {years.map(year => (
-                      <SelectItem key={year} value={year}>{year}</SelectItem>
+                      <SelectItem key={year} value={year}>{year === 'all' ? 'All Years' : year}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -178,7 +197,7 @@ const Archive = () => {
                 <ul className="space-y-2">
                   {dates.map(date => (
                     <li key={date.toISOString()}>
-                      {/* This link format is correct for your desired URL */}
+                      {/* This link format is correct and will be matched by the splat route */}
                       <Link
                         to={`/daily-update/forex-for-${format(date, 'yyyy-MM-dd')}`}
                         className="block p-3 rounded-lg hover:bg-accent transition-colors"
