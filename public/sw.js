@@ -1,42 +1,44 @@
-const CACHE_NAME = 'forex-pwa-v3'; // Increment cache version to force update
+const CACHE_NAME = 'forex-app-v4';
+const STATIC_CACHE = 'forex-static-v4';
+const API_CACHE = 'forex-api-v4';
+const IMAGE_CACHE = 'forex-images-v4';
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 const urlsToCache = [
-  '/', // Cache the root path served by index.html due to HashRouter
+  '/',
   '/index.html',
   '/manifest.json',
   '/favicon.ico',
   '/icon-192.png',
   '/icon-512.png',
-  // Add other static assets if needed (JS/CSS chunks are usually handled automatically by build tools)
 ];
 
 self.addEventListener('install', (event) => {
   console.log('[SW] Install event');
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(STATIC_CACHE).then((cache) => {
       console.log('[SW] Caching app shell');
       return cache.addAll(urlsToCache).catch((err) => {
         console.warn('[SW] Cache addAll failed:', err);
-        // Don't fail install if some non-essential assets fail
         return Promise.resolve();
       });
-    }).then(() => self.skipWaiting()) // Activate new SW immediately
+    }).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
   console.log('[SW] Activate event');
+  const cacheWhitelist = [STATIC_CACHE, API_CACHE, IMAGE_CACHE];
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (!cacheWhitelist.includes(cacheName)) {
             console.log('[SW] Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
         })
       );
-    }).then(() => self.clients.claim()) // Take control immediately
+    }).then(() => self.clients.claim())
   );
 });
 
@@ -67,12 +69,9 @@ self.addEventListener('fetch', (event) => {
           // Cache successful GET API responses
           if (response.ok) {
             const responseToCache = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              // --- Only cache GET requests ---
-              // (This check is now redundant due to the main fix above, but safe to keep)
+            caches.open(API_CACHE).then((cache) => {
               if (request.method === 'GET') {
                   cache.put(request, responseToCache);
-                  // Store timestamp only for GET requests
                   cache.put(
                       new Request(request.url + '?timestamp'),
                       new Response(Date.now().toString())
@@ -84,7 +83,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           // Offline fallback for GET API calls
-          return caches.open(CACHE_NAME).then(async (cache) => {
+          return caches.open(API_CACHE).then(async (cache) => {
             const timestampResponse = await cache.match(
               new Request(request.url + '?timestamp')
             );
@@ -122,7 +121,7 @@ self.addEventListener('fetch', (event) => {
     caches.match(request).then((response) => {
       if (response) {
         // Check timestamp for static assets too
-         return caches.open(CACHE_NAME).then(async (cache) => {
+         return caches.open(STATIC_CACHE).then(async (cache) => {
             const timestampResponse = await cache.match(new Request(request.url + '?timestamp'));
              let isStale = true; // Assume stale unless proven otherwise
              if (timestampResponse) {
@@ -159,7 +158,7 @@ self.addEventListener('fetch', (event) => {
       return fetch(request).then((networkResponse) => {
         if (networkResponse.ok) {
           // Cache newly fetched static assets
-          return caches.open(CACHE_NAME).then((cache) => {
+          return caches.open(STATIC_CACHE).then((cache) => {
               // console.log(`[SW] Caching new asset (Static): ${request.url}`);
             const respToCache = networkResponse.clone();
             cache.put(request, respToCache);
@@ -190,9 +189,17 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'CLEAR_CACHE') {
     console.log('[SW] Clearing cache on message');
     event.waitUntil(
-      caches.delete(CACHE_NAME).then(() => {
-          console.log('[SW] Cache deleted. Re-opening.');
-        return caches.open(CACHE_NAME); // Re-open cache immediately if needed
+      Promise.all([
+        caches.delete(STATIC_CACHE),
+        caches.delete(API_CACHE),
+        caches.delete(IMAGE_CACHE)
+      ]).then(() => {
+        console.log('[SW] All caches deleted. Re-opening.');
+        return Promise.all([
+          caches.open(STATIC_CACHE),
+          caches.open(API_CACHE),
+          caches.open(IMAGE_CACHE)
+        ]);
       })
     );
   }

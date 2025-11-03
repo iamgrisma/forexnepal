@@ -2,40 +2,53 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-// HashRouter is already correctly imported in your main.tsx
 import { Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
-import Converter from "./pages/Converter";
-import HistoricalCharts from "./pages/HistoricalCharts";
-import CurrencyHistoricalData from "./pages/CurrencyHistoricalData";
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Disclosure from "./pages/Disclosure";
-import AdsTxt from "./pages/AdsTxt";
-import NotFound from "./pages/NotFound";
-import AdminLogin from "./pages/AdminLogin";
-import Posts from "./pages/Posts";
-import PostDetail from "./pages/PostDetail";
-import ChangePassword from "./pages/ChangePassword";
-import Archive from "./pages/Archive";
-import ArchiveDetail from "./pages/ArchiveDetail";
 
-// --- Ensure these imports are correct ---
-import ProtectedRoute from "./components/ProtectedRoute"; // Import the guard
-import AdminDashboard from "./pages/AdminDashboard";    // Import the dashboard page
-import PostEditor from "./pages/PostEditor";        // Import the editor page
-// --- End Ensure imports ---
+// Lazy load routes for better performance
+const Converter = lazy(() => import("./pages/Converter"));
+const HistoricalCharts = lazy(() => import("./pages/HistoricalCharts"));
+const CurrencyHistoricalData = lazy(() => import("./pages/CurrencyHistoricalData"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Disclosure = lazy(() => import("./pages/Disclosure"));
+const AdsTxt = lazy(() => import("./pages/AdsTxt"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const AdminLogin = lazy(() => import("./pages/AdminLogin"));
+const Posts = lazy(() => import("./pages/Posts"));
+const PostDetail = lazy(() => import("./pages/PostDetail"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword"));
+const Archive = lazy(() => import("./pages/Archive"));
+const ArchiveDetail = lazy(() => import("./pages/ArchiveDetail"));
+const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
+const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
+const PostEditor = lazy(() => import("./pages/PostEditor"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      gcTime: 10 * 60 * 1000, // 10 minutes
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+const LoadingFallback = () => (
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+  </div>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      {/* HashRouter should wrap this in main.tsx */}
-      <Routes>
+      <Suspense fallback={<LoadingFallback />}>
+        <Routes>
         {/* --- Public Routes --- */}
         <Route path="/" element={<Index />} />
         <Route path="/archive" element={<Archive />} />
@@ -74,7 +87,8 @@ const App = () => (
 
         {/* --- Catch-all Not Found Route (Must be last) --- */}
         <Route path="*" element={<NotFound />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </TooltipProvider>
   </QueryClientProvider>
 );

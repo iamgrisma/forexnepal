@@ -3,6 +3,7 @@ import { getFlagEmoji } from '../services/forexService'; // Assuming getFlagIcon
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown } from 'lucide-react'; // Import trend icons
 import { cn } from "@/lib/utils"; // Import cn utility
+import { memo } from 'react';
 
 interface CurrencyCardProps {
   rate: Rate;
@@ -45,7 +46,7 @@ const getRateChange = (currentRate: Rate, previousDayRates: Rate[] | undefined, 
 };
 
 
-const CurrencyCard = ({ rate, index, previousDayRates }: CurrencyCardProps) => {
+const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps) => {
   const navigate = useNavigate();
   const currency = rate.currency;
   // Use a consistent flag method - assuming getFlagEmoji provides the class or emoji
@@ -138,6 +139,8 @@ const CurrencyCard = ({ rate, index, previousDayRates }: CurrencyCardProps) => {
       </div>
     </div>
   );
-};
+});
+
+CurrencyCard.displayName = 'CurrencyCard';
 
 export default CurrencyCard;

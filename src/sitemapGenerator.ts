@@ -1,12 +1,13 @@
 import { format, addDays, differenceInDays, startOfDay } from 'date-fns';
 
 // D1Database type for sitemap generator
+interface D1PreparedStatement {
+  bind: (...values: any[]) => D1PreparedStatement;
+  all: () => Promise<{ results: any[] }>;
+}
+
 interface D1Database {
-  prepare: (query: string) => {
-    bind: (...values: any[]) => {
-      all: () => Promise<{ results: any[] }>;
-    };
-  };
+  prepare: (query: string) => D1PreparedStatement;
 }
 
 const BASE_URL = 'https://forex.grisma.com.np';

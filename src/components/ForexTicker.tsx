@@ -1,5 +1,4 @@
-
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { Rate } from '../types/forex';
 import { getFlagEmoji } from '../services/forexService';
 
@@ -8,7 +7,7 @@ interface ForexTickerProps {
   isLoading: boolean;
 }
 
-const ForexTicker = ({ rates, isLoading }: ForexTickerProps) => {
+const ForexTicker = memo(({ rates, isLoading }: ForexTickerProps) => {
   const tickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,6 +48,8 @@ const ForexTicker = ({ rates, isLoading }: ForexTickerProps) => {
       </div>
     </div>
   );
-};
+});
+
+ForexTicker.displayName = 'ForexTicker';
 
 export default ForexTicker;

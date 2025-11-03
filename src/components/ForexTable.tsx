@@ -1,5 +1,4 @@
-
-import { useState } from 'react';
+import { useState, useMemo, memo, useCallback } from 'react';
 import { Rate } from '../types/forex';
 import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
@@ -14,7 +13,7 @@ interface ForexTableProps {
   previousDayRates?: Rate[];
 }
 
-const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTableProps) => {
+const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: ForexTableProps) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -22,68 +21,72 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
   } | null>(null);
   const navigate = useNavigate();
 
-  // Filter the rates based on search term
-  const filteredRates = rates.filter(rate => 
-    rate.currency.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    rate.currency.iso3.toLowerCase().includes(searchTerm.toLowerCase())
+  // Filter the rates based on search term - memoized
+  const filteredRates = useMemo(() => 
+    rates.filter(rate => 
+      rate.currency.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      rate.currency.iso3.toLowerCase().includes(searchTerm.toLowerCase())
+    ), [rates, searchTerm]
   );
 
-  // Sorting logic
-  const sortedRates = [...filteredRates].sort((a, b) => {
-    if (!sortConfig) return 0;
-    
-    let valueA, valueB;
-    
-    switch (sortConfig.key) {
-      case 'name':
-        valueA = a.currency.name;
-        valueB = b.currency.name;
-        break;
-      case 'unit':
-        valueA = a.currency.unit;
-        valueB = b.currency.unit;
-        break;
-      case 'buy':
-        valueA = a.buy;
-        valueB = b.buy;
-        break;
-      case 'sell':
-        valueA = a.sell;
-        valueB = b.sell;
-        break;
-      default:
-        valueA = a.currency.iso3;
-        valueB = b.currency.iso3;
-    }
-    
-    if (valueA < valueB) {
-      return sortConfig.direction === 'ascending' ? -1 : 1;
-    }
-    if (valueA > valueB) {
-      return sortConfig.direction === 'ascending' ? 1 : -1;
-    }
-    return 0;
-  });
+  // Sorting logic - memoized
+  const sortedRates = useMemo(() => {
+    return [...filteredRates].sort((a, b) => {
+      if (!sortConfig) return 0;
+      
+      let valueA, valueB;
+      
+      switch (sortConfig.key) {
+        case 'name':
+          valueA = a.currency.name;
+          valueB = b.currency.name;
+          break;
+        case 'unit':
+          valueA = a.currency.unit;
+          valueB = b.currency.unit;
+          break;
+        case 'buy':
+          valueA = a.buy;
+          valueB = b.buy;
+          break;
+        case 'sell':
+          valueA = a.sell;
+          valueB = b.sell;
+          break;
+        default:
+          valueA = a.currency.iso3;
+          valueB = b.currency.iso3;
+      }
+      
+      if (valueA < valueB) {
+        return sortConfig.direction === 'ascending' ? -1 : 1;
+      }
+      if (valueA > valueB) {
+        return sortConfig.direction === 'ascending' ? 1 : -1;
+      }
+      return 0;
+    });
+  }, [filteredRates, sortConfig]);
 
-  const requestSort = (key: string) => {
+  const requestSort = useCallback((key: string) => {
     let direction: 'ascending' | 'descending' = 'ascending';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
       direction = 'descending';
     }
     setSortConfig({ key, direction });
-  };
+  }, [sortConfig]);
 
-  const getSortIndicator = (key: string) => {
+  const getSortIndicator = useCallback((key: string) => {
     if (!sortConfig || sortConfig.key !== key) return null;
     return sortConfig.direction === 'ascending' ? ' ↑' : ' ↓';
-  };
+  }, [sortConfig]);
 
-  const handleCurrencyClick = (rate: Rate) => {
+  const handleCurrencyClick = useCallback((rate: Rate) => {
     navigate(`/historical-data/${rate.currency.iso3}`);
-  };
+  }, [navigate]);
 
-  // Function to get rate change from previous day
-  const getRateChange = (currentRate: Rate, type: 'buy' | 'sell'): { value: number, isIncrease: boolean | null } => {
+  // Function to get rate change from previous day - memoized
+  const getRateChange = useCallback((currentRate: Rate, type: 'buy' | 'sell'): { value: number, isIncrease: boolean | null } => {
     if (!previousDayRates || previousDayRates.length === 0) {
       return { value: 0, isIncrease: null };
     }
@@ -104,7 +107,7 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
       value: Math.abs(diff),
       isIncrease: diff > 0 ? true : diff < 0 ? false : null
     };
-  };
+  }, [previousDayRates]);
 
   if (isLoading) {
     return (
@@ -263,6 +266,8 @@ const ForexTable = ({ rates, isLoading, title, previousDayRates = [] }: ForexTab
       </div>
     </div>
   );
-};
+});
+
+ForexTable.displayName = 'ForexTable';
 
 export default ForexTable;
