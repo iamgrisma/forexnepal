@@ -1,5 +1,13 @@
-import { D1Database } from './worker'; // Import D1 type
 import { format, addDays, differenceInDays, startOfDay } from 'date-fns';
+
+// D1Database type for sitemap generator
+interface D1Database {
+  prepare: (query: string) => {
+    bind: (...values: any[]) => {
+      all: () => Promise<{ results: any[] }>;
+    };
+  };
+}
 
 const BASE_URL = 'https://forex.grisma.com.np';
 const SITEMAP_PAGE_SIZE = 500;
