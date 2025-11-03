@@ -5,8 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-// Lazy load routes for better performance
+// Lazy load non-critical routes
 const Converter = lazy(() => import("./pages/Converter"));
 const HistoricalCharts = lazy(() => import("./pages/HistoricalCharts"));
 const CurrencyHistoricalData = lazy(() => import("./pages/CurrencyHistoricalData"));
@@ -22,7 +23,6 @@ const PostDetail = lazy(() => import("./pages/PostDetail"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
 const Archive = lazy(() => import("./pages/Archive"));
 const ArchiveDetail = lazy(() => import("./pages/ArchiveDetail"));
-const ProtectedRoute = lazy(() => import("./components/ProtectedRoute"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const PostEditor = lazy(() => import("./pages/PostEditor"));
 
