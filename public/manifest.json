@@ -29,7 +29,10 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance", "utilities"],
+  "categories": [
+    "finance",
+    "utilities"
+  ],
   "screenshots": [
     {
       "src": "/og-image.png",
