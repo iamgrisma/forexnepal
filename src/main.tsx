@@ -20,7 +20,10 @@ if ('serviceWorker' in navigator) {
       .register('/sw.js')
       .then((registration) => {
         console.log('SW registered:', registration);
-
+        // Ensure the SW takes control ASAP for install eligibility
+        if (registration.waiting) {
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing;
           if (newWorker) {

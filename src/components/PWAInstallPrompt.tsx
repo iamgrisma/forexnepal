@@ -3,50 +3,74 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Download, X } from 'lucide-react';
 
+// Local type for the install prompt event
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+}
+
+const INSTALL_KEY = 'pwa-installed';
+const DISMISS_KEY = 'pwa-prompt-last-dismissed';
+const RE_SHOW_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 const PWAInstallPrompt = () => {
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
 
   useEffect(() => {
-    const isInstalled = localStorage.getItem('pwa-installed');
-    const isDismissed = localStorage.getItem('pwa-prompt-dismissed');
-    
-    if (isInstalled || isDismissed) {
-      return;
+    const isInstalled = localStorage.getItem(INSTALL_KEY) === 'true';
+    const lastDismissed = Number(localStorage.getItem(DISMISS_KEY) || 0);
+
+    // If already installed or recently dismissed, do not show immediately
+    if (isInstalled || (Date.now() - lastDismissed < RE_SHOW_MS)) {
+      // Still listen for events to keep state in sync
     }
 
-    const handler = (e: Event) => {
+    const beforeInstallHandler = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e);
-      setShowPrompt(true);
+      const bip = e as BeforeInstallPromptEvent;
+      setDeferredPrompt(bip);
+
+      const canShow = !isInstalled && (Date.now() - lastDismissed >= RE_SHOW_MS);
+      if (canShow) setShowPrompt(true);
     };
 
-    window.addEventListener('beforeinstallprompt', handler);
+    const appInstalledHandler = () => {
+      localStorage.setItem(INSTALL_KEY, 'true');
+      setShowPrompt(false);
+      setDeferredPrompt(null);
+    };
 
-    // Check if app is already installed
+    window.addEventListener('beforeinstallprompt', beforeInstallHandler);
+    window.addEventListener('appinstalled', appInstalledHandler);
+
+    // If app already running standalone (e.g., iOS A2HS)
     if (window.matchMedia('(display-mode: standalone)').matches) {
-      localStorage.setItem('pwa-installed', 'true');
+      localStorage.setItem(INSTALL_KEY, 'true');
     }
 
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', beforeInstallHandler);
+      window.removeEventListener('appinstalled', appInstalledHandler);
+    };
   }, []);
 
   const handleInstall = async () => {
     if (!deferredPrompt) return;
-
-    deferredPrompt.prompt();
+    await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-
     if (outcome === 'accepted') {
-      localStorage.setItem('pwa-installed', 'true');
+      localStorage.setItem(INSTALL_KEY, 'true');
+    } else {
+      // Re-show after cooldown
+      localStorage.setItem(DISMISS_KEY, String(Date.now()));
     }
-
     setDeferredPrompt(null);
     setShowPrompt(false);
   };
 
   const handleDismiss = () => {
-    localStorage.setItem('pwa-prompt-dismissed', 'true');
+    localStorage.setItem(DISMISS_KEY, String(Date.now()));
     setShowPrompt(false);
   };
 
@@ -67,7 +91,7 @@ const PWAInstallPrompt = () => {
                 <Button onClick={handleInstall} size="sm" className="flex-1">
                   Install
                 </Button>
-                <Button onClick={handleDismiss} size="sm" variant="outline">
+                <Button onClick={handleDismiss} size="sm" variant="outline" aria-label="Dismiss install prompt">
                   <X className="h-4 w-4" />
                 </Button>
               </div>
