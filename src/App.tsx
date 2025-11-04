@@ -6,6 +6,7 @@ import { Routes, Route } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import Index from "./pages/Index";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PWAInstallPrompt from "./components/PWAInstallPrompt";
 
 // Lazy load non-critical routes
 const Converter = lazy(() => import("./pages/Converter"));
@@ -47,6 +48,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <PWAInstallPrompt />
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
         {/* --- Public Routes --- */}
