@@ -1,7 +1,10 @@
 {
-  "name": "ForexNepal - Exchange Rates",
+  "name": "ForexNepal",
   "short_name": "ForexNepal",
-  "description": "Real-time foreign exchange rates for Nepali Rupees with offline support",
+  "description": "Real-time foreign exchange rates published by NRB for Nepali Rupees with offline support",
+  "lang": "en",
+  "dir": "ltr",
+  "id": "forexnepal",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
@@ -34,6 +37,11 @@
     "utilities"
   ],
   "screenshots": [
+    {
+      "src": "/forexnepal-screenshot.jpg",
+      "sizes": "1079x1269",
+      "type": "image/jpeg"
+    },
     {
       "src": "/og-image.png",
       "sizes": "1200x630",
