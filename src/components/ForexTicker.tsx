@@ -20,14 +20,14 @@ const ForexTicker = memo(({ rates, isLoading }: ForexTickerProps) => {
 
   if (isLoading) {
     return (
-      <div className="h-12 w-full bg-gradient-to-r from-gray-100 to-gray-200 animate-shimmer rounded-lg">
-        <div className="h-full shimmer-effect rounded-lg"></div>
+      <div className="h-12 w-full bg-gradient-to-r from-gray-100 to-gray-200 animate-shimmer rounded-xl mb-6">
+        <div className="h-full shimmer-effect rounded-xl"></div>
       </div>
     );
   }
 
   return (
-    <div className="w-full overflow-hidden glassmorphism rounded-xl animate-scale-in mb-6">
+    <div className="w-full h-12 overflow-hidden glassmorphism rounded-xl animate-scale-in mb-6">
       <div className="overflow-hidden relative h-12">
         <div 
           ref={tickerRef}

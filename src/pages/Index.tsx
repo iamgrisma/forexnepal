@@ -285,9 +285,9 @@ const Index = () => {
     <Layout>
       <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
-          {/* Header section */}
-          <div className="text-center mb-12 animate-fade-in">
-            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4">
+          {/* Header section - Fixed heights */}
+          <div className="text-center mb-12 animate-fade-in min-h-[140px]">
+            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4 h-8">
               <Gitlab className="h-4 w-4 mr-1" />
               <span>Live Forex Data</span>
             </div>
@@ -297,12 +297,12 @@ const Index = () => {
             </p>
           </div>
 
-          {/* New: Main Title with Date Navigation */}
-          <div className="text-center mb-8">
+          {/* Main Title with Date Navigation - Fixed heights */}
+          <div className="text-center mb-8 min-h-[100px]">
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
               Foreign Exchange Rates as Per Nepal Rastra Bank
             </h2>
-            <div className="flex items-center justify-center gap-2">
+            <div className="flex items-center justify-center gap-2 h-10">
               <Button
                 variant="ghost"
                 size="icon"
@@ -364,14 +364,14 @@ const Index = () => {
           </div>
 
 
-          {/* Action buttons (Download, Refresh, View Mode) */}
-          <div className="flex flex-wrap justify-end items-center mb-6 gap-2">
+          {/* Action buttons (Download, Refresh, View Mode) - Fixed positioning */}
+          <div className="flex flex-wrap justify-end items-center mb-6 gap-2 min-h-[40px]">
             <Button
               onClick={downloadContentAsImage}
               variant="outline"
               size="sm"
-              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
-              disabled={isLoading || rates.length === 0} // Enabled for both views
+              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors h-10"
+              disabled={isLoading || rates.length === 0}
             >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline">Download Image</span>
@@ -380,14 +380,14 @@ const Index = () => {
               onClick={handleRefresh}
               variant="outline"
               size="sm"
-              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
+              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors h-10"
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Refresh</span>
             </Button>
 
-            <div className="bg-white/80 backdrop-blur-sm rounded-lg p-1 flex shadow-sm">
+            <div className="bg-white/80 backdrop-blur-sm rounded-lg p-1 flex shadow-sm h-10">
               <Button
                 variant={viewMode === 'table' ? 'default' : 'ghost'}
                 size="sm"

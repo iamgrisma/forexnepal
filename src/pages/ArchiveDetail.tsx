@@ -380,22 +380,22 @@ const ArchiveDetail = () => {
       
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <Button variant="outline" asChild>
-              <Link to="/archive" className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+            <Button variant="outline" asChild className="flex-shrink-0 w-full sm:w-auto">
+              <Link to="/archive" className="flex items-center gap-2 justify-center">
                 <ArrowLeft className="h-4 w-4" /> Back to Archives
               </Link>
             </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" asChild>
-                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1">
-                  <ChevronLeft className="h-4 w-4" /> Previous Day
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <Button variant="outline" size="sm" asChild className="flex-1 sm:flex-initial">
+                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1 justify-center">
+                  <ChevronLeft className="h-4 w-4" /> Previous
                 </Link>
               </Button>
               {canGoNext && (
-                <Button variant="outline" size="sm" asChild>
-                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1">
-                    Next Day <ChevronRight className="h-4 w-4" />
+                <Button variant="outline" size="sm" asChild className="flex-1 sm:flex-initial">
+                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1 justify-center">
+                    Next <ChevronRight className="h-4 w-4" />
                   </Link>
                 </Button>
               )}

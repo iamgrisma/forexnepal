@@ -3,8 +3,9 @@ import { Rate } from '../types/forex';
 import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, TrendingUp, TrendingDown } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 
 interface ForexTableProps {
   rates: Rate[];
@@ -86,9 +87,9 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
   }, [navigate]);
 
   // Function to get rate change from previous day - memoized
-  const getRateChange = useCallback((currentRate: Rate, type: 'buy' | 'sell'): { value: number, isIncrease: boolean | null } => {
+  const getRateChange = useCallback((currentRate: Rate, type: 'buy' | 'sell'): { difference: number, percentChange: number, trend: 'increase' | 'decrease' | 'stable' } | null => {
     if (!previousDayRates || previousDayRates.length === 0) {
-      return { value: 0, isIncrease: null };
+      return null;
     }
     
     const prevRate = previousDayRates.find(
@@ -96,22 +97,24 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
     );
     
     if (!prevRate) {
-      return { value: 0, isIncrease: null };
+      return null;
     }
     
     const prevValue = parseFloat(prevRate[type].toString());
     const currentValue = parseFloat(currentRate[type].toString());
-    const diff = currentValue - prevValue;
+    const difference = Number((currentValue - prevValue).toFixed(4));
+    const percentChange = (difference / prevValue) * 100;
     
     return {
-      value: Math.abs(diff),
-      isIncrease: diff > 0 ? true : diff < 0 ? false : null
+      difference,
+      percentChange,
+      trend: difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'stable'
     };
   }, [previousDayRates]);
 
   if (isLoading) {
     return (
-      <div className="animate-pulse space-y-4">
+      <div className="animate-pulse space-y-4 min-h-[500px]">
         <div className="h-10 bg-gray-200 rounded w-3/4 mx-auto"></div>
         <div className="h-12 bg-gray-200 rounded"></div>
         <div className="space-y-2">
@@ -218,15 +221,21 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                     {previousDayRates && previousDayRates.length > 0 && (
                       <>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {buyChange.isIncrease !== null ? (
+                          {buyChange ? (
                             <div className="flex items-center">
-                              {buyChange.isIncrease ? (
+                              {buyChange.trend === 'increase' ? (
                                 <TrendingUp className="h-4 w-4 text-forex-green mr-1" />
-                              ) : (
+                              ) : buyChange.trend === 'decrease' ? (
                                 <TrendingDown className="h-4 w-4 text-forex-red mr-1" />
+                              ) : (
+                                <Minus className="h-4 w-4 text-gray-400 mr-1" />
                               )}
-                              <span className={buyChange.isIncrease ? 'text-forex-green' : 'text-forex-red'}>
-                                {buyChange.value.toFixed(2)}
+                              <span className={cn(
+                                buyChange.trend === 'increase' && 'text-forex-green',
+                                buyChange.trend === 'decrease' && 'text-forex-red',
+                                buyChange.trend === 'stable' && 'text-gray-400'
+                              )}>
+                                {buyChange.difference > 0 ? '+' : ''}{buyChange.difference} ({buyChange.percentChange > 0 ? '+' : ''}{buyChange.percentChange.toFixed(2)}%)
                               </span>
                             </div>
                           ) : (
@@ -234,15 +243,21 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                           )}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {sellChange.isIncrease !== null ? (
+                          {sellChange ? (
                             <div className="flex items-center">
-                              {sellChange.isIncrease ? (
+                              {sellChange.trend === 'increase' ? (
                                 <TrendingUp className="h-4 w-4 text-forex-green mr-1" />
-                              ) : (
+                              ) : sellChange.trend === 'decrease' ? (
                                 <TrendingDown className="h-4 w-4 text-forex-red mr-1" />
+                              ) : (
+                                <Minus className="h-4 w-4 text-gray-400 mr-1" />
                               )}
-                              <span className={sellChange.isIncrease ? 'text-forex-green' : 'text-forex-red'}>
-                                {sellChange.value.toFixed(2)}
+                              <span className={cn(
+                                sellChange.trend === 'increase' && 'text-forex-green',
+                                sellChange.trend === 'decrease' && 'text-forex-red',
+                                sellChange.trend === 'stable' && 'text-gray-400'
+                              )}>
+                                {sellChange.difference > 0 ? '+' : ''}{sellChange.difference} ({sellChange.percentChange > 0 ? '+' : ''}{sellChange.percentChange.toFixed(2)}%)
                               </span>
                             </div>
                           ) : (

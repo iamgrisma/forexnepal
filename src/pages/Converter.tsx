@@ -210,13 +210,13 @@ const Converter = () => {
                    )}
                </div>
 
-              {/* Tabs */}
+               {/* Tabs */}
               <Tabs value={conversionType} onValueChange={setConversionType} className="w-full">
-                <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6">
-                   <TabsTrigger value="toNpr">Foreign → NPR</TabsTrigger>
-                   <TabsTrigger value="fromNpr">NPR → Foreign</TabsTrigger>
-                   <TabsTrigger value="anyToAny">Foreign → Foreign</TabsTrigger>
-                   <TabsTrigger value="profitLoss">Profit/Loss</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 mb-6 h-auto p-1.5 gap-1 bg-gradient-to-br from-slate-100 to-blue-50">
+                   <TabsTrigger value="toNpr" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-2.5 font-semibold">Foreign → NPR</TabsTrigger>
+                   <TabsTrigger value="fromNpr" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-2.5 font-semibold">NPR → Foreign</TabsTrigger>
+                   <TabsTrigger value="anyToAny" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-2.5 font-semibold">Foreign → Foreign</TabsTrigger>
+                   <TabsTrigger value="profitLoss" className="data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-cyan-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200 py-2.5 font-semibold">Profit/Loss</TabsTrigger>
                  </TabsList>
 
                 {/* --- Content for 'toNpr' Tab --- */}
