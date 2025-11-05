@@ -282,6 +282,34 @@ export async function fetchHistoricalRatesWithCache(
   }
 }
 
+/**
+ * NEW FUNCTION TO FIX THE BUILD ERROR
+ * Fetches high/low stats for a list of currencies over a date range.
+ */
+export async function fetchHistoricalStats(
+  currencyCodes: string[],
+  fromDate: string,
+  toDate: string
+): Promise<any | null> {
+  try {
+    const response = await fetch(
+      `/api/historical-stats?currencies=${currencyCodes.join(',')}&from=${fromDate}&to=${toDate}`
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        return data.stats;
+      }
+    }
+    return null; // Return null if fetch failed or API returned success: false
+  } catch (error) {
+    console.error('Error fetching historical stats:', error);
+    return null;
+  }
+}
+
+
 // --- fillMissingDatesWithPreviousData & fetchFromAPIFallback (Keep as they are) ---
 function fillMissingDatesWithPreviousData(
   data: ChartDataPoint[],
