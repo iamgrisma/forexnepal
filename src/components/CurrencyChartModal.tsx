@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { format, parseISO, differenceInDays } from 'date-fns';
-import { CalendarIcon, RefreshCw, Loader2 } from 'lucide-react';
+import { CalendarIcon, RefreshCw, Loader2, Download } from 'lucide-react'; // Added Download icon
 import { Rate, ChartDataPoint } from '../types/forex';
 // --- MODIFIED IMPORTS ---
 import { getDateRanges, fetchHistoricalRates, formatDate } from '../services/forexService'; // Import chunked fetcher
@@ -24,6 +24,9 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import { Calendar } from './ui/calendar';
 import { DateRange } from 'react-day-picker';
+// --- NEW IMPORTS FOR DOWNLOAD ---
+import { saveAs } from 'file-saver';
+import { toPng } from 'html-to-image';
 
 interface CurrencyChartModalProps {
   currency: Rate | null;
@@ -229,153 +232,188 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
     loadHistoricalData(from, to, false);
   };
 
+  // --- NEW: Download Chart Function ---
+  const downloadChart = (format: 'png') => {
+    if (!currency) return;
+    // Use a unique ID for the modal's download container
+    const container = document.getElementById(`modal-download-container-${currency.currency.iso3}`);
+    if (!container) {
+      toast({ title: "Error", description: "Could not find chart container.", variant: "destructive" });
+      return;
+    }
+    
+    toast({ title: "Downloading...", description: `Generating ${format.toUpperCase()} file.` });
+
+    toPng(container, { backgroundColor: '#ffffff' })
+      .then((dataUrl) => {
+        saveAs(dataUrl, `forexnepal-chart-${currency.currency.iso3}-${formatDate(new Date())}.${format}`);
+      })
+      .catch((error) => {
+        console.error('Chart download error:', error);
+        toast({ title: "Error", description: "Failed to generate chart image.", variant: "destructive" });
+      });
+  };
+
   if (!currency) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="text-2xl flex items-center gap-3">
-            <span className="text-3xl">{getFlagEmoji(currency.currency.iso3)}</span>
-            {currency.currency.name} ({currency.currency.iso3})
-          </DialogTitle>
-          <DialogDescription>
-            Historical exchange rate chart against NPR.
-          </DialogDescription>
-        </DialogHeader>
-        
-        {progress && (
-          <Alert className="bg-blue-50 border-blue-200">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <AlertDescription>
-              {progress.message}
-              {progress.chunkInfo && ` (Chunk ${progress.chunkInfo.current} of ${progress.chunkInfo.total})`}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Tabs value={selectedTab} onValueChange={handleTabChange}>
-          <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-            <div className="overflow-x-auto scrollbar-hide">
-              <TabsList>
-                <TabsTrigger value="week">1 Week</TabsTrigger>
-                <TabsTrigger value="month">1 Month</TabsTrigger>
-                <TabsTrigger value="threeMonth">3 Months</TabsTrigger>
-                <TabsTrigger value="sixMonth">6 Months</TabsTrigger>
-                <TabsTrigger value="year">1 Year</TabsTrigger>
-                <TabsTrigger value="fiveYear">5 Years</TabsTrigger>
-                <TabsTrigger value="custom">Custom</TabsTrigger>
-              </TabsList>
-            </div>
-            
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => {
-                let from, to;
-                if (selectedTab === 'custom') {
-                  if (customDateRange?.from && customDateRange.to) {
-                    from = formatDate(customDateRange.from);
-                    to = formatDate(customDateRange.to);
-                  } else {
-                    toast({ title: "Error", description: "Please select a custom date range to refresh.", variant: "destructive" });
-                    return;
-                  }
-                } else {
-                  const dates = getDatesForTab(selectedTab);
-                  from = dates.from; to = dates.to;
-                }
-                loadHistoricalData(from, to, false);
-              }}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
-
-          {selectedTab === 'custom' && (
-              <div className="flex flex-col md:flex-row gap-4 items-center mb-6 p-4 bg-gray-50 rounded-lg">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={'outline'}
-                      className="w-full md:w-[300px] justify-start text-left font-normal"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {customDateRange?.from ? (
-                        customDateRange.to ? (
-                          <>
-                            {format(customDateRange.from, 'LLL dd, y')} -{' '}
-                            {format(customDateRange.to, 'LLL dd, y')}
-                          </>
-                        ) : (
-                          format(customDateRange.from, 'LLL dd, y')
-                        )
-                      ) : (
-                        <span>Pick a date range</span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      initialFocus
-                      mode="range"
-                      defaultMonth={customDateRange?.from}
-                      selected={customDateRange}
-                      onSelect={setCustomDateRange}
-                      numberOfMonths={2}
-                      disabled={(date) =>
-                        date > new Date() || date < new Date('2000-01-01')
-                      }
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button onClick={handleCustomDateApply} disabled={isLoading}>
-                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Apply Range
-                </Button>
+        {/* --- ADDED UNIQUE ID --- */}
+        <div id={`modal-download-container-${currency.currency.iso3}`} className="bg-white">
+          <DialogHeader className="pt-6 px-6">
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start">
+              <div className="mb-4 sm:mb-0">
+                <DialogTitle className="text-2xl flex items-center gap-3">
+                  <span className="text-3xl">{getFlagEmoji(currency.currency.iso3)}</span>
+                  {currency.currency.name} ({currency.currency.iso3})
+                </DialogTitle>
+                <DialogDescription>
+                  Historical exchange rate chart against NPR.
+                </DialogDescription>
               </div>
-          )}
+              {/* --- ADDED DOWNLOAD BUTTON --- */}
+              <Button variant="outline" size="sm" onClick={() => downloadChart('png')}>
+                <Download className="mr-2 h-4 w-4" /> Download PNG
+              </Button>
+            </div>
+          </DialogHeader>
           
-          {/* --- NEW: Load Daily Data Button --- */}
-          {!isDailyDataLoaded && !isLoading && currentSampling !== 'daily' && (
-              <div className="text-center mb-4">
-                <p className="text-sm text-muted-foreground mb-2">
-                  Showing sampled data ({currentSampling}).
-                </T>
-                <Button variant="outline" size="sm" onClick={() => {
+          <div className="px-6 py-4">
+            {progress && (
+              <Alert className="bg-blue-50 border-blue-200">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <AlertDescription>
+                  {progress.message}
+                  {progress.chunkInfo && ` (Chunk ${progress.chunkInfo.current} of ${progress.chunkInfo.total})`}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <Tabs value={selectedTab} onValueChange={handleTabChange}>
+              <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <div className="overflow-x-auto scrollbar-hide">
+                  <TabsList>
+                    <TabsTrigger value="week">1 Week</TabsTrigger>
+                    <TabsTrigger value="month">1 Month</TabsTrigger>
+                    <TabsTrigger value="threeMonth">3 Months</TabsTrigger>
+                    <TabsTrigger value="sixMonth">6 Months</TabsTrigger>
+                    <TabsTrigger value="year">1 Year</TabsTrigger>
+                    <TabsTrigger value="fiveYear">5 Years</TabsTrigger>
+                    <TabsTrigger value="custom">Custom</TabsTrigger>
+                  </TabsList>
+                </div>
+                
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
                     let from, to;
                     if (selectedTab === 'custom') {
-                        if (customDateRange?.from && customDateRange.to) {
-                            from = formatDate(customDateRange.from);
-                            to = formatDate(customDateRange.to);
-                        } else {
-                            toast({ title: "Error", description: "Please select a custom date range.", variant: "destructive" });
-                            return;
-                        }
+                      if (customDateRange?.from && customDateRange.to) {
+                        from = formatDate(customDateRange.from);
+                        to = formatDate(customDateRange.to);
+                      } else {
+                        toast({ title: "Error", description: "Please select a custom date range to refresh.", variant: "destructive" });
+                        return;
+                      }
                     } else {
-                        const dates = getDatesForTab(selectedTab);
-                        from = dates.from; to = dates.to;
+                      const dates = getDatesForTab(selectedTab);
+                      from = dates.from; to = dates.to;
                     }
-                    loadHistoricalData(from, to, true);
-                }}>
-                  Load Full Daily Data (Slower)
+                    loadHistoricalData(from, to, false);
+                  }}
+                  disabled={isLoading}
+                >
+                  <RefreshCw className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
                 </Button>
               </div>
-            )}
-            
-          {isDailyDataLoaded && (
-            <p className="text-sm text-center text-green-600 mb-4">
-              Full daily data loaded from NRB API.
-            </p>
-          )}
 
-          {/* This TabsContent wrapper is just for layout, ChartDisplay is shown for all tabs */}
-          <TabsContent value={selectedTab}>
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-        </Tabs>
+              {selectedTab === 'custom' && (
+                  <div className="flex flex-col md:flex-row gap-4 items-center mb-6 p-4 bg-gray-50 rounded-lg">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={'outline'}
+                          className="w-full md:w-[300px] justify-start text-left font-normal"
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {customDateRange?.from ? (
+                            customDateRange.to ? (
+                              <>
+                                {format(customDateRange.from, 'LLL dd, y')} -{' '}
+                                {format(customDateRange.to, 'LLL dd, y')}
+                              </>
+                            ) : (
+                              format(customDateRange.from, 'LLL dd, y')
+                            )
+                          ) : (
+                            <span>Pick a date range</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          initialFocus
+                          mode="range"
+                          defaultMonth={customDateRange?.from}
+                          selected={customDateRange}
+                          onSelect={setCustomDateRange}
+                          numberOfMonths={2}
+                          disabled={(date) =>
+                            date > new Date() || date < new Date('2000-01-01')
+                          }
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <Button onClick={handleCustomDateApply} disabled={isLoading}>
+                      {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Apply Range
+                    </Button>
+                  </div>
+              )}
+              
+              {/* --- NEW: Load Daily Data Button --- */}
+              {!isDailyDataLoaded && !isLoading && currentSampling !== 'daily' && (
+                  <div className="text-center mb-4">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      Showing sampled data ({currentSampling}).
+                    </T>
+                    <Button variant="outline" size="sm" onClick={() => {
+                        let from, to;
+                        if (selectedTab === 'custom') {
+                            if (customDateRange?.from && customDateRange.to) {
+                                from = formatDate(customDateRange.from);
+                                to = formatDate(customDateRange.to);
+                            } else {
+                                toast({ title: "Error", description: "Please select a custom date range.", variant: "destructive" });
+                                return;
+                            }
+                        } else {
+                            const dates = getDatesForTab(selectedTab);
+                            from = dates.from; to = dates.to;
+                        }
+                        loadHistoricalData(from, to, true);
+                    }}>
+                      Load Full Daily Data (Slower)
+                    </Button>
+                  </div>
+                )}
+                
+              {isDailyDataLoaded && (
+                <p className="text-sm text-center text-green-600 mb-4">
+                  Full daily data loaded from NRB API.
+                </p>
+              )}
+
+              {/* This TabsContent wrapper is just for layout, ChartDisplay is shown for all tabs */}
+              <TabsContent value={selectedTab}>
+                <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -413,3 +451,26 @@ const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis domain={['auto', 'auto']} />
+          <Tooltip />
+          <Legend />
+          <Line
+            type="monotone"
+            dataKey="buy"
+            stroke="#006400"
+            dot={false}
+            name={`Buy (1 ${currencyCode})`}
+          />
+          <Line
+            type="monotone"
+            dataKey="sell"
+            stroke="#8B0000"
+            dot={false}
+            name={`Sell (1 ${currencyCode})`}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};
+
+export default CurrencyChartModal;
