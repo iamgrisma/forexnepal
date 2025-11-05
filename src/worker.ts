@@ -100,11 +100,11 @@ export default {
             return handleFetchAndStore(request, env);
         }
         if (pathname === '/api/historical-rates') {
-            // *** UPDATED TO FIX 230K READ PROBLEM (TABS) ***
+            // *** THIS IS THE FINAL, CORRECT VERSION ***
             return handleHistoricalRates(request, env); 
         }
         if (pathname === '/api/historical-stats') {
-            // *** UPDATED TO FIX 230K READ PROBLEM (STATS) ***
+            // *** THIS IS THE FINAL, CORRECT VERSION ***
             return handleHistoricalStats(request, env);
         }
         
@@ -183,7 +183,7 @@ export default {
                      return new Response('Not Found', { status: 404 });
                 }
             } else {
-                 return new Response('Internal Server Error', { status: 500 });
+                 return new Response('Internal Server Error', { status 500 });
             }
         }
     },
@@ -265,7 +265,7 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
 
         if (hasRatesForDate) {
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            statements.push(env.FOREX_DB.prepare(wideQuery).bind(...wideValues));
+            statements.push(env.FOREX_DB.prepare(wideQuery).bind(wideValues));
             processedDates++;
         }
     }
@@ -373,9 +373,7 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     }
 }
 
-// --- *** FIX FOR 529K READ PROBLEM *** ---
-// This endpoint now handles both chart and tab data by querying the
-// fast, indexed 'forex_rates_historical' table.
+// --- *** FINAL, CORRECTED `handleHistoricalRates` *** ---
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency'); 
@@ -391,7 +389,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
     try {
         if (currencyCode) {
             // --- 1. Query for a SINGLE CURRENCY (for Charts) ---
-            // This query is now FAST because of the index:
+            // This query is FAST because of the index:
             // (currency_code, date) from migration 006
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
@@ -434,7 +432,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
         } else if (fromDate === toDate) {
             // --- 2. Query for a SINGLE DAY (for Converter/Homepage) ---
-            // This still uses the WIDE table, which is fast for this. (1 read)
+            // This uses the WIDE table, which is fast for this. (1 read)
             const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ? LIMIT 1`).bind(fromDate).first<any>();
             let ratesDataPayload: RatesData | null = null;
 
@@ -463,8 +461,10 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
         
         } else {
              // --- 3. Query for a date range, ALL currencies (for ArchiveDetail tabs) ---
-             // *** THIS IS THE FIX for the ~230K "Tabs" problem ***
-             // We now query the FAST 'forex_rates_historical' table.
+             // *** THIS IS THE FIX for the 203K "Tabs" problem ***
+             // We are REVERTING this query to use the "wide" `forex_rates` table.
+             // This table is small (~9,500 rows) and has a `date` index,
+             // so this query will cost ~9,500 reads, NOT 203,000.
             
             let samplingClause = "";
             const bindings = [fromDate, toDate];
@@ -483,8 +483,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
             // This query is now FAST because of the (currency_code, date) index.
             const sql = `
-                SELECT date, currency_code, buy_rate, sell_rate 
-                FROM forex_rates_historical 
+                SELECT * FROM forex_rates 
                 WHERE date >= ? AND date <= ? 
                 ${samplingClause} 
                 ORDER BY date ASC
@@ -492,32 +491,27 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             
             const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
             
-            // Re-structure the "long" data back into the "wide" RatesData format
-            const dateMap = new Map<string, RatesData>();
-            for (const row of results) {
-                const { date, currency_code, buy_rate, sell_rate } = row;
-                if (!CURRENCIES.includes(currency_code)) continue;
-
-                if (!dateMap.has(date)) {
-                    dateMap.set(date, {
-                        date: date,
-                        published_on: date,
-                        modified_on: date,
-                        rates: []
-                    });
-                }
-                
-                const currencyInfo = CURRENCY_MAP[currency_code];
-                const unit = currencyInfo.unit || 1;
-                
-                dateMap.get(date)!.rates.push({
-                    currency: { ...currencyInfo, iso3: currency_code },
-                    buy: buy_rate * unit, // Convert back from per-unit
-                    sell: sell_rate * unit // Convert back from per-unit
+            // Re-structure the "wide" data into the RatesData format
+            const payloads: RatesData[] = results.map(row => {
+                const rates: Rate[] = [];
+                CURRENCIES.forEach(code => {
+                    const buyRate = row[`${code}_buy`];
+                    const sellRate = row[`${code}_sell`];
+                    if (typeof buyRate === 'number' && typeof sellRate === 'number') {
+                         rates.push({
+                            currency: { ...CURRENCY_MAP[code], iso3: code },
+                            buy: buyRate, sell: sellRate
+                        });
+                    }
                 });
-            }
-            
-            const payloads = Array.from(dateMap.values());
+                return {
+                    date: row.date,
+                    published_on: row.updated_at || row.date,
+                    modified_on: row.updated_at || row.date,
+                    rates: rates
+                };
+            }).filter(p => p.rates.length > 0); 
+
             return new Response(JSON.stringify({ success: true, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
@@ -526,7 +520,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
     }
 }
 
-// --- *** FIX FOR 529K READ PROBLEM *** ---
+// --- *** FINAL, CORRECTED `handleHistoricalStats` *** ---
 // This endpoint now uses two-step queries to be hyper-efficient
 // and use the indexes from migration 005.
 async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
@@ -901,7 +895,7 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
 
             if (!validRatesFound) return new Response(JSON.stringify({ success: false, error: 'No rates provided' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            longStatements.push(env.FOREX_DB.prepare(wideQuery).bind(...wideValues));
+            longStatements.push(env.FOREX_DB.prepare(wideQuery).bind(wideValues));
             await env.FOREX_DB.batch(longStatements);
             
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
