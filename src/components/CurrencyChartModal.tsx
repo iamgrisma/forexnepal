@@ -75,6 +75,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTab, setSelectedTab] = useState('month');
   const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined);
+  // Keep text inputs for validation fallback
   const [customFromDate, setCustomFromDate] = useState('');
   const [customToDate, setCustomToDate] = useState('');
   const [progress, setProgress] = useState<FetchProgress | null>(null);
@@ -363,6 +364,12 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
                 </Button>
               </div>
             )}
+            
+          {isDailyDataLoaded && (
+            <p className="text-sm text-center text-green-600 mb-4">
+              Full daily data loaded from NRB API.
+            </p>
+          )}
 
           {/* This TabsContent wrapper is just for layout, ChartDisplay is shown for all tabs */}
           <TabsContent value={selectedTab}>
@@ -406,26 +413,3 @@ const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" />
           <YAxis domain={['auto', 'auto']} />
-          <Tooltip />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="buy"
-            stroke="#006400"
-            dot={false}
-            name={`Buy (1 ${currencyCode})`}
-          />
-          <Line
-            type="monotone"
-            dataKey="sell"
-            stroke="#8B0000"
-            dot={false}
-            name={`Sell (1 ${currencyCode})`}
-          />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-};
-
-export default CurrencyChartModal;
