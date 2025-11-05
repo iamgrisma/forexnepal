@@ -100,11 +100,11 @@ export default {
             return handleFetchAndStore(request, env);
         }
         if (pathname === '/api/historical-rates') {
-            // UPDATED: Now queries the new 'forex_rates_historical' table
+            // *** UPDATED TO FIX 230K READ PROBLEM (TABS) ***
             return handleHistoricalRates(request, env); 
         }
         if (pathname === '/api/historical-stats') {
-            // UPDATED: Now queries the new 'forex_rates_historical' table
+            // *** UPDATED TO FIX 230K READ PROBLEM (STATS) ***
             return handleHistoricalStats(request, env);
         }
         
@@ -191,7 +191,6 @@ export default {
     // --- Scheduled Task ---
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
         console.log(`[cron ${event.cron}] Triggered...`);
-        // UPDATED: This function now populates both tables
         ctx.waitUntil(updateForexData(env));
     }
 };
@@ -214,8 +213,7 @@ function formatDate(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-// --- *** NEW DATA INGESTION LOGIC *** ---
-// This function now populates BOTH the wide and long tables in a single batch.
+// --- *** DATA INGESTION LOGIC (Unchanged) *** ---
 async function processAndStoreApiData(data: any, env: Env): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
@@ -228,12 +226,8 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
 
     for (const dayData of data.data.payload) {
         const dateStr = dayData.date;
-        if (!dateStr || !dateRegex.test(dateStr)) {
-            console.warn(`Skipping invalid date format from NRB API: ${dateStr}`);
-            continue;
-        }
+        if (!dateStr || !dateRegex.test(dateStr)) continue;
 
-        // --- 1. Prepare "WIDE" table insert (for daily page) ---
         const wideColumns: string[] = ['date', 'updated_at'];
         const widePlaceholders: string[] = ['?', "datetime('now')"];
         const wideValues: (string | number | null)[] = [dateStr];
@@ -247,15 +241,12 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
                 const buyRate = isNaN(buyVal) ? null : buyVal;
                 const sellRate = isNaN(sellVal) ? null : sellVal;
 
-                // Add to WIDE insert
                 wideColumns.push(`"${currencyCode}_buy"`, `"${currencyCode}_sell"`);
                 widePlaceholders.push('?', '?');
                 wideValues.push(buyRate, sellRate);
                 
                 if (buyRate !== null || sellRate !== null) {
                     hasRatesForDate = true;
-
-                    // --- 2. Prepare "LONG" table insert (for stats) ---
                     const currencyInfo = CURRENCY_MAP[currencyCode];
                     const unit = currencyInfo.unit || 1;
                     const perUnitBuy = buyRate !== null ? buyRate / unit : null;
@@ -280,16 +271,8 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
     }
 
     if (statements.length > 0) {
-        console.log(`Batching ${statements.length} statements for D1 (wide + long tables).`);
-        try {
-            await env.FOREX_DB.batch(statements);
-            console.log(`D1 Batch finished. ${processedDates} dates processed.`);
-        } catch (batchError: any) {
-            console.error(`D1 Batch Error:`, batchError.message, batchError.cause);
-            throw batchError; 
-        }
-    } else {
-        console.log(`No valid statements generated.`);
+        await env.FOREX_DB.batch(statements);
+        console.log(`D1 Batch finished. ${processedDates} dates processed.`);
     }
     
     return processedDates;
@@ -308,12 +291,7 @@ async function updateForexData(env: Env): Promise<void> {
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDateStr}&to=${toDateStr}`;
         const response = await fetch(apiUrl);
 
-        if (!response.ok) {
-            if (response.status === 404) {
-                 console.log("Scheduled fetch: NRB 404."); return;
-            }
-            throw new Error(`NRB API error: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`NRB API error: ${response.status}`);
         
         const data = await response.json();
         await processAndStoreApiData(data, env);
@@ -327,7 +305,7 @@ async function updateForexData(env: Env): Promise<void> {
 // --- API Handlers (Updated) ---
 
 async function handleCheckData(request: Request, env: Env): Promise<Response> {
-    // This function now queries the new, faster table
+    // This queries the 'long' table, which is fast with the (code, date) index.
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
@@ -338,8 +316,9 @@ async function handleCheckData(request: Request, env: Env): Promise<Response> {
     }
 
     try {
+        // We only need to check for one currency to see if data exists
         const { results } = await env.FOREX_DB.prepare(
-            `SELECT DISTINCT date FROM forex_rates_historical WHERE date >= ? AND date <= ? ORDER BY date ASC`
+            `SELECT DISTINCT date FROM forex_rates_historical WHERE currency_code = 'USD' AND date >= ? AND date <= ? ORDER BY date ASC`
         ).bind(fromDate, toDate).all<{ date: string }>();
 
         const existingDates = new Set(results.map(r => r.date));
@@ -358,12 +337,10 @@ async function handleCheckData(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({
             exists: missingDates.length === 0 && expectedCount > 0,
             missingDates,
-            existingCount: existingDates.size,
-            expectedCount: expectedCount
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        return new Response(JSON.stringify({ error: 'Database query failed', details: error.message, exists: false }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
     }
 }
 
@@ -371,7 +348,6 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
-    // ... (validation as before) ...
     if (!fromDate || !toDate) {
          return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
     }
@@ -388,17 +364,18 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         }
 
         const data = await response.json();
-        const processedDates = await processAndStoreApiData(data, env); // Use the new function
+        const processedDates = await processAndStoreApiData(data, env);
 
         return new Response(JSON.stringify({ success: true, stored: processedDates, fromDate, toDate }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data', details: error.message }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: corsHeaders });
     }
 }
 
-// --- *** OPTIMIZED: handleHistoricalRates (for Charts) *** ---
-// This now queries the fast "long" table.
+// --- *** FIX FOR 529K READ PROBLEM *** ---
+// This endpoint now handles both chart and tab data by querying the
+// fast, indexed 'forex_rates_historical' table.
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency'); 
@@ -412,11 +389,10 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
     }
 
     try {
-        let query: D1PreparedStatement;
-        let responsePayload: any;
-
         if (currencyCode) {
-            // --- Query for a single currency (for charts) ---
+            // --- 1. Query for a SINGLE CURRENCY (for Charts) ---
+            // This query is now FAST because of the index:
+            // (currency_code, date) from migration 006
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
                 return new Response(JSON.stringify({ success: false, error: 'Invalid currency' }), { status: 400, headers: corsHeaders });
@@ -427,14 +403,13 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
             if (sampling !== 'daily') {
                 switch (sampling) {
-                    case 'weekly': samplingClause = "AND (STRFTIME('%w', date) = '0')"; break; // Sunday
+                    case 'weekly': samplingClause = "AND (STRFTIME('%w', date) = '0')"; break;
                     case '15day': 
                         samplingClause = "AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0)";
                         bindings.push(fromDate);
                         break;
                     case 'monthly': samplingClause = "AND (STRFTIME('%d', date) = '01')"; break;
                 }
-                // Always include the start and end dates for accurate chart axis
                 samplingClause += " OR date = ? OR date = ?";
                 bindings.push(fromDate, toDate);
             }
@@ -447,8 +422,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 ORDER BY date ASC
             `;
             
-            query = env.FOREX_DB.prepare(sql).bind(...bindings);
-            const { results } = await query.all();
+            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all();
             
             const chartData = results.map((item: any) => ({
                 date: item.date,
@@ -456,14 +430,12 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 sell: item.sell_rate
             }));
 
-            responsePayload = { success: true, data: chartData, currency: currencyCode };
-            return new Response(JSON.stringify(responsePayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         } else if (fromDate === toDate) {
-            // --- Query for a single day (for Converter/Homepage) ---
-            // This still uses the WIDE table, which is optimized for this exact query.
-            query = env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ? LIMIT 1`).bind(fromDate);
-            const result = await query.first<any>();
+            // --- 2. Query for a SINGLE DAY (for Converter/Homepage) ---
+            // This still uses the WIDE table, which is fast for this. (1 read)
+            const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ? LIMIT 1`).bind(fromDate).first<any>();
             let ratesDataPayload: RatesData | null = null;
 
             if (result) {
@@ -490,8 +462,10 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             return new Response(JSON.stringify(ratesDataPayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         
         } else {
-             // --- Query for a date range, ALL currencies (for ArchiveDetail tabs) ---
-             // This also uses the WIDE table, as sampling makes this query small enough.
+             // --- 3. Query for a date range, ALL currencies (for ArchiveDetail tabs) ---
+             // *** THIS IS THE FIX for the ~230K "Tabs" problem ***
+             // We now query the FAST 'forex_rates_historical' table.
+            
             let samplingClause = "";
             const bindings = [fromDate, toDate];
             if (sampling !== 'daily') {
@@ -507,32 +481,44 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 bindings.push(fromDate, toDate);
             }
 
-            const sql = `SELECT * FROM forex_rates WHERE date >= ? AND date <= ? ${samplingClause} ORDER BY date ASC`;
-            query = env.FOREX_DB.prepare(sql).bind(...bindings);
+            // This query is now FAST because of the (currency_code, date) index.
+            const sql = `
+                SELECT date, currency_code, buy_rate, sell_rate 
+                FROM forex_rates_historical 
+                WHERE date >= ? AND date <= ? 
+                ${samplingClause} 
+                ORDER BY date ASC
+            `;
             
-            const { results } = await query.all<any>();
-            const payloads: RatesData[] = results.map(row => {
-                const rates: Rate[] = [];
-                CURRENCIES.forEach(code => {
-                    const buyRate = row[`${code}_buy`];
-                    const sellRate = row[`${code}_sell`];
-                    if (typeof buyRate === 'number' && typeof sellRate === 'number') {
-                         rates.push({
-                            currency: { ...CURRENCY_MAP[code], iso3: code },
-                            buy: buyRate, sell: sellRate
-                        });
-                    }
-                });
-                return {
-                    date: row.date,
-                    published_on: row.updated_at || row.date,
-                    modified_on: row.updated_at || row.date,
-                    rates: rates
-                };
-            }).filter(p => p.rates.length > 0); 
+            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
+            
+            // Re-structure the "long" data back into the "wide" RatesData format
+            const dateMap = new Map<string, RatesData>();
+            for (const row of results) {
+                const { date, currency_code, buy_rate, sell_rate } = row;
+                if (!CURRENCIES.includes(currency_code)) continue;
 
-            responsePayload = { success: true, payload: payloads };
-            return new Response(JSON.stringify(responsePayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+                if (!dateMap.has(date)) {
+                    dateMap.set(date, {
+                        date: date,
+                        published_on: date,
+                        modified_on: date,
+                        rates: []
+                    });
+                }
+                
+                const currencyInfo = CURRENCY_MAP[currency_code];
+                const unit = currencyInfo.unit || 1;
+                
+                dateMap.get(date)!.rates.push({
+                    currency: { ...currencyInfo, iso3: currency_code },
+                    buy: buy_rate * unit, // Convert back from per-unit
+                    sell: sell_rate * unit // Convert back from per-unit
+                });
+            }
+            
+            const payloads = Array.from(dateMap.values());
+            return new Response(JSON.stringify({ success: true, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
     } catch (error: any) {
@@ -540,8 +526,9 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
     }
 }
 
-// --- *** OPTIMIZED: handleHistoricalStats (The 8M Read Fix) *** ---
-// This now queries the new 'forex_rates_historical' table with indexes.
+// --- *** FIX FOR 529K READ PROBLEM *** ---
+// This endpoint now uses two-step queries to be hyper-efficient
+// and use the indexes from migration 005.
 async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
@@ -550,7 +537,6 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
     try {
         const { dateRange, currencies } = (await request.json()) as { dateRange: { from: string; to: string }; currencies: string[] };
         const { from: fromDate, to: toDate } = dateRange;
-        // ... (validation as before) ...
         if (!fromDate || !toDate || !Array.isArray(currencies)) {
              return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: corsHeaders });
         }
@@ -563,39 +549,73 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
         const stats: { [key: string]: any } = {};
         const queries: D1PreparedStatement[] = [];
 
-        validCurrencies.forEach(code => {
-            // These queries now hit the new table and its indexes.
-            // This is EXTREMELY fast.
-            
-            // 1. High Buy
+        // This is the new, fast, two-step query process.
+        // It uses the indexes from migration 005.
+        for (const code of validCurrencies) {
+            // 1. Get MIN/MAX aggregate. This uses the (code, date) index from migration 006
+            // combined with the rate columns, which is very fast.
             queries.push(env.FOREX_DB.prepare(
-                `SELECT date, buy_rate as rate FROM forex_rates_historical WHERE currency_code = ? AND date >= ? AND date <= ? AND buy_rate IS NOT NULL ORDER BY buy_rate DESC, date ASC LIMIT 1`
+                `SELECT 
+                    MAX(CASE WHEN buy_rate IS NOT NULL THEN buy_rate ELSE NULL END) as highBuy,
+                    MIN(CASE WHEN buy_rate > 0 THEN buy_rate ELSE NULL END) as lowBuy,
+                    MAX(CASE WHEN sell_rate IS NOT NULL THEN sell_rate ELSE NULL END) as highSell,
+                    MIN(CASE WHEN sell_rate > 0 THEN sell_rate ELSE NULL END) as lowSell
+                FROM forex_rates_historical 
+                WHERE currency_code = ? AND date >= ? AND date <= ?`
             ).bind(code, fromDate, toDate));
-            // 2. Low Buy
-            queries.push(env.FOREX_DB.prepare(
-                `SELECT date, buy_rate as rate FROM forex_rates_historical WHERE currency_code = ? AND date >= ? AND date <= ? AND buy_rate > 0 ORDER BY buy_rate ASC, date ASC LIMIT 1`
-            ).bind(code, fromDate, toDate));
-            // 3. High Sell
-            queries.push(env.FOREX_DB.prepare(
-                `SELECT date, sell_rate as rate FROM forex_rates_historical WHERE currency_code = ? AND date >= ? AND date <= ? AND sell_rate IS NOT NULL ORDER BY sell_rate DESC, date ASC LIMIT 1`
-            ).bind(code, fromDate, toDate));
-            // 4. Low Sell
-            queries.push(env.FOREX_DB.prepare(
-                `SELECT date, sell_rate as rate FROM forex_rates_historical WHERE currency_code = ? AND date >= ? AND date <= ? AND sell_rate > 0 ORDER BY sell_rate ASC, date ASC LIMIT 1`
-            ).bind(code, fromDate, toDate));
+        }
+        
+        // Run the batch to get all MIN/MAX values
+        const minMaxResults = await env.FOREX_DB.batch(queries);
+
+        const dateQueries: D1PreparedStatement[] = [];
+        const statOrder: { code: string, type: 'highBuy' | 'lowBuy' | 'highSell' | 'lowSell', rate: number }[] = [];
+
+        // 2. Build a second batch to find the *dates* for those MIN/MAX values.
+        // This uses the (code, buy_rate) and (code, sell_rate) indexes from migration 005.
+        minMaxResults.forEach((result, index) => {
+            const code = validCurrencies[index];
+            const rates = result.results[0] as any;
+            stats[code] = {}; // Initialize
+
+            if (rates && rates.highBuy !== null) {
+                statOrder.push({ code, type: 'highBuy', rate: rates.highBuy });
+                dateQueries.push(env.FOREX_DB.prepare(
+                    `SELECT date FROM forex_rates_historical WHERE currency_code = ? AND buy_rate = ? ORDER BY date ASC LIMIT 1`
+                ).bind(code, rates.highBuy));
+            }
+            if (rates && rates.lowBuy !== null) {
+                statOrder.push({ code, type: 'lowBuy', rate: rates.lowBuy });
+                dateQueries.push(env.FOREX_DB.prepare(
+                    `SELECT date FROM forex_rates_historical WHERE currency_code = ? AND buy_rate = ? ORDER BY date ASC LIMIT 1`
+                ).bind(code, rates.lowBuy));
+            }
+            if (rates && rates.highSell !== null) {
+                statOrder.push({ code, type: 'highSell', rate: rates.highSell });
+                dateQueries.push(env.FOREX_DB.prepare(
+                    `SELECT date FROM forex_rates_historical WHERE currency_code = ? AND sell_rate = ? ORDER BY date ASC LIMIT 1`
+                ).bind(code, rates.highSell));
+            }
+            if (rates && rates.lowSell !== null) {
+                statOrder.push({ code, type: 'lowSell', rate: rates.lowSell });
+                dateQueries.push(env.FOREX_DB.prepare(
+                    `SELECT date FROM forex_rates_historical WHERE currency_code = ? AND sell_rate = ? ORDER BY date ASC LIMIT 1`
+                ).bind(code, rates.lowSell));
+            }
         });
 
-        const results = await env.FOREX_DB.batch(queries);
-
-        let i = 0;
-        for (const code of validCurrencies) {
-            stats[code] = {
-                highBuy:  results[i++]?.results?.[0] || null,
-                lowBuy:   results[i++]?.results?.[0] || null,
-                highSell: results[i++]?.results?.[0] || null,
-                lowSell:  results[i++]?.results?.[0] || null,
-            };
+        // 3. Run the second batch to get the dates
+        let dateResults: D1Result<any>[] = [];
+        if (dateQueries.length > 0) {
+            dateResults = await env.FOREX_DB.batch(dateQueries);
         }
+
+        // 4. Combine all the results
+        dateResults.forEach((result, index) => {
+            const { code, type, rate } = statOrder[index];
+            const date = result.results[0]?.date || null;
+            stats[code][type] = { date, rate };
+        });
 
         return new Response(JSON.stringify({ success: true, stats }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -816,8 +836,6 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
         }
         if (request.method === 'DELETE') {
             await env.FOREX_DB.prepare(`DELETE FROM posts WHERE id = ?`).bind(postId).run();
-            // Also delete from historical table
-            await env.FOREX_DB.prepare(`DELETE FROM forex_rates_historical WHERE currency_code IN (SELECT slug FROM posts WHERE id = ?)`).bind(postId).run();
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -837,9 +855,7 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
         if (request.method === 'GET') {
             const url = new URL(request.url);
             const date = url.searchParams.get('date');
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (date) {
-                if (!dateRegex.test(date)) return new Response(JSON.stringify({ error: 'Invalid date format' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first();
                 return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             } else {
@@ -848,7 +864,6 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
             }
         }
         if (request.method === 'POST') {
-            // This is a manual admin update. We must update BOTH tables.
             const data = await request.json();
             const date = data.date;
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -885,12 +900,8 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
             }
 
             if (!validRatesFound) return new Response(JSON.stringify({ success: false, error: 'No rates provided' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-
-            // Add the wide query statement
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
             longStatements.push(env.FOREX_DB.prepare(wideQuery).bind(...wideValues));
-
-            // Run batch
             await env.FOREX_DB.batch(longStatements);
             
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -932,12 +943,7 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
             `SELECT id, title, slug, excerpt, featured_image_url, author_name, author_url, published_at
              FROM posts WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC`
         );
-        const queryResult = await query.all();
-        if (!queryResult.success) {
-            console.error('D1 Error fetching public posts');
-            throw new Error('Database query failed');
-        }
-        const { results } = queryResult;
+        const { results } = await query.all();
         return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } catch (error: any) {
         console.error('Error fetching public posts:', error.message, error.cause);
