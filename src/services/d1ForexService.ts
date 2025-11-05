@@ -1,10 +1,8 @@
 // src/services/d1ForexService.ts
 
-// Import functions for direct API calls and types
 import { fetchForexRatesByDate, fetchHistoricalRates, splitDateRangeForRequests, formatDate } from './forexService';
-import type { ChartDataPoint, Rate, RatesData } from '../types/forex'; // Ensure Rate and RatesData are imported
+import type { ChartDataPoint, Rate, RatesData } from '../types/forex';
 
-// Define progress types (keep as is)
 export interface FetchProgress {
   stage: 'checking' | 'fetching' | 'storing' | 'loading' | 'complete' | 'error';
   message: string;
@@ -15,10 +13,9 @@ export interface FetchProgress {
     toDate: string;
   };
 }
-export type ProgressCallback = (progress: FetchProgress | null) => void; // Allow null to clear progress
+export type ProgressCallback = (progress: FetchProgress | null) => void;
 
-// --- checkDataExists, groupDatesIntoRanges, fetchAndStore (Keep as they are for historical charts) ---
-// (These functions are primarily used by fetchHistoricalRatesWithCache for charts, not the converter's fetchRatesForDateWithCache)
+// --- (checkDataExists, groupDatesIntoRanges, fetchAndStore remain unchanged) ---
 async function checkDataExists(fromDate: string, toDate: string): Promise<{
     exists: boolean;
     missingDateRanges: Array<{ from: string; to: string }>;
@@ -29,14 +26,12 @@ async function checkDataExists(fromDate: string, toDate: string): Promise<{
         const data = await response.json();
         const missingDates = data.missingDates || [];
         const missingDateRanges = groupDatesIntoRanges(missingDates);
-        // Ensure 'exists' reflects if *all* dates are present
         const exists = missingDates.length === 0 && data.expectedCount > 0;
         return { exists: exists, missingDateRanges };
     }
   } catch (error) {
     console.error('Error checking data existence:', error);
   }
-  // If check fails, assume nothing exists for the full range
   return { exists: false, missingDateRanges: [{ from: fromDate, to: toDate }] };
 }
 
@@ -48,12 +43,11 @@ function groupDatesIntoRanges(dates: string[]): Array<{ from: string; to: string
   let rangeEnd = sortedDates[0];
 
   for (let i = 1; i < sortedDates.length; i++) {
-    const currentDate = new Date(sortedDates[i] + 'T00:00:00Z'); // Use UTC for comparison
-    const prevDate = new Date(sortedDates[i - 1] + 'T00:00:00Z'); // Use UTC
-     // Check difference in days robustly
+    const currentDate = new Date(sortedDates[i] + 'T00:00:00Z');
+    const prevDate = new Date(sortedDates[i - 1] + 'T00:00:00Z');
      const dayDiff = (currentDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24);
 
-    if (dayDiff <= 1) { // Allows for consecutive days
+    if (dayDiff <= 1) {
       rangeEnd = sortedDates[i];
     } else {
       ranges.push({ from: rangeStart, to: rangeEnd });
@@ -67,8 +61,7 @@ function groupDatesIntoRanges(dates: string[]): Array<{ from: string; to: string
 
 async function fetchAndStore(fromDate: string, toDate: string): Promise<boolean> {
   try {
-    // Ensure the API call uses POST if required by the worker, or keep GET if appropriate
-    const response = await fetch(`/api/fetch-and-store?from=${fromDate}&to=${toDate}`, { method: 'POST' }); // Use POST if needed
+    const response = await fetch(`/api/fetch-and-store?from=${fromDate}&to=${toDate}`, { method: 'POST' });
     if (response.ok) {
       const data = await response.json();
       return data.success === true;
@@ -79,95 +72,81 @@ async function fetchAndStore(fromDate: string, toDate: string): Promise<boolean>
   return false;
 }
 
-// --- fetchFromD1ForConverter (Helper for Converter) ---
-// Fetches all rates for a single date from the worker API
+// --- (fetchFromD1ForConverter remains unchanged) ---
 async function fetchFromD1ForConverter(date: string): Promise<RatesData | null> {
   try {
     const response = await fetch(
-      `/api/historical-rates?from=${date}&to=${date}` // No currency param needed
+      `/api/historical-rates?from=${date}&to=${date}`
     );
 
     if (response.ok) {
-       // Worker should return RatesData directly or null when no currency is specified
       const data: RatesData | null = await response.json();
-      // Ensure the returned data is valid RatesData (has rates array)
       if (data && data.rates && Array.isArray(data.rates) && data.rates.length > 0) {
         return data;
       }
-      return null; // Return null if response is ok but data is empty/null/invalid
+      return null;
     } else {
         console.warn(`Non-OK response from D1 fetch for ${date}: ${response.status}`);
-        return null; // Return null for non-OK responses (like 404)
+        return null;
     }
   } catch (error) {
     console.error(`Error fetching from D1 for converter (${date}):`, error);
-    return null; // Return null on network or parsing error
+    return null;
   }
 }
 
-// --- fetchRatesForDateWithCache (FOR CONVERTER - DB First, API Fallback) ---
+// --- fetchRatesForDateWithCache (DB First, API Fallback) ---
+// This is used by the Converter page and as the fallback for the Homepage
 export async function fetchRatesForDateWithCache(
-  date: string, // Expect 'yyyy-MM-dd' format
+  date: string,
   onProgress: ProgressCallback | null
 ): Promise<RatesData | null> {
   try {
     onProgress?.({ stage: 'loading', message: `Checking database for ${date}...` });
-
-    // Step 1: Try fetching from D1 via the worker API endpoint
     const d1Data = await fetchFromD1ForConverter(date);
 
     if (d1Data) {
-      console.log(`Cache hit for ${date}. Using data from D1.`);
+      console.log(`[D1] Cache hit for ${date}. Using data from D1.`);
       onProgress?.({ stage: 'complete', message: `Rates for ${date} loaded from database.` });
-      // Ensure the structure matches RatesData
       return d1Data;
     }
 
-    // Step 2: Fallback - D1 data not found or empty, fetch directly from NRB API
     onProgress?.({ stage: 'fetching', message: `No data in database for ${date}. Fetching from NRB API...` });
-    console.warn(`Cache miss for ${date}. Fetching directly from NRB.`);
-
-    // Convert 'yyyy-MM-dd' string back to Date object for fetchForexRatesByDate
-    // Add time component and handle potential timezone issues if necessary
-    const dateObj = new Date(date + 'T00:00:00'); // Assuming local timezone is acceptable, or use UTC T00:00:00Z
+    console.warn(`[D1] Cache miss for ${date}. Fetching directly from NRB.`);
+    
+    const dateObj = new Date(date + 'T00:00:00');
     if (isNaN(dateObj.getTime())) {
-        console.error(`Invalid date string provided to fetchRatesForDateWithCache: ${date}`);
+        console.error(`[D1] Invalid date string provided: ${date}`);
         onProgress?.({ stage: 'error', message: `Invalid date format: ${date}.` });
         return null;
     }
 
-    const apiResponse = await fetchForexRatesByDate(dateObj); // Pass Date object
+    const apiResponse = await fetchForexRatesByDate(dateObj); 
 
-    // Check if the API call was successful and returned data
     if (apiResponse && apiResponse.data && apiResponse.data.payload && apiResponse.data.payload.length > 0) {
-      const ratesPayload = apiResponse.data.payload[0]; // Get the first (and only) payload entry for the date
+      const ratesPayload = apiResponse.data.payload[0];
       onProgress?.({ stage: 'complete', message: `Rates for ${date} loaded from NRB API.` });
 
-      // Optional: Trigger background storage to D1 (fire-and-forget)
-      // This helps populate the cache for future requests
        fetch(`/api/fetch-and-store?from=${date}&to=${date}`, { method: 'POST' })
            .then(res => res.json())
            .then(storeResult => {
-               if(storeResult.success) console.log(`Successfully stored ${date} data fetched from API into D1.`);
-               else console.warn(`Failed to store ${date} data into D1 after API fallback.`);
+               if(storeResult.success) console.log(`[D1] Successfully stored ${date} data from API fallback.`);
+               else console.warn(`[D1] Failed to store ${date} data into D1 after API fallback.`);
             })
-           .catch(err => console.error(`Error triggering background store for ${date}:`, err));
+           .catch(err => console.error(`[D1] Error triggering background store for ${date}:`, err));
 
-
-      return ratesPayload; // Return the fetched data
+      return ratesPayload;
     } else {
-      // API call failed or returned no data (e.g., holiday)
       onProgress?.({ stage: 'complete', message: `No rates found for ${date} from NRB API either.` });
-      console.warn(`No data found for ${date} from NRB API fallback.`);
+      console.warn(`[D1] No data found for ${date} from NRB API fallback.`);
       return null;
     }
 
   } catch (error) {
-    console.error(`Error fetching rates for ${date} (DB & API):`, error);
+    console.error(`[D1] Error fetching rates for ${date} (DB & API):`, error);
     onProgress?.({ stage: 'error', message: `Failed to load rates for ${date}.` });
-    return null; // Return null on any critical error
+    return null;
   } finally {
-      // Clear progress message after a short delay
       if (onProgress) {
         setTimeout(() => onProgress(null), 2500);
       }
@@ -175,16 +154,22 @@ export async function fetchRatesForDateWithCache(
 }
 
 
-// --- fetchFromD1 (Helper for Charts - Fetches specific currency) ---
-async function fetchFromD1(currencyCode: string, fromDate: string, toDate: string): Promise<ChartDataPoint[]> {
+// --- MODIFIED: fetchFromD1 (Helper for Charts - Fetches specific currency) ---
+// Now accepts a sampling parameter
+async function fetchFromD1(
+  currencyCode: string,
+  fromDate: string,
+  toDate: string,
+  sampling: 'daily' | 'weekly' | '15day' | 'monthly' = 'daily' // Add sampling
+): Promise<ChartDataPoint[]> {
   try {
     const response = await fetch(
-      `/api/historical-rates?currency=${currencyCode}&from=${fromDate}&to=${toDate}`
+      // Pass sampling parameter to the worker API
+      `/api/historical-rates?currency=${currencyCode}&from=${fromDate}&to=${toDate}&sampling=${sampling}`
     );
 
     if (response.ok) {
       const data = await response.json();
-      // Expect { success: true, data: ChartDataPoint[] } from worker when currencyCode is present
       if (data.success && Array.isArray(data.data)) {
         return data.data;
       }
@@ -195,17 +180,50 @@ async function fetchFromD1(currencyCode: string, fromDate: string, toDate: strin
   return []; // Return empty array on failure
 }
 
+// --- NEW FUNCTION: Fetch High/Low Stats ---
+// This calls the new /api/historical-stats endpoint
+export async function fetchHistoricalStats(
+  currencies: string[],
+  fromDate: string,
+  toDate: string
+): Promise<{ [key: string]: any } | null> {
+  try {
+    const response = await fetch('/api/historical-stats', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currencies: currencies,
+        dateRange: { from: fromDate, to: toDate }
+      })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) {
+        return data.data; // Returns the map { USD: { highBuy: ... }, ... }
+      }
+    } else {
+       console.error(`Error fetching historical stats: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error('Error fetching historical stats:', error);
+  }
+  return null;
+}
 
-// --- fetchHistoricalRatesWithCache (FOR CHARTS - More complex logic with chunking) ---
-// This function remains largely the same, focusing on fetching specific currency data over potentially large ranges.
+
+// --- MODIFIED: fetchHistoricalRatesWithCache (FOR CHARTS) ---
+// Now accepts a sampling parameter
 export async function fetchHistoricalRatesWithCache(
   currencyCode: string,
   fromDate: string,
   toDate: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  sampling: 'daily' | 'weekly' | '15day' | 'monthly' = 'daily' // Add sampling
 ): Promise<ChartDataPoint[]> {
   try {
     onProgress?.({ stage: 'checking', message: 'Checking database...' });
+    // Check for *all* dates, not just sampled ones
     const { exists, missingDateRanges } = await checkDataExists(fromDate, toDate);
 
     if (!exists && missingDateRanges.length > 0) {
@@ -224,7 +242,7 @@ export async function fetchHistoricalRatesWithCache(
       for (const missingRange of missingDateRanges) {
          const rangeStart = new Date(missingRange.from + 'T00:00:00Z');
          const rangeEnd = new Date(missingRange.to + 'T00:00:00Z');
-         if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) continue; // Skip invalid ranges
+         if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) continue;
 
          const dateRanges = splitDateRangeForRequests(rangeStart, rangeEnd);
          for (let i = 0; i < dateRanges.length; i++) {
@@ -243,46 +261,47 @@ export async function fetchHistoricalRatesWithCache(
              } else {
                 onProgress?.({ stage: 'error', message: `Failed to fetch/store chunk ${processedChunks}.`, chunkInfo: { current: processedChunks, total: totalChunks, fromDate: range.from, toDate: range.to }});
                  console.warn(`Failed to fetch/store chunk ${processedChunks} (${range.from} - ${range.to})`);
-                 // Decide if you want to stop or continue on chunk failure
              }
-             if (processedChunks < totalChunks) await new Promise(resolve => setTimeout(resolve, 300)); // Small delay
+             if (processedChunks < totalChunks) await new Promise(resolve => setTimeout(resolve, 300));
          }
       }
     }
 
     onProgress?.({ stage: 'loading', message: 'Loading data from database...' });
-    let data = await fetchFromD1(currencyCode, fromDate, toDate); // Use the chart-specific D1 fetcher
+    // Pass the sampling parameter to the D1 fetcher
+    let data = await fetchFromD1(currencyCode, fromDate, toDate, sampling);
 
     if (data.length > 0) {
-      data = fillMissingDatesWithPreviousData(data, fromDate, toDate);
+      // Don't fill gaps on sampled data, it creates incorrect straight lines.
+      // Gaps will be filled only on full daily data.
       onProgress?.({ stage: 'complete', message: 'Chart data loaded successfully!' });
       return data;
     }
 
-    // Fallback: If DB fetch (even after attempting to fill) yields no results, try direct API as last resort
+    // Fallback: If DB fetch yields no results
     onProgress?.({ stage: 'fetching', message: 'Database empty/failed. Fetching chart data directly from API...' });
     console.warn(`No data found in D1 for ${currencyCode} (${fromDate} - ${toDate}). Using API fallback for chart.`);
     const fallbackData = await fetchFromAPIFallback(currencyCode, fromDate, toDate);
     if(fallbackData.length > 0) {
         onProgress?.({ stage: 'complete', message: 'Chart data loaded from API fallback.' });
-        return fillMissingDatesWithPreviousData(fallbackData, fromDate, toDate); // Fill gaps in fallback data too
+        return fillMissingDatesWithPreviousData(fallbackData, fromDate, toDate); // Fill gaps in fallback data
     } else {
         onProgress?.({ stage: 'error', message: 'Failed to load chart data from DB and API.' });
-        return []; // Return empty if fallback also fails
+        return [];
     }
 
   } catch (error) {
     console.error('Error in fetchHistoricalRatesWithCache:', error);
     onProgress?.({ stage: 'error', message: 'An error occurred fetching chart data.' });
-    return []; // Return empty on critical error
+    return [];
   } finally {
      if (onProgress) {
-        setTimeout(() => onProgress(null), 2500); // Clear progress message
+        setTimeout(() => onProgress(null), 2500);
      }
   }
 }
 
-// --- fillMissingDatesWithPreviousData & fetchFromAPIFallback (Keep as they are) ---
+// --- (fillMissingDatesWithPreviousData remains unchanged) ---
 function fillMissingDatesWithPreviousData(
   data: ChartDataPoint[],
   fromDate: string,
@@ -291,60 +310,54 @@ function fillMissingDatesWithPreviousData(
   if (data.length === 0) return [];
   const filledData: ChartDataPoint[] = [];
   const dataMap = new Map(data.map(d => [d.date, d]));
-  const start = new Date(fromDate + 'T00:00:00Z'); // Use UTC
-  const end = new Date(toDate + 'T00:00:00Z');     // Use UTC
-  let previousDataPoint: ChartDataPoint | null = data[0]; // Start with the first available point
+  const start = new Date(fromDate + 'T00:00:00Z');
+  const end = new Date(toDate + 'T00:00:00Z');
+  let previousDataPoint: ChartDataPoint | null = data[0]; 
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    // Check for invalid date objects
     if (isNaN(d.getTime())) continue;
-
-    const dateStr = formatDate(d); // Get 'yyyy-MM-dd' string
-
+    const dateStr = formatDate(d); 
     if (dataMap.has(dateStr)) {
       const currentData = dataMap.get(dateStr)!;
-      // Ensure buy/sell are numbers, default to previous if null/undefined
       const pointToAdd: ChartDataPoint = {
           date: dateStr,
           buy: currentData.buy ?? previousDataPoint?.buy ?? 0,
           sell: currentData.sell ?? previousDataPoint?.sell ?? 0
       };
       filledData.push(pointToAdd);
-      previousDataPoint = pointToAdd; // Update the last known good data point
+      previousDataPoint = pointToAdd;
     } else if (previousDataPoint) {
-      // Use previous day's data, ensuring buy/sell are numbers
       filledData.push({
         date: dateStr,
-        buy: previousDataPoint.buy ?? 0, // Fallback to 0 if even previous is somehow null
+        buy: previousDataPoint.buy ?? 0,
         sell: previousDataPoint.sell ?? 0
       });
-      // Do NOT update previousDataPoint here, keep the last *actual* data point
     } else {
-        // Very start of the range and no data, push with 0 or handle as needed
         filledData.push({ date: dateStr, buy: 0, sell: 0 });
     }
   }
   return filledData;
 }
 
+// --- (fetchFromAPIFallback remains unchanged, it correctly fetches chunks) ---
 async function fetchFromAPIFallback(
   currencyCode: string,
   fromDate: string,
   toDate: string
 ): Promise<ChartDataPoint[]> {
   try {
-    const fromDateObj = new Date(fromDate + 'T00:00:00Z'); // Use UTC
-    const toDateObj = new Date(toDate + 'T00:00:00Z');     // Use UTC
+    const fromDateObj = new Date(fromDate + 'T00:00:00Z');
+    const toDateObj = new Date(toDate + 'T00:00:00Z');
      if (isNaN(fromDateObj.getTime()) || isNaN(toDateObj.getTime())) {
          console.error("Invalid date range for API fallback:", fromDate, toDate);
          return [];
      }
 
-    const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj); // Use the helper
+    const dateRanges = splitDateRangeForRequests(fromDateObj, toDateObj);
     let allData: ChartDataPoint[] = [];
 
     for (const range of dateRanges) {
-      const histData = await fetchHistoricalRates(range.from, range.to); // Direct NRB call
+      const histData = await fetchHistoricalRates(range.from, range.to); 
 
       if (histData.status.code === 200 && histData.payload.length > 0) {
         histData.payload.forEach((dayData) => {
@@ -357,21 +370,17 @@ async function fetchFromAPIFallback(
               const sellVal = parseFloat(currencyRate.sell.toString());
             allData.push({
               date: dayData.date,
-              // Use null if parsing fails, let fillMissingDates handle it
-              buy: isNaN(buyVal) ? 0 : buyVal, // Default to 0 instead of null for charts
+              buy: isNaN(buyVal) ? 0 : buyVal,
               sell: isNaN(sellVal) ? 0 : sellVal,
             });
           } else {
-              // Add entry with 0 if currency not found for that day, to avoid gaps before filling
               allData.push({ date: dayData.date, buy: 0, sell: 0 });
           }
         });
       }
-        // Add a small delay between chunks if needed
        if (dateRanges.length > 1) await new Promise(res => setTimeout(res, 100));
     }
 
-     // Sort before returning, as API chunks might arrive out of order
      allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
      return allData;
 
