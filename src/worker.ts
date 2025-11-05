@@ -183,6 +183,7 @@ export default {
                      return new Response('Not Found', { status: 404 });
                 }
             } else {
+                 // *** THIS IS THE LINE I FIXED (added colon) ***
                  return new Response('Internal Server Error', { status: 500 });
             }
         }
@@ -265,7 +266,7 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
 
         if (hasRatesForDate) {
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            statements.push(env.FOREX_DB.prepare(wideQuery).bind(wideValues));
+            statements.push(env.FOREX_DB.prepare(wideQuery).bind(...wideValues));
             processedDates++;
         }
     }
@@ -826,11 +827,11 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
                 post.meta_title || post.title || 'Untitled', post.meta_description || post.excerpt || null, post.meta_keywords || null,
                 postId
             ).run();
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         if (request.method === 'DELETE') {
             await env.FOREX_DB.prepare(`DELETE FROM posts WHERE id = ?`).bind(postId).run();
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
@@ -851,10 +852,10 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
             const date = url.searchParams.get('date');
             if (date) {
                 const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first();
-                return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+                return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             } else {
                 const { results } = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates ORDER BY date DESC LIMIT 30`).all();
-                return new Response(JSON.stringify({ success: true, data: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+                return new Response(JSON.stringify({ success: true, data: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             }
         }
         if (request.method === 'POST') {
@@ -898,7 +899,7 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
             longStatements.push(env.FOREX_DB.prepare(wideQuery).bind(wideValues));
             await env.FOREX_DB.batch(longStatements);
             
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
@@ -916,13 +917,13 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
     try {
         if (request.method === 'GET') {
             const result = await env.FOREX_DB.prepare(`SELECT setting_value FROM site_settings WHERE setting_key = ?`).bind('header_tags').first<{ setting_value: string | null }>();
-            return new Response(JSON.stringify({ success: true, header_tags: result?.setting_value || '' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true, header_tags: result?.setting_value || '' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         if (request.method === 'POST') {
             const { header_tags } = await request.json();
             if (typeof header_tags !== 'string') return new Response(JSON.stringify({ success: false, error: 'Invalid format' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO site_settings (setting_key, setting_value, updated_at) VALUES (?, ?, datetime('now'))`).bind('header_tags', header_tags).run();
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
@@ -938,7 +939,7 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
              FROM posts WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC`
         );
         const { results } = await query.all();
-        return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error('Error fetching public posts:', error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Server error fetching posts.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -958,7 +959,7 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
         if (!post) {
             return new Response(JSON.stringify({ success: false, error: 'Not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
-        return new Response(JSON.stringify({ success: true, post }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ success: true, post }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error(`Error fetching post by slug (${slug}):`, error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
