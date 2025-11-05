@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "build:worker": "esbuild src/worker.ts --bundle --outfile=dist/worker.js --platform=browser --target=es2020",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
     "db:backfill": "tsx backfill.ts"
   },
   "dependencies": {
@@ -85,6 +85,7 @@
     "lovable-tagger": "^1.1.7",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.11",
+    "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1"
