@@ -108,8 +108,33 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  h1 {
+    @apply font-sans tracking-tight text-3xl md:text-4xl lg:text-5xl font-extrabold;
+  }
+
+  h2 {
+    @apply font-sans tracking-tight text-2xl md:text-3xl lg:text-4xl font-bold;
+  }
+
+  h3 {
+    @apply font-sans tracking-tight text-xl md:text-2xl lg:text-3xl font-bold;
+  }
+
+  h4, h5, h6 {
     @apply font-sans tracking-tight;
+  }
+
+  /* Prose (article content) specific headings */
+  .prose h1 {
+    @apply text-3xl md:text-4xl lg:text-5xl font-extrabold mb-4;
+  }
+
+  .prose h2 {
+    @apply text-2xl md:text-3xl lg:text-4xl font-bold mb-3;
+  }
+
+  .prose h3 {
+    @apply text-xl md:text-2xl lg:text-3xl font-bold mb-2;
   }
 
   .glassmorphism {

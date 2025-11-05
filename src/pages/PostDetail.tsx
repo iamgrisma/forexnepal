@@ -6,6 +6,7 @@ import { Loader2, CalendarDays, User, ArrowLeft, AlertCircle } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import DOMPurify from 'dompurify'; // Import DOMPurify
+import ShareButtons from '@/components/ShareButtons';
 
 // Define the structure for a single post
 interface Post {
@@ -149,28 +150,38 @@ const PostDetail = () => {
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold mb-4 leading-tight">{post.title}</h1>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground mb-8 border-b pb-4">
-             {post.author_name && (
-               <div className="flex items-center gap-1.5">
-                  <User className="h-4 w-4" />
-                  {post.author_url ? (
-                    <a href={post.author_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
-                      {post.author_name}
-                    </a>
-                  ) : (
-                    <span>{post.author_name}</span>
-                  )}
-               </div>
-             )}
-            {post.published_at && (
-               <div className="flex items-center gap-1.5">
-                 <CalendarDays className="h-4 w-4" />
-                 <time dateTime={post.published_at}>{formatDateString(post.published_at)}</time>
-               </div>
-            )}
-            {post.updated_at && post.published_at && new Date(post.updated_at).toDateString() !== new Date(post.published_at).toDateString() && (
-                 <div className="flex items-center gap-1.5 text-xs italic">(Updated: {formatDateString(post.updated_at)})</div>
-            )}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8 border-b pb-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+              {post.author_name && (
+                <div className="flex items-center gap-1.5">
+                   <User className="h-4 w-4" />
+                   {post.author_url ? (
+                     <a href={post.author_url} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">
+                       {post.author_name}
+                     </a>
+                   ) : (
+                     <span>{post.author_name}</span>
+                   )}
+                </div>
+              )}
+              {post.published_at && (
+                <div className="flex items-center gap-1.5">
+                  <CalendarDays className="h-4 w-4" />
+                  <time dateTime={post.published_at}>{formatDateString(post.published_at)}</time>
+                </div>
+              )}
+              {post.updated_at && post.published_at && new Date(post.updated_at).toDateString() !== new Date(post.published_at).toDateString() && (
+                <div className="flex items-center gap-1.5 text-xs italic">(Updated: {formatDateString(post.updated_at)})</div>
+              )}
+            </div>
+            
+            <div className="overflow-x-auto">
+              <ShareButtons 
+                url={`/posts/${post.slug}`}
+                title={post.title}
+                className="flex-nowrap"
+              />
+            </div>
           </div>
 
           {/* Render post content using DOMPurify to sanitize */}

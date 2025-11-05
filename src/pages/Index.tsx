@@ -5,6 +5,7 @@ import { Rate, RatesData } from '../types/forex';
 import ForexTable from '../components/ForexTable';
 import CurrencyCard from '../components/CurrencyCard';
 import ForexTicker from '../components/ForexTicker';
+import ShareButtons from '@/components/ShareButtons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight } from 'lucide-react'; // Add Chevron icons
@@ -364,8 +365,15 @@ const Index = () => {
           </div>
 
 
-          {/* Action buttons (Download, Refresh, View Mode) - Fixed positioning */}
+          {/* Action buttons (Share, Download, Refresh, View Mode) - Fixed positioning */}
           <div className="flex flex-wrap justify-end items-center mb-6 gap-2 min-h-[40px]">
+            <div className="overflow-x-auto flex-shrink-0">
+              <ShareButtons 
+                url="/"
+                title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(selectedDate)}`}
+                className="flex-nowrap"
+              />
+            </div>
             <Button
               onClick={downloadContentAsImage}
               variant="outline"

@@ -4,10 +4,12 @@ import { useNavigate } from 'react-router-dom';
 import { fetchForexRates } from '../services/forexService';
 import { Rate } from '../types/forex';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Search, Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import Layout from '@/components/Layout';
 import CurrencyCard from '@/components/CurrencyCard';
 import ForexTicker from '@/components/ForexTicker';
+import ShareButtons from '@/components/ShareButtons';
 
 const HistoricalCharts = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,17 +47,26 @@ const HistoricalCharts = () => {
           {/* Ticker component */}
           <ForexTicker rates={rates} isLoading={isLoading} />
 
-          <div className="relative mb-8">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+            <div className="relative flex-1">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <Input
+                type="text"
+                placeholder="Search currency..."
+                className="pl-10 pr-4 py-2 bg-white/90 backdrop-blur-sm border-gray-200 focus:ring-blue-500 rounded-lg"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-            <Input
-              type="text"
-              placeholder="Search currency..."
-              className="pl-10 pr-4 py-2 bg-white/90 backdrop-blur-sm border-gray-200 focus:ring-blue-500 rounded-lg"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+            <div className="flex gap-2 justify-end">
+              <ShareButtons 
+                url="/historical-charts"
+                title="Historical Forex Data - Nepal Rastra Bank"
+                className="flex-nowrap"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
