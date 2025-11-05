@@ -110,50 +110,56 @@ export type ArticleTemplateProps = {
   rates: Rate[]; // Pass raw rates for ticker
 };
 
-// --- API HELPER (Copied from old file, now with SAMPLING) ---
-/**
- * Fetches historical rates from the worker API (/api/historical-rates)
- * This endpoint is DB-first.
- */
+// This function now only fetches the START and END dates for the range,
+// as that is all the Historical Performance tabs need.
 const fetchHistoricalRatesFromWorker = async (
     fromDate: string, 
     toDate: string, 
-    sampling: string = 'daily' // Add sampling param
+    sampling: string = 'daily' // Sampling param is now ignored, but kept for compatibility
 ): Promise<HistoricalRates> => {
   try {
-    const response = await fetch(
-      `/api/historical-rates?from=${fromDate}&to=${toDate}&sampling=${sampling}` // Pass sampling
-    );
+    // We only need two dates: the start and the end.
+    // We fetch them in parallel from the API endpoint.
+    // This will hit the /api/historical-rates endpoint which is optimized
+    // for single-day "wide" table lookups. This will be 2 row reads.
+    const [fromResponse, toResponse] = await Promise.all([
+      fetch(`/api/historical-rates?from=${fromDate}&to=${fromDate}`),
+      fetch(`/api/historical-rates?from=${toDate}&to=${toDate}`)
+    ]);
 
-    if (!response.ok) {
-        if (response.status === 404) {
-            console.warn(`No historical data found in range: ${fromDate} to ${toDate}`);
-            return { status: { code: 404, message: "No data found for this range" }, payload: [] };
-        }
-      throw new Error(`HTTP Error: ${response.status}`);
+    if (!fromResponse.ok || !toResponse.ok) {
+        console.warn(`Could not fetch boundary dates: ${fromDate}, ${toDate}`);
+        return { status: { code: 404, message: "No data found" }, payload: [] };
     }
 
-    const data = await response.json();
-    
-    if (data.success && Array.isArray(data.payload)) {
-      return {
-        status: { code: 200, message: "OK" },
-        payload: data.payload || [],
-      };
+    const fromData: RatesData | null = await fromResponse.json(); // This is a RatesData object
+    const toData: RatesData | null = await toResponse.json();   // This is a RatesData object
+
+    const payload: RatesData[] = [];
+    // Ensure data is valid and has rates before pushing
+    if (fromData && fromData.rates && fromData.rates.length > 0) {
+      payload.push(fromData);
+    }
+    // Only add the 'toData' if it's different from 'fromData' and is valid
+    if (toData && toData.rates && toData.rates.length > 0 && fromDate !== toDate) {
+      payload.push(toData);
+    }
+
+    if (payload.length === 0) {
+       return { status: { code: 404, message: "No data found for boundaries" }, payload: [] };
     }
     
-    if (Array.isArray(data)) {
-       return { status: { code: 200, message: "OK" }, payload: data };
-    }
-    
-    throw new Error("Invalid data structure from historical API");
+    // Return the two rows (or one) in the same format as the old API
+    return {
+      status: { code: 200, message: "OK" },
+      payload: payload,
+    };
 
   } catch (error) {
-    console.error("Failed to fetch historical forex rates:", error);
-    throw error; 
+    console.error("Failed to fetch historical boundary rates:", error);
+    throw error; // Let react-query handle the error
   }
 };
-
 
 // --- MAIN PAGE COMPONENT ---
 const ArchiveDetail = () => {
