@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient
-import { fetchForexRates, fetchPreviousDayRates, formatDateLong, fetchForexRatesByDate } from '../services/forexService'; // Add fetchForexRatesByDate
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDateLong } from '../services/forexService'; // Keep helpers
 import { Rate, RatesData } from '../types/forex';
 import ForexTable from '../components/ForexTable';
 import CurrencyCard from '../components/CurrencyCard';
@@ -8,18 +8,25 @@ import ForexTicker from '../components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight } from 'lucide-react'; // Add Chevron icons
+import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
 import html2canvas from 'html2canvas';
 import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For date picker
-import { Calendar } from '@/components/ui/calendar'; // For date picker
-import { format, subDays, addDays } from 'date-fns'; // For date manipulation
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format, subDays, addDays } from 'date-fns';
+import { Link } from 'react-router-dom';
+// --- TASK 4: Import DB-First Service ---
+import { fetchRatesForDateWithCache } from '../services/d1ForexService'; 
+// --- END TASK 4 ---
 
-const Index = () => {
-  const queryClient = useQueryClient(); // Initialize useQueryClient
+// NOTE: This component is a 404 page that ALSO renders the Index page content as a fallback.
+// This is an unusual pattern, but we will apply the optimization here as well.
+
+const NotFound = () => {
+  const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [popularCurrencies, setPopularCurrencies] = useState<Rate[]>([]);
   const [asianCurrencies, setAsianCurrencies] = useState<Rate[]>([]);
@@ -27,34 +34,36 @@ const Index = () => {
   const [middleEastCurrencies, setMiddleEastCurrencies] = useState<Rate[]>([]);
   const [otherCurrencies, setOtherCurrencies] = useState<Rate[]>([]);
   const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // State for selected date
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
 
-  // Fetch current day's rates based on selectedDate
+  const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
+  const previousDateString = format(subDays(selectedDate, 1), 'yyyy-MM-dd');
+
+  // --- TASK 4: Use fetchRatesForDateWithCache (DB-First) ---
   const {
     data: forexData,
     isLoading,
     isError,
     error,
-    refetch: refetchCurrentRates
   } = useQuery({
-    queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]], // Key includes date
-    queryFn: () => fetchForexRatesByDate(selectedDate), // Use fetchForexRatesByDate
+    queryKey: ['forexRates', selectedDateString],
+    queryFn: () => fetchRatesForDateWithCache(selectedDateString, null), // Use DB-First service
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 15, // 15 minutes
   });
 
-  // Fetch previous day's rates based on selectedDate
+  // --- TASK 4: Use fetchRatesForDateWithCache for Prev Day (DB-First) ---
   const {
     data: prevDayData,
     isLoading: isLoadingPrevDay,
-    refetch: refetchPrevDayRates
   } = useQuery({
-    queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]], // Key includes date
-    queryFn: () => fetchPreviousDayRates(subDays(selectedDate, 1)), // Fetch for the day before selectedDate
+    queryKey: ['previousDayRates', selectedDateString], // Keyed to selectedDate to refetch together
+    queryFn: () => fetchRatesForDateWithCache(previousDateString, null), // Use DB-First service
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 60, // 1 hour
   });
+  // --- END TASK 4 ---
 
   useEffect(() => {
     if (isError && error instanceof Error) {
@@ -68,16 +77,16 @@ const Index = () => {
 
   // Update previousDayRates state when data loads
   useEffect(() => {
-    if (prevDayData?.data?.payload?.[0]?.rates) {
-      setPreviousDayRates(prevDayData.data.payload[0].rates);
+    if (prevDayData?.rates) {
+      setPreviousDayRates(prevDayData.rates);
     } else {
       setPreviousDayRates([]); // Clear if no data
     }
   }, [prevDayData]);
 
   useEffect(() => {
-    if (forexData?.data?.payload?.[0]?.rates) {
-      const allRates = forexData.data.payload[0].rates;
+    if (forexData?.rates) {
+      const allRates = forexData.rates;
 
       const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
       const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
@@ -113,12 +122,12 @@ const Index = () => {
     });
     // Invalidate and refetch queries for the current selected date
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]] }),
-      queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]] })
+      queryClient.invalidateQueries({ queryKey: ['forexRates', selectedDateString] }),
+      queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDateString] })
     ]);
   };
 
-  const ratesData: RatesData | undefined = forexData?.data?.payload?.[0];
+  const ratesData: RatesData | undefined = forexData;
   const rates: Rate[] = ratesData?.rates || [];
 
   const handleDateChange = (date: Date | undefined) => {
@@ -286,17 +295,29 @@ const Index = () => {
     <Layout>
       <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
-          {/* Header section - Fixed heights */}
-          <div className="text-center mb-12 animate-fade-in min-h-[140px]">
-            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4 h-8">
-              <Gitlab className="h-4 w-4 mr-1" />
-              <span>Live Forex Data</span>
-            </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Nepal Rastra Bank</h1>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Track real-time foreign exchange rates with beautiful visualizations and seamless updates.
-            </p>
-          </div>
+          {/* 404 Header */}
+           <div className="text-center mb-12 animate-fade-in p-8 bg-red-50 border border-red-200 rounded-lg">
+             <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
+             <h1 className="text-4xl font-bold text-destructive mb-4">Page Not Found (404)</h1>
+             <p className="text-xl text-red-700 max-w-3xl mx-auto mb-6">
+                We couldn't find the page you were looking for.
+             </p>
+             <Button asChild>
+                <Link to="/">Go to Homepage</Link>
+             </Button>
+           </div>
+          
+           {/* Separator */}
+           <div className="relative my-12">
+             <div className="absolute inset-0 flex items-center" aria-hidden="true">
+               <div className="w-full border-t border-gray-300" />
+             </div>
+             <div className="relative flex justify-center">
+               <span className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 px-4 text-sm text-gray-500">
+                 Or see today's rates below
+               </span>
+             </div>
+           </div>
 
           {/* Main Title with Date Navigation - Fixed heights */}
           <div className="text-center mb-8 min-h-[100px]">
@@ -442,7 +463,7 @@ const Index = () => {
             <TabsContent value="all" className="animate-fade-in">
               {viewMode === 'table' ? (
                 <div id="forex-table-container">
-                  <ForexTable rates={rates} isLoading={isLoading} title="" previousDayRates={previousDayRates} /> {/* Title moved globally */}
+                  <ForexTable rates={rates} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
                 </div>
               ) : (
                 renderGridCards(rates)
@@ -451,7 +472,7 @@ const Index = () => {
 
             <TabsContent value="popular" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={popularCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
+                <ForexTable rates={popularCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
               ) : (
                 renderGridCards(popularCurrencies)
               )}
@@ -459,7 +480,7 @@ const Index = () => {
 
             <TabsContent value="asian" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={asianCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
+                <ForexTable rates={asianCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
               ) : (
                  renderGridCards(asianCurrencies)
               )}
@@ -467,7 +488,7 @@ const Index = () => {
 
             <TabsContent value="european" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={europeanCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
+                <ForexTable rates={europeanCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
               ) : (
                  renderGridCards(europeanCurrencies)
               )}
@@ -475,7 +496,7 @@ const Index = () => {
 
             <TabsContent value="middle-east" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={middleEastCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
+                <ForexTable rates={middleEastCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
               ) : (
                  renderGridCards(middleEastCurrencies)
               )}
@@ -483,7 +504,7 @@ const Index = () => {
 
              <TabsContent value="other" className="animate-fade-in">
                {viewMode === 'table' ? (
-                 <ForexTable rates={otherCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
+                 <ForexTable rates={otherCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
                ) : (
                   renderGridCards(otherCurrencies)
                )}
@@ -511,4 +532,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default NotFound;
