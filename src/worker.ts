@@ -102,14 +102,16 @@ export default {
             return handleFetchAndStore(request, env);
         }
         if (pathname === '/api/historical-rates') {
+            // UPDATED: This now handles sampling
             return handleHistoricalRates(request, env); 
         }
 
-        // --- ADDED THIS ROUTE ---
+        // --- NEW ENDPOINT FOR TASK 1 ---
         if (pathname === '/api/historical-stats') {
+            // This is the new endpoint for optimized statistics
             return handleHistoricalStats(request, env);
         }
-        // --- END OF ADDED ROUTE ---
+        // --- END OF NEW ENDPOINT ---
 
         if (pathname === '/api/admin/login') {
             return handleAdminLogin(request, env);
@@ -471,11 +473,13 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     }
 }
 
+// --- UPDATED FOR TASK 2: SAMPLING ---
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency'); 
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
+    const sampling = url.searchParams.get('sampling') || 'daily'; // Default to daily
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
     if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
@@ -493,6 +497,29 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
         let query: D1PreparedStatement;
         let responsePayload: any;
 
+        // --- Build Sampling WHERE clause ---
+        let samplingClause = "";
+        const bindings = [fromDate, toDate];
+
+        if (sampling !== 'daily') {
+            switch (sampling) {
+                case 'weekly':
+                    samplingClause = "AND (STRFTIME('%w', date) = '0')"; // Sunday
+                    break;
+                case '15day':
+                    // We bind fromDate twice for this
+                    samplingClause = "AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0)";
+                    bindings.push(fromDate);
+                    break;
+                case 'monthly':
+                    samplingClause = "AND (STRFTIME('%d', date) = '01')";
+                    break;
+            }
+            // Always include the start and end dates
+            samplingClause += " OR date = ? OR date = ?";
+            bindings.push(fromDate, toDate);
+        }
+
         if (currencyCode) {
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
@@ -504,17 +531,20 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             const buyCol = `"${upperCaseCurrencyCode}_buy"`;
             const sellCol = `"${upperCaseCurrencyCode}_sell"`;
 
-            query = env.FOREX_DB.prepare(
-                `SELECT date, ${buyCol} as buy_rate, ${sellCol} as sell_rate
-                 FROM forex_rates
-                 WHERE date >= ? AND date <= ?
-                 ORDER BY date ASC`
-            ).bind(fromDate, toDate);
+            const sql = `
+                SELECT date, ${buyCol} as buy_rate, ${sellCol} as sell_rate
+                FROM forex_rates
+                WHERE date >= ? AND date <= ?
+                ${samplingClause}
+                ORDER BY date ASC
+            `;
+            
+            query = env.FOREX_DB.prepare(sql).bind(...bindings);
 
             const queryResult = await query.all();
 
             if (!queryResult.success) {
-                 console.error(`D1 Query Error fetching ${currencyCode}`);
+                 console.error(`D1 Query Error fetching ${currencyCode} with sampling ${sampling}`);
                  throw new Error('Database query failed for specific currency');
             }
             
@@ -536,6 +566,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             });
 
         } else if (fromDate === toDate) {
+            // No sampling needed for single day fetch
             query = env.FOREX_DB.prepare(
                 `SELECT * FROM forex_rates WHERE date = ? LIMIT 1`
             ).bind(fromDate);
@@ -579,14 +610,21 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             });
 
         } else {
-            query = env.FOREX_DB.prepare(
-                `SELECT * FROM forex_rates WHERE date >= ? AND date <= ? ORDER BY date ASC`
-            ).bind(fromDate, toDate);
+            // Fetching a range for *all* currencies (e.g., ArchiveDetail historical tabs)
+            // Apply sampling here as well.
+            const sql = `
+                SELECT * FROM forex_rates 
+                WHERE date >= ? AND date <= ?
+                ${samplingClause}
+                ORDER BY date ASC
+            `;
+
+            query = env.FOREX_DB.prepare(sql).bind(...bindings);
 
             const queryResult = await query.all<any>();
 
             if (!queryResult.success || !queryResult.results) {
-                 console.error(`D1 Query Error fetching all rates for range ${fromDate}-${toDate}`);
+                 console.error(`D1 Query Error fetching all rates for range ${fromDate}-${toDate} with sampling ${sampling}`);
                  throw new Error('Database query failed for date range');
             }
             
@@ -632,6 +670,8 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
         });
     }
 }
+// --- END OF TASK 2 UPDATE ---
+
 
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
@@ -963,57 +1003,56 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
     }
 }
 
-// --- ADDED THIS FUNCTION ---
+// --- NEW FUNCTION FOR TASK 1 ---
 async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const fromDate = url.searchParams.get('from');
-    const toDate = url.searchParams.get('to');
-    const currenciesParam = url.searchParams.get('currencies');
-    
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    
-    if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
-        return new Response(JSON.stringify({ error: 'Missing or invalid date parameters' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
-    if (!currenciesParam) {
-        return new Response(JSON.stringify({ error: 'Missing currencies parameter' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-    }
-
-    const currencies = currenciesParam.split(',').filter(c => CURRENCIES.includes(c.toUpperCase()));
-    if (currencies.length === 0) {
-        return new Response(JSON.stringify({ error: 'No valid currencies provided' }), {
-            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
+        const { dateRange, currencies } = (await request.json()) as { dateRange: { from: string; to: string }; currencies: string[] };
+        const { from: fromDate, to: toDate } = dateRange;
+
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+        if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+            return new Response(JSON.stringify({ error: 'Missing or invalid date parameters' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+        if (!Array.isArray(currencies) || currencies.length === 0) {
+            return new Response(JSON.stringify({ error: 'Missing or invalid currencies array' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
+        const validCurrencies = currencies.filter(c => CURRENCIES.includes(c.toUpperCase()));
+        if (validCurrencies.length === 0) {
+            return new Response(JSON.stringify({ error: 'No valid currencies provided' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+        }
+
         const stats: { [key: string]: any } = {};
         const queries: D1PreparedStatement[] = [];
 
-        currencies.forEach(code => {
+        validCurrencies.forEach(code => {
             const buyCol = `"${code}_buy"`;
             const sellCol = `"${code}_sell"`;
             
-            // Create 4 queries for each currency: highBuy, lowBuy, highSell, lowSell
-            // We find the max/min rate AND the first date it occurred on.
-            
-            // High Buy
+            // 1. High Buy
             queries.push(env.FOREX_DB.prepare(
                 `SELECT date, ${buyCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${buyCol} IS NOT NULL ORDER BY ${buyCol} DESC, date ASC LIMIT 1`
             ).bind(fromDate, toDate));
-            // Low Buy
+            // 2. Low Buy
             queries.push(env.FOREX_DB.prepare(
                 `SELECT date, ${buyCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${buyCol} > 0 ORDER BY ${buyCol} ASC, date ASC LIMIT 1`
             ).bind(fromDate, toDate));
-            // High Sell
+            // 3. High Sell
             queries.push(env.FOREX_DB.prepare(
                 `SELECT date, ${sellCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${sellCol} IS NOT NULL ORDER BY ${sellCol} DESC, date ASC LIMIT 1`
             ).bind(fromDate, toDate));
-            // Low Sell
+            // 4. Low Sell
             queries.push(env.FOREX_DB.prepare(
                 `SELECT date, ${sellCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${sellCol} > 0 ORDER BY ${sellCol} ASC, date ASC LIMIT 1`
             ).bind(fromDate, toDate));
@@ -1022,7 +1061,7 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
         const results = await env.FOREX_DB.batch(queries);
 
         let i = 0;
-        for (const code of currencies) {
+        for (const code of validCurrencies) {
             stats[code] = {
                 highBuy:  results[i++]?.results?.[0] || null,
                 lowBuy:   results[i++]?.results?.[0] || null,
@@ -1042,7 +1081,7 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
         });
     }
 }
-// --- END OF ADDED FUNCTION ---
+// --- END OF TASK 1 FUNCTION ---
 
 async function updateForexData(env: Env): Promise<void> {
     console.log("Starting scheduled forex data update...");
