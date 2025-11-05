@@ -1,61 +1,162 @@
-
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { format, parseISO } from 'date-fns';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+import { format, parseISO, differenceInDays } from 'date-fns';
 import { CalendarIcon, RefreshCw, Loader2 } from 'lucide-react';
 import { Rate, ChartDataPoint } from '../types/forex';
-import { getDateRanges } from '../services/forexService';
+// --- MODIFIED IMPORTS ---
+import { getDateRanges, fetchHistoricalRates, formatDate } from '../services/forexService'; // Import chunked fetcher
 import { getFlagEmoji } from '../services/forexService';
 import { useToast } from '@/components/ui/use-toast';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 import { Input } from '@/components/ui/input';
-import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
+import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService'; // Import d1 service
+// ---
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import { Calendar } from './ui/calendar';
+import { DateRange } from 'react-day-picker';
 
 interface CurrencyChartModalProps {
-  currency: Rate;
+  currency: Rate | null;
   isOpen: boolean;
   onClose: () => void;
 }
 
+// --- (Helper function from d1ForexService, needed for API fallback) ---
+function fillMissingDatesWithPreviousData(
+  data: ChartDataPoint[],
+  fromDate: string,
+  toDate: string
+): ChartDataPoint[] {
+  if (data.length === 0) return [];
+  const filledData: ChartDataPoint[] = [];
+  const dataMap = new Map(data.map(d => [d.date, d]));
+  const start = new Date(fromDate + 'T00:00:00Z');
+  const end = new Date(toDate + 'T00:00:00Z');
+  let previousDataPoint: ChartDataPoint | null = data[0]; 
+
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (isNaN(d.getTime())) continue;
+    const dateStr = formatDate(d); 
+    if (dataMap.has(dateStr)) {
+      const currentData = dataMap.get(dateStr)!;
+      const pointToAdd: ChartDataPoint = {
+          date: dateStr,
+          buy: currentData.buy ?? previousDataPoint?.buy ?? 0,
+          sell: currentData.sell ?? previousDataPoint?.sell ?? 0
+      };
+      filledData.push(pointToAdd);
+      previousDataPoint = pointToAdd;
+    } else if (previousDataPoint) {
+      filledData.push({
+        date: dateStr,
+        buy: previousDataPoint.buy ?? 0,
+        sell: previousDataPoint.sell ?? 0
+      });
+    } else {
+        filledData.push({ date: dateStr, buy: 0, sell: 0 });
+    }
+  }
+  return filledData;
+}
+// --- (End of helper) ---
+
 const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalProps) => {
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedTab, setSelectedTab] = useState('week');
-  const [dateRange, setDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({
-    from: undefined,
-    to: undefined,
-  });
-  const [calendarOpen, setCalendarOpen] = useState(false);
-  const [customFromDate, setCustomFromDate] = useState<string>('');
-  const [customToDate, setCustomToDate] = useState<string>('');
+  const [selectedTab, setSelectedTab] = useState('month');
+  const [customDateRange, setCustomDateRange] = useState<DateRange | undefined>(undefined);
+  const [customFromDate, setCustomFromDate] = useState('');
+  const [customToDate, setCustomToDate] = useState('');
   const [progress, setProgress] = useState<FetchProgress | null>(null);
   const { toast } = useToast();
 
-  const loadHistoricalData = async (fromDate: string, toDate: string) => {
-    if (!isOpen) return;
+  // --- NEW STATE for API Fallback ---
+  const [apiData, setApiData] = useState<ChartDataPoint[] | null>(null); // For daily data fallback
+  const [isDailyDataLoaded, setIsDailyDataLoaded] = useState(false);
+  const [currentSampling, setCurrentSampling] = useState<'daily' | 'weekly' | '15day' | 'monthly'>('daily');
+
+  const getSamplingForPeriod = (period: typeof selectedTab, range: {from: Date, to: Date} | undefined) => {
+    if (period === 'custom' && range?.from && range?.to) {
+        const days = differenceInDays(range.to, range.from);
+        if (days > 365 * 2) return 'monthly';
+        if (days > 365) return '15day';
+        if (days > 90) return 'weekly';
+        return 'daily';
+    }
+    
+    switch (period) {
+      case 'week':
+      case 'month':
+        return 'daily';
+      case 'threeMonth':
+      case 'sixMonth':
+      case 'year':
+        return 'weekly';
+      case 'fiveYear':
+        return 'monthly'; // More aggressive sampling
+      default:
+        return 'daily';
+    }
+  };
+
+  const loadHistoricalData = async (fromDate: string, toDate: string, forceApi = false) => {
+    if (!isOpen || !currency) return;
+
+    if (apiData && !forceApi) {
+        setChartData(apiData);
+        return;
+    }
     
     setIsLoading(true);
     setProgress(null);
     setChartData([]);
     
     try {
-      const data = await fetchHistoricalRatesWithCache(
-        currency.currency.iso3,
-        fromDate,
-        toDate,
-        (progress) => {
-          setProgress(progress);
-        }
-      );
+      let data: ChartDataPoint[] = [];
+      const sampling = getSamplingForPeriod(selectedTab as any, {from: parseISO(fromDate), to: parseISO(toDate)});
+      setCurrentSampling(sampling);
+
+      if (forceApi) {
+        // --- NEW: Force fetch from NRB API (chunked) ---
+        setProgress({ stage: 'fetching', message: 'Fetching daily data from NRB API...' });
+        setIsDailyDataLoaded(true);
+        const apiResponse = await fetchHistoricalRates(fromDate, toDate); // Chunked fetcher
+        const dailyData = apiResponse.payload.map(day => {
+          const rate = day.rates.find(r => r.currency.iso3 === currency.currency.iso3);
+          return {
+            date: day.date,
+            buy: rate ? parseFloat(rate.buy.toString()) : 0,
+            sell: rate ? parseFloat(rate.sell.toString()) : 0
+          };
+        }).filter(d => d.buy > 0 || d.sell > 0);
+        
+        data = fillMissingDatesWithPreviousData(dailyData, fromDate, toDate);
+        setApiData(data); // Cache API data in state
+      } else {
+        // --- MODIFIED: Fetch from D1 Cache with sampling ---
+        setIsDailyDataLoaded(false);
+        setApiData(null); // Clear old API data
+
+        data = await fetchHistoricalRatesWithCache(
+          currency.currency.iso3,
+          fromDate,
+          toDate,
+          (progress) => setProgress(progress),
+          sampling // Pass sampling
+        );
+      }
       
       if (data.length > 0) {
-        // Sort by date chronologically
         data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         setChartData(data);
       } else {
@@ -67,199 +168,123 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
         setChartData([]);
       }
     } catch (error) {
-      console.error("Failed to fetch historical data:", error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch historical data. Please try again later.",
-        variant: "destructive",
-      });
-      setChartData([]);
+      console.error('Error loading chart data:', error);
+      toast({ title: "Error", description: "Could not load chart data.", variant: "destructive" });
     } finally {
       setIsLoading(false);
-      // Keep progress message visible for a moment after completion
       setTimeout(() => setProgress(null), 3000);
     }
   };
 
-  useEffect(() => {
-    if (isOpen) {
+  const getDatesForTab = (tab: string) => {
       const ranges = getDateRanges();
-      loadHistoricalData(ranges[selectedTab as keyof typeof ranges].from, ranges[selectedTab as keyof typeof ranges].to);
+      switch (tab) {
+          case 'week': return ranges.week;
+          case 'month': return ranges.month;
+          case 'threeMonth': return ranges.threeMonth;
+          case 'sixMonth': return ranges.sixMonth;
+          case 'year': return ranges.year;
+          case 'fiveYear': return ranges.fiveYear;
+          default: return ranges.month;
+      }
+  }
+
+  // Load data on open or tab change
+  useEffect(() => {
+    if (isOpen && selectedTab !== 'custom') {
+      const { from, to } = getDatesForTab(selectedTab);
+      loadHistoricalData(from, to, false);
     }
-  }, [isOpen, selectedTab]);
+  }, [isOpen, selectedTab, currency]);
 
   const handleTabChange = (value: string) => {
     setSelectedTab(value);
-    if (value !== 'custom') {
-      const ranges = getDateRanges();
-      loadHistoricalData(ranges[value as keyof typeof ranges].from, ranges[value as keyof typeof ranges].to);
-    }
+    // Let useEffect handle the data load
   };
-
 
   const handleCustomDateApply = () => {
-    if (dateRange.from && dateRange.to) {
-      const fromFormatted = format(dateRange.from, 'yyyy-MM-dd');
-      const toFormatted = format(dateRange.to, 'yyyy-MM-dd');
-      loadHistoricalData(fromFormatted, toFormatted);
-      setCalendarOpen(false);
-    } else if (customFromDate && customToDate) {
-      if (!isValidDateString(customFromDate) || !isValidDateString(customToDate)) {
-        toast({
-          title: "Invalid date format",
-          description: "Please use YYYY-MM-DD format for custom dates.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      if (!isValidDateRange(customFromDate, customToDate)) {
-        toast({
-          title: "Invalid date range",
-          description: "Please enter a valid date range (from date should be before to date).",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      const toDate = new Date(customToDate);
-      if (toDate > new Date()) {
-        toast({
-          title: "Future dates not allowed",
-          description: "End date cannot be in the future.",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      loadHistoricalData(customFromDate, customToDate);
+    let from: string | undefined, to: string | undefined;
+
+    if (customDateRange?.from && customDateRange.to) {
+        from = formatDate(customDateRange.from);
+        to = formatDate(customDateRange.to);
     } else {
-      toast({
-        title: "Date selection required",
-        description: "Please select both start and end dates.",
-        variant: "destructive",
-      });
+        // Fallback to text inputs if they are valid
+        const saneFrom = sanitizeDateInput(customFromDate);
+        const saneTo = sanitizeDateInput(customToDate);
+        if (isValidDateString(saneFrom) && isValidDateString(saneTo) && isValidDateRange(saneFrom, saneTo)) {
+            from = saneFrom;
+            to = saneTo;
+        } else {
+            toast({
+                title: "Invalid Date Range",
+                description: "Please select a valid 'from' and 'to' date. The 'from' date must be before the 'to' date.",
+                variant: "destructive"
+            });
+            return;
+        }
     }
+    
+    loadHistoricalData(from, to, false);
   };
 
+  if (!currency) return null;
+
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open) onClose();
-    }}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center">
-            <span className="text-2xl mr-2">{getFlagEmoji(currency.currency.iso3)}</span>
-            {currency.currency.name} ({currency.currency.iso3}) Exchange Rate History
+          <DialogTitle className="text-2xl flex items-center gap-3">
+            <span className="text-3xl">{getFlagEmoji(currency.currency.iso3)}</span>
+            {currency.currency.name} ({currency.currency.iso3})
           </DialogTitle>
           <DialogDescription>
-            View historical exchange rates for {currency.currency.unit} {currency.currency.unit > 1 ? 'units' : 'unit'} of {currency.currency.iso3}
+            Historical exchange rate chart against NPR.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Progress indicator */}
+        
         {progress && (
-          <Alert className="mb-4">
+          <Alert className="bg-blue-50 border-blue-200">
             <Loader2 className="h-4 w-4 animate-spin" />
             <AlertDescription>
-              <div className="font-medium">{progress.message}</div>
-              {progress.chunkInfo && (
-                <div className="text-sm text-muted-foreground mt-1">
-                  Chunk {progress.chunkInfo.current} of {progress.chunkInfo.total}: {progress.chunkInfo.fromDate} to {progress.chunkInfo.toDate}
-                </div>
-              )}
+              {progress.message}
+              {progress.chunkInfo && ` (Chunk ${progress.chunkInfo.current} of ${progress.chunkInfo.total})`}
             </AlertDescription>
           </Alert>
         )}
 
         <Tabs value={selectedTab} onValueChange={handleTabChange}>
           <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
-            <TabsList>
-              <TabsTrigger value="week">Last Week</TabsTrigger>
-              <TabsTrigger value="month">Last Month</TabsTrigger>
-              <TabsTrigger value="threeMonth">Last 3 Months</TabsTrigger>
-              <TabsTrigger value="sixMonth">Last 6 Months</TabsTrigger>
-              <TabsTrigger value="year">Last Year</TabsTrigger>
-              <TabsTrigger value="fiveYear">Last 5 Years</TabsTrigger>
-              <TabsTrigger value="custom">Custom Range</TabsTrigger>
-            </TabsList>
-            
-            {selectedTab === 'custom' && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="flex items-center gap-2">
-                      <CalendarIcon className="h-4 w-4" />
-                      <span>
-                        {dateRange.from ? format(dateRange.from, 'PP') : 'Select'} - 
-                        {dateRange.to ? format(dateRange.to, 'PP') : 'Select'}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="range"
-                      selected={dateRange}
-                      onSelect={(range) => setDateRange(range as { from: Date | undefined; to: Date | undefined })}
-                      initialFocus
-                      disabled={{ after: new Date() }}
-                      className="pointer-events-auto"
-                      captionLayout="dropdown-buttons"
-                      fromYear={2000}
-                      toYear={new Date().getFullYear()}
-                    />
-                    <div className="p-3 border-t border-border">
-                      <Button size="sm" onClick={handleCustomDateApply} className="w-full">
-                        Apply Range
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-col">
-                    <label className="text-xs mb-1">From (YYYY-MM-DD)</label>
-                    <Input
-                      type="text"
-                      placeholder="YYYY-MM-DD"
-                      value={customFromDate}
-                      onChange={(e) => setCustomFromDate(sanitizeDateInput(e.target.value))}
-                      className="w-32"
-                    />
-                  </div>
-                  <div className="flex flex-col">
-                    <label className="text-xs mb-1">To (YYYY-MM-DD)</label>
-                    <Input
-                      type="text"
-                      placeholder="YYYY-MM-DD"
-                      value={customToDate}
-                      onChange={(e) => setCustomToDate(sanitizeDateInput(e.target.value))}
-                      className="w-32"
-                    />
-                  </div>
-                  <Button onClick={handleCustomDateApply} size="sm" className="mt-6">
-                    Apply
-                  </Button>
-                </div>
-              </div>
-            )}
+            <div className="overflow-x-auto scrollbar-hide">
+              <TabsList>
+                <TabsTrigger value="week">1 Week</TabsTrigger>
+                <TabsTrigger value="month">1 Month</TabsTrigger>
+                <TabsTrigger value="threeMonth">3 Months</TabsTrigger>
+                <TabsTrigger value="sixMonth">6 Months</TabsTrigger>
+                <TabsTrigger value="year">1 Year</TabsTrigger>
+                <TabsTrigger value="fiveYear">5 Years</TabsTrigger>
+                <TabsTrigger value="custom">Custom</TabsTrigger>
+              </TabsList>
+            </div>
             
             <Button 
               variant="outline" 
               size="sm" 
               onClick={() => {
+                let from, to;
                 if (selectedTab === 'custom') {
-                  if (dateRange.from && dateRange.to) {
-                    const fromFormatted = format(dateRange.from, 'yyyy-MM-dd');
-                    const toFormatted = format(dateRange.to, 'yyyy-MM-dd');
-                    loadHistoricalData(fromFormatted, toFormatted);
-                  } else if (customFromDate && customToDate) {
-                    loadHistoricalData(customFromDate, customToDate);
+                  if (customDateRange?.from && customDateRange.to) {
+                    from = formatDate(customDateRange.from);
+                    to = formatDate(customDateRange.to);
+                  } else {
+                    toast({ title: "Error", description: "Please select a custom date range to refresh.", variant: "destructive" });
+                    return;
                   }
                 } else {
-                  const ranges = getDateRanges();
-                  loadHistoricalData(ranges[selectedTab as keyof typeof ranges].from, ranges[selectedTab as keyof typeof ranges].to);
+                  const dates = getDatesForTab(selectedTab);
+                  from = dates.from; to = dates.to;
                 }
+                loadHistoricalData(from, to, false);
               }}
               disabled={isLoading}
             >
@@ -268,31 +293,79 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
             </Button>
           </div>
 
-          <TabsContent value="week" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
+          {selectedTab === 'custom' && (
+              <div className="flex flex-col md:flex-row gap-4 items-center mb-6 p-4 bg-gray-50 rounded-lg">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={'outline'}
+                      className="w-full md:w-[300px] justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customDateRange?.from ? (
+                        customDateRange.to ? (
+                          <>
+                            {format(customDateRange.from, 'LLL dd, y')} -{' '}
+                            {format(customDateRange.to, 'LLL dd, y')}
+                          </>
+                        ) : (
+                          format(customDateRange.from, 'LLL dd, y')
+                        )
+                      ) : (
+                        <span>Pick a date range</span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      initialFocus
+                      mode="range"
+                      defaultMonth={customDateRange?.from}
+                      selected={customDateRange}
+                      onSelect={setCustomDateRange}
+                      numberOfMonths={2}
+                      disabled={(date) =>
+                        date > new Date() || date < new Date('2000-01-01')
+                      }
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button onClick={handleCustomDateApply} disabled={isLoading}>
+                  {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  Apply Range
+                </Button>
+              </div>
+          )}
           
-          <TabsContent value="month" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-          
-          <TabsContent value="threeMonth" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-          
-          <TabsContent value="sixMonth" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-          
-          <TabsContent value="year" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-          
-          <TabsContent value="fiveYear" className="mt-4">
-            <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
-          </TabsContent>
-          
-          <TabsContent value="custom" className="mt-4">
+          {/* --- NEW: Load Daily Data Button --- */}
+          {!isDailyDataLoaded && !isLoading && currentSampling !== 'daily' && (
+              <div className="text-center mb-4">
+                <p className="text-sm text-muted-foreground mb-2">
+                  Showing sampled data ({currentSampling}).
+                </T>
+                <Button variant="outline" size="sm" onClick={() => {
+                    let from, to;
+                    if (selectedTab === 'custom') {
+                        if (customDateRange?.from && customDateRange.to) {
+                            from = formatDate(customDateRange.from);
+                            to = formatDate(customDateRange.to);
+                        } else {
+                            toast({ title: "Error", description: "Please select a custom date range.", variant: "destructive" });
+                            return;
+                        }
+                    } else {
+                        const dates = getDatesForTab(selectedTab);
+                        from = dates.from; to = dates.to;
+                    }
+                    loadHistoricalData(from, to, true);
+                }}>
+                  Load Full Daily Data (Slower)
+                </Button>
+              </div>
+            )}
+
+          {/* This TabsContent wrapper is just for layout, ChartDisplay is shown for all tabs */}
+          <TabsContent value={selectedTab}>
             <ChartDisplay data={chartData} isLoading={isLoading} currencyCode={currency.currency.iso3} />
           </TabsContent>
         </Tabs>
@@ -310,9 +383,8 @@ interface ChartDisplayProps {
 const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
   if (isLoading) {
     return (
-      <div className="h-[400px] w-full flex flex-col items-center justify-center gap-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="text-muted-foreground">Loading chart data...</p>
+      <div className="h-[400px] w-full flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -320,82 +392,35 @@ const ChartDisplay = ({ data, isLoading, currencyCode }: ChartDisplayProps) => {
   if (data.length === 0) {
     return (
       <div className="h-[400px] w-full flex items-center justify-center">
-        <div className="text-center text-gray-500">
-          <p className="text-lg">No historical data available for this period</p>
-          <p className="text-sm">Try selecting a different date range</p>
-        </div>
+        <p className="text-muted-foreground">No chart data available for this period.</p>
       </div>
     );
   }
 
   return (
-    <div className="h-[400px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart
-          data={data}
-          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-        >
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-          <XAxis 
-            dataKey="date" 
-            tickFormatter={(date) => {
-              const d = new Date(date);
-              return `${d.getDate()}/${d.getMonth() + 1}`;
-            }}
-            tick={{ fontSize: 12 }}
-          />
-          <YAxis 
-            domain={[(dataMin: number) => {
-              const allValues = data.flatMap(d => [d.buy, d.sell]);
-              const min = Math.min(...allValues);
-              return (min * 0.995).toFixed(2);
-            }, (dataMax: number) => {
-              const allValues = data.flatMap(d => [d.buy, d.sell]);
-              const max = Math.max(...allValues);
-              return (max * 1.005).toFixed(2);
-            }]}
-            tick={{ fontSize: 12 }}
-            tickFormatter={(value) => value.toFixed(2)}
-          />
-          <Tooltip
-            formatter={(value, name) => {
-              return [`NPR ${Number(value).toFixed(4)}`, name === 'buy' ? 'Buy Rate' : 'Sell Rate'];
-            }}
-            labelFormatter={(label) => {
-              const date = new Date(label);
-              return format(date, 'MMMM d, yyyy');
-            }}
-            contentStyle={{
-              backgroundColor: 'rgba(255, 255, 255, 0.95)',
-              border: '1px solid #e5e7eb',
-              borderRadius: '8px',
-              padding: '12px'
-            }}
-          />
-          <Legend 
-            wrapperStyle={{ paddingTop: '20px' }}
-            iconType="line"
-          />
+    // --- MODIFIED: Add scrolling container ---
+    <div className="h-[400px] w-full overflow-x-auto">
+      {/* --- MODIFIED: Add minWidth --- */}
+      <ResponsiveContainer width="100%" height="100%" minWidth={700}>
+        <LineChart data={data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="date" />
+          <YAxis domain={['auto', 'auto']} />
+          <Tooltip />
+          <Legend />
           <Line
             type="monotone"
             dataKey="buy"
-            name={`Buy Rate (${currencyCode})`}
-            stroke="#10b981"
-            strokeWidth={2.5}
-            dot={{ r: 2, strokeWidth: 1 }}
-            activeDot={{ r: 6, strokeWidth: 2 }}
-            animationDuration={800}
+            stroke="#006400"
+            dot={false}
+            name={`Buy (1 ${currencyCode})`}
           />
           <Line
             type="monotone"
             dataKey="sell"
-            name={`Sell Rate (${currencyCode})`}
-            stroke="#ef4444"
-            strokeWidth={2.5}
-            strokeDasharray="5 5"
-            dot={{ r: 2, strokeWidth: 1 }}
-            activeDot={{ r: 6, strokeWidth: 2 }}
-            animationDuration={800}
+            stroke="#8B0000"
+            dot={false}
+            name={`Sell (1 ${currencyCode})`}
           />
         </LineChart>
       </ResponsiveContainer>
