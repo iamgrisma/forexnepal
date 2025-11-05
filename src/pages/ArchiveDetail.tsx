@@ -5,15 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-// --- MODIFIED IMPORTS ---
-import { formatDateLong, getFlagEmoji } from '@/services/forexService';
-import { fetchRatesForDateWithCache, fetchHistoricalStats } from '@/services/d1ForexService'; // Import D1 services
-import { Rate, RatesData, HistoricalRates } from '@/types/forex';
-// ---
+import { fetchForexRatesByDate, formatDateLong, getFlagEmoji } from '@/services/forexService';
 import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore } from 'date-fns';
 import Layout from '@/components/Layout';
 import ForexTicker from '@/components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
+import { Rate, RatesData, HistoricalRates } from '@/types/forex';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from '@/lib/utils';
@@ -62,7 +59,7 @@ export type ArticleTemplateProps = {
     quarterly: HistoricalAnalysisData;
     yearly: HistoricalAnalysisData;
     fiveYear: HistoricalAnalysisData;
-    longTerm: HistoricalAnalysisData;
+    longTerm: HistoricalAnalysisData; // 20yr+
   };
   highLowData: {
     data: (HighLow & { iso3: string; name: string })[];
@@ -77,16 +74,11 @@ export type ArticleTemplateProps = {
   rates: Rate[]; // Pass raw rates for ticker
 };
 
-// --- List of currencies for stats (move to a shared config if needed) ---
-const MAJOR_CURRENCIES = [
-  'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SAR', 'AED', 'QAR', 'JPY', 'MYR', 'KRW',
-  'INR', 'CHF', 'SGD', 'CNY', 'THB', 'SEK', 'DKK', 'HKD', 'KWD', 'BHD', 'OMR'
-];
-
-
-// --- Helper to fetch data for HISTORICAL TABS ---
-// This function is fine as-is. It only fetches small ranges (e.g., 7 days)
-// from the DB-backed endpoint, not the whole dataset.
+// --- NEW DB-FIRST HISTORICAL FETCHER ---
+/**
+ * Fetches historical rates from the worker API (/api/historical-rates)
+ * This endpoint is DB-first.
+ */
 const fetchHistoricalRatesFromWorker = async (fromDate: string, toDate: string): Promise<HistoricalRates> => {
   try {
     const response = await fetch(
@@ -103,6 +95,7 @@ const fetchHistoricalRatesFromWorker = async (fromDate: string, toDate: string):
 
     const data = await response.json();
     
+    // Worker API returns { success: true, payload: [] }
     if (data.success && Array.isArray(data.payload)) {
       return {
         status: { code: 200, message: "OK" },
@@ -110,6 +103,7 @@ const fetchHistoricalRatesFromWorker = async (fromDate: string, toDate: string):
       };
     }
     
+    // Fallback for just in case it returns the raw array
     if (Array.isArray(data)) {
        return { status: { code: 200, message: "OK" }, payload: data };
     }
@@ -147,28 +141,31 @@ const ArchiveDetail = () => {
 
   // --- Data Fetching ---
   
-  // MODIFIED: Fetch Target Day's Data (DB-First, API-Fallback)
-  const { data: currentDayData, isLoading: currentDayLoading, isError: isCurrentDayError } = useQuery({
+  // Fetch Target Day's Data
+  const { data: currentDayResponse, isLoading: currentDayLoading, isError: isCurrentDayError } = useQuery({
     queryKey: ['forex-archive-day', targetDateStr],
-    queryFn: () => fetchRatesForDateWithCache(shortDate, null), // Use D1 cache service
-    enabled: isValidDate,
-    staleTime: 1000 * 60 * 60, // 1 hour
-  });
-
-  // MODIFIED: Fetch Previous Day's Data (DB-First, API-Fallback)
-  const { data: prevDayData, isLoading: prevDayLoading } = useQuery({
-    queryKey: ['forex-archive-prev-day', targetDateStr],
-    queryFn: () => fetchRatesForDateWithCache(format(subDays(targetDate, 1), 'yyyy-MM-dd'), null), // Use D1 cache service
+    queryFn: () => fetchForexRatesByDate(targetDate), // Fetches target date from NRB (will be stored by worker)
     enabled: isValidDate,
     staleTime: 1000 * 60 * 60,
   });
 
-  // --- KEPT AS-IS: Historical Data Queries (For "Historical Performance" tabs) ---
-  // This logic is efficient and correct. It only fetches small date ranges.
+  // Fetch Previous Day's Data (for comparison)
+  const { data: prevDayResponse, isLoading: prevDayLoading } = useQuery({
+    queryKey: ['forex-archive-prev-day', targetDateStr],
+    queryFn: () => fetchForexRatesByDate(subDays(targetDate, 1)), // Fetches prev day
+    enabled: isValidDate,
+    staleTime: 1000 * 60 * 60,
+  });
+
+  // --- Historical Data Queries (Using NEW DB-FIRST function) ---
   const fetchRange = (days: number) => {
     const from = format(subDays(targetDate, days - 1), 'yyyy-MM-dd');
     const to = shortDate;
     return fetchHistoricalRatesFromWorker(from, to);
+  }
+  
+  const fetchLongRange = (startDate: string) => {
+    return fetchHistoricalRatesFromWorker(startDate, shortDate);
   }
 
   const { data: weekData, isLoading: weekLoading } = useQuery({
@@ -203,34 +200,16 @@ const ArchiveDetail = () => {
 
   const { data: longTermData, isLoading: longTermLoading } = useQuery({
     queryKey: ['historical-long-term', targetDateStr],
-    queryFn: () => fetchRange(365 * 26), // ~26 years
+    queryFn: () => fetchLongRange('2000-01-01'), // 20+ years
     enabled: isValidDate, staleTime: Infinity,
   });
   
-  // --- NEW: Optimized High/Low Data Queries ---
-  // This replaces the old logic of fetching all data
-  const { data: highLowStats, isLoading: highLowLoading } = useQuery({
-    queryKey: ['historical-stats-52-week', targetDateStr],
-    queryFn: () => {
-      const from = format(subDays(targetDate, 365), 'yyyy-MM-dd');
-      return fetchHistoricalStats(MAJOR_CURRENCIES, from, shortDate);
-    },
-    enabled: isValidDate, staleTime: Infinity,
-  });
-
-  const { data: allTimeStats, isLoading: allTimeLoading } = useQuery({
-    queryKey: ['historical-stats-all-time', targetDateStr],
-    queryFn: () => fetchHistoricalStats(MAJOR_CURRENCIES, '2000-01-01', shortDate),
-    enabled: isValidDate, staleTime: Infinity,
-  });
-  
-  // --- MODIFIED: Data Analysis (Memoized) ---
+  // --- Data Analysis (Memoized) ---
   const analysisData = useMemo(() => {
-    // Use new data structure from fetchRatesForDateWithCache
-    if (!currentDayData?.rates) return null;
+    if (!currentDayResponse?.data?.payload?.[0]?.rates) return null;
 
-    const currentRates = currentDayData.rates;
-    const prevDayRates = prevDayData?.rates || [];
+    const currentRates = currentDayResponse.data.payload[0].rates;
+    const prevDayRates = prevDayResponse?.data?.payload?.[0]?.rates || [];
 
     const analyzedRates: AnalyzedRate[] = currentRates.map(rate => {
       const buy = Number(rate.buy);
@@ -251,17 +230,24 @@ const ArchiveDetail = () => {
         sell,
         normalizedBuy,
         normalizedSell,
-        dailyChange,
+        dailyChange, // This is normalized daily change
         dailyChangePercent,
       };
     });
     
     const filteredRates = analyzedRates.filter(r => r.currency.iso3 !== 'INR');
+    
+    // Handle edge case where only INR exists
     const safeFilteredRates = filteredRates.length > 0 ? filteredRates : analyzedRates;
+
+    // Top 10 High, Top 12 Low (include INR in low)
     const sortedRatesHigh = [...safeFilteredRates].sort((a, b) => b.normalizedSell - a.normalizedSell);
     const top10High = sortedRatesHigh.slice(0, 10);
+    
+    // Include INR for least expensive
     const sortedRatesLow = [...analyzedRates].sort((a, b) => a.normalizedSell - b.normalizedSell);
     const top12Low = sortedRatesLow.slice(0, 12);
+
     const topGainer = [...safeFilteredRates].sort((a, b) => b.dailyChangePercent - a.dailyChangePercent)[0] || analyzedRates[0];
     const topLoser = [...safeFilteredRates].sort((a, b) => a.dailyChangePercent - b.dailyChangePercent)[0] || analyzedRates[0];
 
@@ -272,12 +258,13 @@ const ArchiveDetail = () => {
       topGainer: topGainer,
       topLoser: topLoser,
     };
-  }, [currentDayData, prevDayData]);
+  }, [currentDayResponse, prevDayResponse]);
 
-  // --- KEPT AS-IS: Helper to process historical data for tabs ---
+  // Helper to process historical data
   const processHistoricalData = (data: HistoricalRates | undefined, allCurrentRates: AnalyzedRate[]): HistoricalChange[] => {
     if (!data?.payload || data.payload.length < 1 || !allCurrentRates) return [];
     
+    // Find oldest and latest *valid* days
     const oldestDay = data.payload[0];
     const latestDay = data.payload[data.payload.length - 1];
 
@@ -309,9 +296,45 @@ const ArchiveDetail = () => {
       .sort((a, b) => b.percent - a.percent); 
   };
   
-  // --- REMOVED: getHighLow helper (logic is now in backend) ---
+  // Helper to get 52-week high/low with dates
+  const getHighLow = (data: HistoricalRates | undefined, iso3: string): HighLow | null => {
+    if (!data?.payload || data.payload.length === 0) return null;
+    let lowBuy = Infinity, highBuy = -Infinity, lowSell = Infinity, highSell = -Infinity;
+    let lowBuyDate = '', highBuyDate = '', lowSellDate = '', highSellDate = '';
+    
+    data.payload.forEach(day => {
+      const rate = day.rates.find(r => r.currency.iso3 === iso3);
+      if (rate) {
+        const unit = rate.currency.unit || 1;
+        const buy = Number(rate.buy) / unit;
+        const sell = Number(rate.sell) / unit;
+        if (buy > 0) {
+          if (buy < lowBuy) {
+            lowBuy = buy;
+            lowBuyDate = day.date;
+          }
+          if (buy > highBuy) {
+            highBuy = buy;
+            highBuyDate = day.date;
+          }
+        }
+        if (sell > 0) {
+          if (sell < lowSell) {
+            lowSell = sell;
+            lowSellDate = day.date;
+          }
+          if (sell > highSell) {
+            highSell = sell;
+            highSellDate = day.date;
+          }
+        }
+      }
+    });
+    if (lowBuy === Infinity) return null;
+    return { lowBuy, highBuy, lowSell, highSell, lowBuyDate, highBuyDate, lowSellDate, highSellDate };
+  }
 
-  // --- KEPT AS-IS: Memoized Historical (Tabs) ---
+  // --- Memoized Historical & High/Low Data ---
   const historicalAnalysis = useMemo(() => {
     const defaultData = { data: [], isLoading: true };
     if (!analysisData) return {
@@ -332,52 +355,31 @@ const ArchiveDetail = () => {
     weekLoading, monthLoading, quarterlyLoading, yearLoading, fiveYearLoading, longTermLoading
   ]);
 
-  // --- MODIFIED: Memoized High/Low Data (use new stats) ---
   const highLowData = useMemo(() => {
-    if (!highLowStats || !analysisData) return { data: [], isLoading: highLowLoading };
+    if (!yearData?.payload || !analysisData) return { data: [], isLoading: true };
+    const majorCurrencies = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SAR', 'AED', 'QAR', 'JPY', 'MYR', 'KRW'];
     return {
-      data: MAJOR_CURRENCIES.map(iso3 => {
-        const stats = highLowStats[iso3];
+      data: majorCurrencies.map(iso3 => {
+        const data = getHighLow(yearData, iso3);
         const name = analysisData?.allRates.find(r => r.currency.iso3 === iso3)?.currency.name || iso3;
-        return {
-          iso3,
-          name,
-          highBuy: stats?.highBuy?.rate ?? 0,
-          lowBuy: stats?.lowBuy?.rate ?? 0,
-          highSell: stats?.highSell?.rate ?? 0,
-          lowSell: stats?.lowSell?.rate ?? 0,
-          highBuyDate: stats?.highBuy?.date,
-          lowBuyDate: stats?.lowBuy?.date,
-          highSellDate: stats?.highSell?.date,
-          lowSellDate: stats?.lowSell?.date,
-        };
-      }).filter(d => d.lowBuy > 0), // Filter out currencies with no data
-      isLoading: highLowLoading
+        return { iso3, name, ...data };
+      }).filter(d => d.lowBuy),
+      isLoading: yearLoading
     };
-  }, [highLowStats, highLowLoading, analysisData]);
+  }, [yearData, yearLoading, analysisData]);
 
   const allTimeHighLowData = useMemo(() => {
-    if (!allTimeStats || !analysisData) return { data: [], isLoading: allTimeLoading };
+    if (!longTermData?.payload || !analysisData) return { data: [], isLoading: true };
+    const majorCurrencies = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SAR', 'AED', 'QAR', 'JPY', 'MYR', 'KRW'];
     return {
-      data: MAJOR_CURRENCIES.map(iso3 => {
-        const stats = allTimeStats[iso3];
+      data: majorCurrencies.map(iso3 => {
+        const data = getHighLow(longTermData, iso3);
         const name = analysisData?.allRates.find(r => r.currency.iso3 === iso3)?.currency.name || iso3;
-        return {
-          iso3,
-          name,
-          highBuy: stats?.highBuy?.rate ?? 0,
-          lowBuy: stats?.lowBuy?.rate ?? 0,
-          highSell: stats?.highSell?.rate ?? 0,
-          lowSell: stats?.lowSell?.rate ?? 0,
-          highBuyDate: stats?.highBuy?.date,
-          lowBuyDate: stats?.lowBuy?.date,
-          highSellDate: stats?.highSell?.date,
-          lowSellDate: stats?.lowSell?.date,
-        };
-      }).filter(d => d.lowBuy > 0),
-      isLoading: allTimeLoading
+        return { iso3, name, ...data };
+      }).filter(d => d.lowBuy),
+      isLoading: longTermLoading
     };
-  }, [allTimeStats, allTimeLoading, analysisData]);
+  }, [longTermData, longTermLoading, analysisData]);
 
   // --- Render Logic ---
   const isLoading = currentDayLoading || prevDayLoading; // We wait for current/prev, but not all historicals
@@ -390,7 +392,6 @@ const ArchiveDetail = () => {
     document.title = `Foreign Exchange Rate for ${shortDate} | Nepal Rastra Bank`;
   }, [shortDate]);
 
-  // --- (PageSkeleton remains unchanged) ---
   const PageSkeleton = () => (
     <div className="max-w-6xl mx-auto space-y-8">
       <Skeleton className="h-12 w-3/4" />
@@ -409,14 +410,12 @@ const ArchiveDetail = () => {
     <Layout>
       <div className="container mx-auto px-4 pt-8">
         <div className="max-w-7xl mx-auto">
-          {/* MODIFIED: Pass rates from new data structure */}
-          <ForexTicker rates={currentDayData?.rates || []} isLoading={currentDayLoading} />
+          <ForexTicker rates={currentDayResponse?.data?.payload?.[0]?.rates || []} isLoading={currentDayLoading} />
         </div>
       </div>
       
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          {/* --- (Navigation buttons remain unchanged) --- */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
             <Button variant="outline" asChild className="flex-shrink-0 w-full sm:w-auto">
               <Link to="/archive" className="flex items-center gap-2 justify-center">
@@ -439,7 +438,7 @@ const ArchiveDetail = () => {
             </div>
           </div>
 
-          {/* --- (ShareButtons remain unchanged) --- */}
+          {/* Share Buttons */}
           <div className="flex justify-center mb-6">
             <ShareButtons 
               url={`/daily-update/forex-for/${shortDate}`}
@@ -457,7 +456,6 @@ const ArchiveDetail = () => {
               </Card>
             )}
 
-            {/* MODIFIED: Check analysisData.allRates */}
             {!isLoading && !isCurrentDayError && (!analysisData || analysisData.allRates.length === 0) && (
               <Card className="not-prose bg-blue-50 border-blue-200">
                 <CardHeader><CardTitle>No Data Published</CardTitle></CardHeader>
@@ -469,7 +467,6 @@ const ArchiveDetail = () => {
             )}
 
             {/* Render the new single, dynamic article template */}
-            {/* MODIFIED: Pass rates from new data structure */}
             {!isLoading && analysisData && analysisData.allRates.length > 0 && (
               <GeneratedArchiveArticle 
                 analysisData={analysisData}
@@ -478,11 +475,11 @@ const ArchiveDetail = () => {
                 allTimeHighLowData={allTimeHighLowData}
                 formattedDate={formattedDate}
                 shortDate={shortDate}
-                rates={currentDayData.rates}
+                rates={currentDayResponse.data.payload[0].rates}
               />
             )}
 
-            {/* --- (Disclaimer remains unchanged) --- */}
+            {/* Disclaimer */}
             {!isLoading && analysisData && analysisData.allRates.length > 0 && (
               <div className="not-prose mt-12 p-4 bg-gray-50 rounded-lg border">
                 <h3 className="text-base font-semibold mt-0">Important Disclaimer</h3>
@@ -501,14 +498,20 @@ const ArchiveDetail = () => {
   );
 };
 
-// === HELPER COMPONENTS (All remain unchanged) ===
+// === HELPER COMPONENTS (Now part of the same file) ===
 
+/**
+ * Gets a color class based on the value
+ */
 const getChangeColor = (change: number) => {
   if (change > 0.0001) return 'text-green-600';
   if (change < -0.0001) return 'text-red-600';
   return 'text-gray-500';
 };
 
+/**
+ * Renders a change value with color and arrow
+ */
 const ChangeIndicator: React.FC<{ value: number, decimals?: number, unit?: 'Rs.' | '%' }> = ({ value, decimals = 2, unit = 'Rs.' }) => {
   const color = getChangeColor(value);
   let formattedValue = (value > 0 ? `+` : '') + value.toFixed(decimals);
@@ -524,6 +527,9 @@ const ChangeIndicator: React.FC<{ value: number, decimals?: number, unit?: 'Rs.'
   );
 };
 
+/**
+ * Renders the new SIMPLIFIED data table (as requested)
+ */
 const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = ({ rates, date }) => (
   <section>
     <h2 className="!mb-6">Official Rate Table ({date})</h2>
@@ -547,12 +553,14 @@ const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = (
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
                   <span className="font-semibold text-base">Rs. {rate.buy.toFixed(2)}</span>
+                  {/* Note: dailyChange is per-unit, so we multiply by unit for the table */}
                   <ChangeIndicator value={rate.dailyChange * rate.currency.unit} decimals={3} />
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
                   <span className="font-semibold text-base">Rs. {rate.sell.toFixed(2)}</span>
+                  {/* We don't have sell change, so we show buy change again as an indicator */}
                   <ChangeIndicator value={rate.dailyChange * rate.currency.unit} decimals={3} />
                 </div>
               </TableCell>
@@ -564,6 +572,9 @@ const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = (
   </section>
 );
 
+/**
+ * Renders the Top 10 High / Top 12 Low Ranking Grids (as requested)
+ */
 const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate[] }> = ({ topHigh, topLow }) => (
   <section>
     <h2>Currency Value Rankings (Per 1 Unit)</h2>
@@ -614,6 +625,9 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
   </section>
 );
 
+/**
+ * Renders the Historical Performance Tabs
+ */
 const HistoricalAnalysisTabs: React.FC<{ analysis: ArticleTemplateProps['historicalAnalysis'] }> = ({ analysis }) => (
   <section>
     <h2>Historical Performance Analysis (vs. NPR)</h2>
@@ -646,14 +660,17 @@ const HistoricalAnalysisTabs: React.FC<{ analysis: ArticleTemplateProps['histori
   </section>
 );
 
+/**
+ * Renders a single tab's content
+ */
 const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: boolean; value: string }> = ({ data, isLoading, value }) => {
   if (isLoading) {
     return (
       <TabsContent value={value} className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
         {Array(22).fill(0).map((_, i) => (
           <div key={i} className="flex justify-between py-3 border-b">
-            <Skeleton className="h-5 w-32 rounded" />
-            <Skeleton className="h-5 w-24 rounded" />
+            <div className="h-5 w-32 bg-gray-200 rounded animate-pulse" />
+            <div className="h-5 w-24 bg-gray-200 rounded animate-pulse" />
           </div>
         ))}
       </TabsContent>
@@ -685,6 +702,9 @@ const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: bool
   );
 };
 
+/**
+ * Renders the 52-Week High/Low Grid with clickable dates
+ */
 const YearlyHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string })[]; isLoading: boolean; }> = ({ data, isLoading }) => {
   return (
     <section>
@@ -693,7 +713,7 @@ const YearlyHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string })
         The 52-week trading range provides critical context for a currency's annual volatility. A currency trading near its 52-week high may be seen as strong but potentially overbought, while one near its low could signal weakness or a potential buying opportunity. Below is the high-low range for major currencies over the past year, based on per-unit buy and sell rates. This is essential for long-term financial planning and understanding market cycles.
       </p>
       <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading && Array(9).fill(0).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-lg" />)}
+        {isLoading && Array(9).fill(0).map((_, i) => <div key={i} className="h-32 w-full bg-gray-200 rounded-lg animate-pulse" />)}
         {data && data.map((item) => (
           <Card key={item.iso3} className="shadow-sm">
             <CardHeader className="pb-3">
@@ -754,15 +774,18 @@ const YearlyHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string })
   );
 };
 
+/**
+ * Renders the All-Time High/Low Grid
+ */
 const AllTimeHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string })[]; isLoading: boolean; }> = ({ data, isLoading }) => {
   return (
     <section>
       <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold">All-Time Highest and Lowest Records</h2>
       <p>
-        This section displays the all-time highest and lowest exchange rates for major currencies since January 1, 2000. These records provide valuable historical context for understanding extreme market movements and long-term currency trends.
+        This section displays the all-time highest and lowest exchange rates for major currencies since January 1, 2000. These records provide valuable historical context for understanding extreme market movements and long-term currency trends. Note: For currencies that were added to Nepal Rastra Bank's forex list after 2000, the date range reflects their actual trading history. Some currencies (like Omani Rial and Kuwaiti Dinar) may show zero values in their early records, which indicates they were not yet being tracked.
       </p>
       <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading && Array(9).fill(0).map((_, i) => <Skeleton key={i} className="h-40 w-full rounded-lg" />)}
+        {isLoading && Array(9).fill(0).map((_, i) => <div key={i} className="h-32 w-full bg-gray-200 rounded-lg animate-pulse" />)}
         {data && data.map((item) => (
           <Card key={item.iso3} className="shadow-sm">
             <CardHeader className="pb-3">
@@ -788,7 +811,7 @@ const AllTimeHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string }
                         )}
                       </>
                     ) : (
-                      <span className="text-xs text-muted-foreground">N/A</span>
+                      <span className="text-xs text-muted-foreground">N/A (added later)</span>
                     )}
                   </span>
                   <span>
@@ -815,7 +838,7 @@ const AllTimeHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string }
                         )}
                       </>
                     ) : (
-                      <span className="text-xs text-muted-foreground">N/A</span>
+                      <span className="text-xs text-muted-foreground">N/A (added later)</span>
                     )}
                   </span>
                   <span>
@@ -836,7 +859,8 @@ const AllTimeHighLow: React.FC<{ data: (HighLow & { iso3: string; name: string }
   );
 };
 
-// --- (Dynamic Content Helpers remain unchanged) ---
+// --- DYNAMIC CONTENT HELPERS ---
+
 const getDynamicIntro = (date: string, gainer: AnalyzedRate, loser: AnalyzedRate) => {
   const intros = [
     `Nepal Rastra Bank (NRB) has published the official foreign exchange rates for <strong>${date}</strong>. This report provides a complete analysis of today's currency values, daily fluctuations, and long-term historical trends.`,
@@ -844,7 +868,7 @@ const getDynamicIntro = (date: string, gainer: AnalyzedRate, loser: AnalyzedRate
     `On <strong>${date}</strong>, the Nepali Rupee (NPR) sees varied performance against major world currencies. This daily analysis from ForexNepal details the official NRB rates, tracks the day's biggest movers, and provides historical context for importers, exporters, and remitters.`,
     `Welcome to the daily forex bulletin for <strong>${date}</strong>. Today's rates from Nepal Rastra Bank are now available, and this report dives deep into the numbers, offering a simplified table, market rankings, and a comprehensive historical analysis against the Nepali Rupee.`,
   ];
-  return intros[new Date(date).getDate() % intros.length];
+  return intros[new Date(date).getDate() % intros.length]; // Use day of month for variety
 };
 
 const getDynamicCommentary = (gainer: AnalyzedRate, loser: AnalyzedRate, usd: AnalyzedRate) => {
@@ -865,7 +889,8 @@ const getDynamicCommentary = (gainer: AnalyzedRate, loser: AnalyzedRate, usd: An
     `Today's biggest gainer was the ${gainerLink}, surging by <strong>${gainer.dailyChangePercent.toFixed(2)}%</strong>. Meanwhile, the ${loserLink} saw the steepest drop at <strong>${loser.dailyChangePercent.toFixed(2)}%</strong>.`,
     `Fluctuations were seen across the board, with the ${gainerLink} leading the gains. The <strong>${loser.currency.name}</strong> posted the largest loss for the day.`,
   ];
-  
+
+  // Pick a few to make a paragraph
   const day = new Date().getDate();
   return `
     <p>${sentences[day % 3]}</p>
@@ -884,6 +909,7 @@ const getTrendSummary = (analysisData: ArticleTemplateProps['analysisData'], his
   if (gainersToday > losersToday * 1.5) dailyTrend = 'increasing';
   else if (losersToday > gainersToday * 1.5) dailyTrend = 'decreasing';
 
+  // Weekly/Monthly trends
   const weeklyGainers = historicalAnalysis.weekly.data.filter(r => r.percent > 0).length;
   const weeklyLosers = historicalAnalysis.weekly.data.filter(r => r.percent < 0).length;
   let weeklyTrend = 'mixed';
@@ -895,7 +921,8 @@ const getTrendSummary = (analysisData: ArticleTemplateProps['analysisData'], his
   let monthlyTrend = 'stable';
   if (monthlyGainers > monthlyLosers * 1.3) monthlyTrend = 'appreciating';
   else if (monthlyLosers > monthlyGainers * 1.3) monthlyTrend = 'depreciating';
-  
+
+  // Find notable performers
   const topWeekly = historicalAnalysis.weekly.data[0];
   const topMonthly = historicalAnalysis.monthly.data[0];
 
@@ -906,10 +933,14 @@ const getTrendSummary = (analysisData: ArticleTemplateProps['analysisData'], his
     <p>
       Looking at the weekly perspective, currencies have been <strong>${weeklyTrend}</strong> against the NPR, with ${topWeekly?.name || 'USD'} leading the weekly gains at ${topWeekly?.percent.toFixed(2) || '0.00'}%. The monthly trend indicates a <strong>${monthlyTrend}</strong> pattern, with ${topMonthly?.name || 'EUR'} posting the strongest monthly performance at ${topMonthly?.percent.toFixed(2) || '0.00'}%.
     </p>
+    <p>
+      Popular currencies like USD, EUR, and GBP have shown ${Math.abs(analysisData.allRates.find(r => r.currency.iso3 === 'USD')?.dailyChangePercent || 0) < 0.1 ? 'minimal volatility' : 'notable movement'} today, which is particularly relevant for remittances and international trade. For detailed historical trends and visual charts, explore our <Link to="/historical-charts" className="text-blue-600 hover:underline font-medium">historical data section</Link>.
+    </p>
   `;
 };
 
-// --- DYNAMIC ARTICLE COMPONENT (Unchanged) ---
+// === THE NEW DYNAMIC ARTICLE COMPONENT ===
+
 export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) => {
   const {
     analysisData,
@@ -920,8 +951,9 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
     shortDate,
   } = props;
 
+  // This check is vital. analysisData might exist but be empty if the API failed.
   if (!analysisData || analysisData.allRates.length === 0) {
-    return null;
+    return null; // The parent component handles the "No Data" card
   }
 
   const { topGainer, topLoser, allRates, top10High, top12Low } = analysisData;
@@ -930,6 +962,7 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   const sarRate = allRates.find(r => r.currency.iso3 === 'SAR');
   const aedRate = allRates.find(r => r.currency.iso3 === 'AED');
 
+  // Guard against undefined rates if API somehow fails to return them
   if (!usdRate || !eurRate || !sarRate || !aedRate || !topGainer || !topLoser) {
     return (
       <Card className="not-prose bg-red-50 border-red-200">
@@ -941,20 +974,37 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
 
   return (
     <>
-      <h1 dangerouslySetInnerHTML={{ __html: `Nepal Rastra Bank Forex Rates: <strong>${formattedDate}</strong>` }} />
+      {/* 1. Dynamic Title */}
+      <h1>Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
+      
+      {/* 2. Dynamic Intro Paragraph */}
       <p 
         className="text-lg lead text-muted-foreground"
         dangerouslySetInnerHTML={{ __html: getDynamicIntro(formattedDate, topGainer, topLoser) }}
       />
+
+      {/* 3. Official Rate Table */}
       <SimplifiedRateTable rates={allRates} date={shortDate} />
+
+      {/* 4. Daily Market Commentary */}
       <section>
         <h2>Daily Market Commentary</h2>
         <div dangerouslySetInnerHTML={{ __html: getDynamicCommentary(topGainer, topLoser, usdRate) }} />
       </section>
+
+      {/* 5. Currency Rankings */}
       <CurrencyRankings topHigh={top10High} topLow={top12Low} />
+
+      {/* 6. Historical Tabs */}
       <HistoricalAnalysisTabs analysis={historicalAnalysis} />
+
+      {/* 7. 52-Week High/Low */}
       <YearlyHighLow data={highLowData.data} isLoading={highLowData.isLoading} />
+
+      {/* 8. All-Time High/Low */}
       <AllTimeHighLow data={allTimeHighLowData.data} isLoading={allTimeHighLowData.isLoading} />
+
+      {/* 9. Trend Summary */}
       <section>
         <h2>Market Trend Summary</h2>
         <div dangerouslySetInnerHTML={{ __html: getTrendSummary(analysisData, historicalAnalysis) }} />
