@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, subDays, parseISO } from 'date-fns';
-import { CalendarIcon, RefreshCw, Loader2, ArrowRight, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
+import { CalendarIcon, RefreshCw, Loader2, ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Layout from '@/components/Layout';
@@ -56,7 +56,7 @@ const ChangeIndicator: React.FC<{ value: number, decimals?: number, unit?: 'Rs.'
 // --- (End of helper components) ---
 
 
-const NotFound = () => {
+const Index = () => {
   const [topRates, setTopRates] = useState<Rate[]>([]);
   const [otherRates, setOtherRates] = useState<Rate[]>([]);
   const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
@@ -216,16 +216,6 @@ const NotFound = () => {
       </div>
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-5xl mx-auto">
-          
-          {/* 404 Message */}
-          <Alert variant="destructive" className="mb-8">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle className="text-xl font-bold">Page Not Found (404)</AlertTitle>
-            <AlertDescription>
-              We couldn't find the page you were looking for. Please check the URL or enjoy today's exchange rates below.
-            </AlertDescription>
-          </Alert>
-
           <Card className="mb-8 shadow-lg bg-white/70 backdrop-blur-sm">
             <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between pb-4">
               <div>
@@ -493,4 +483,4 @@ const NotFound = () => {
   );
 };
 
-export default NotFound;
+export default Index;
