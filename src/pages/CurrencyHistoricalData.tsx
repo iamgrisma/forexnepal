@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, getDateRanges, getFlagEmoji, formatDate } from '../services/forexService';
+import { fetchForexRates, getDateRanges, getFlagEmoji, formatDate, fetchHistoricalRates as fetchHistoricalRatesFromAPI } from '../services/forexService';
 import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
 import { Rate, ChartDataPoint } from '../types/forex';
 import Layout from '@/components/Layout';
@@ -9,23 +9,40 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
-import { format } from 'date-fns';
+import { CalendarIcon, Download, ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useToast } from '@/components/ui/use-toast';
+
+// --- Helper to determine sampling rate ---
+const getSamplingForRange = (fromDate: string, toDate: string): string => {
+  try {
+    const days = differenceInDays(new Date(toDate), new Date(fromDate));
+    if (days <= 90) return 'daily';      // 0-3 months
+    if (days <= 730) return 'weekly';     // 3 months - 2 years
+    if (days <= 1825) return '15day';   // 2-5 years
+    return 'monthly'; // 5+ years
+  } catch (e) {
+    return 'daily';
+  }
+};
 
 const CurrencyHistoricalData = () => {
   const { currencyCode } = useParams<{ currencyCode: string }>();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | '3month' | '6month' | 'year' | '5year' | 'custom'>('month');
   const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
   const [currentCurrency, setCurrentCurrency] = useState<Rate | null>(null);
   const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
   const [isLoadingChart, setIsLoadingChart] = useState(false);
   const [progress, setProgress] = useState<FetchProgress | null>(null);
+  const [currentSampling, setCurrentSampling] = useState('daily');
+  const [isFullData, setIsFullData] = useState(true);
 
   const { data: forexData } = useQuery({
     queryKey: ['forexRates'],
@@ -46,21 +63,8 @@ const CurrencyHistoricalData = () => {
       }
     }
   }, [forexData, currencyCode, navigate]);
-
-  useEffect(() => {
-    if (selectedPeriod !== 'custom') {
-      loadHistoricalData();
-    }
-  }, [selectedPeriod, currencyCode]);
-
-  const loadHistoricalData = async () => {
-    if (!currencyCode) return;
-    
-    setIsLoadingChart(true);
-    setProgress(null);
-    setChartData([]);
-    
-    try {
+  
+  const getDatesForPeriod = () => {
       const dateRanges = getDateRanges();
       let fromDate, toDate;
 
@@ -89,56 +93,94 @@ const CurrencyHistoricalData = () => {
           fromDate = dateRanges.fiveYear.from;
           toDate = dateRanges.fiveYear.to;
           break;
+        case 'custom':
+           if (customDateRange.from && customDateRange.to) {
+                fromDate = formatDate(customDateRange.from);
+                toDate = formatDate(customDateRange.to);
+                break;
+           }
+           // else fall through to default (month) if custom isn't set
         default:
-          return;
+          fromDate = dateRanges.month.from;
+          toDate = dateRanges.month.to;
+          break;
       }
+      return { fromDate, toDate };
+  }
 
-      const data = await fetchHistoricalRatesWithCache(
-        currencyCode,
-        fromDate,
-        toDate,
-        (p) => setProgress(p)
-      );
+  const loadHistoricalData = async (forceFullDaily: boolean = false) => {
+    if (!currencyCode) return;
+    
+    setIsLoadingChart(true);
+    setProgress(null);
+    setChartData([]);
+    
+    try {
+      const { fromDate, toDate } = getDatesForPeriod();
+      
+      let data: ChartDataPoint[] = [];
+      
+      if (forceFullDaily) {
+          // --- TASK 3: API FALLBACK ---
+          toast({ title: "Fetching Full Data", description: "Loading full daily data from NRB API..." });
+          const apiData = await fetchHistoricalRatesFromAPI(fromDate, toDate);
+          
+          if (apiData.status.code === 200 && apiData.payload.length > 0) {
+              data = apiData.payload.map(dayData => {
+                  const rate = dayData.rates.find(r => r.currency.iso3 === currencyCode);
+                  return {
+                      date: dayData.date,
+                      buy: rate ? Number(rate.buy) : 0,
+                      sell: rate ? Number(rate.sell) : 0,
+                  };
+              }).filter(d => d.buy > 0 || d.sell > 0);
+          }
+          setIsFullData(true);
+          setCurrentSampling('daily');
+          // --- END TASK 3 ---
+      } else {
+          // --- TASK 2: SAMPLING ---
+          const sampling = getSamplingForRange(fromDate, toDate);
+          setCurrentSampling(sampling);
+          setIsFullData(sampling === 'daily');
+
+          data = await fetchHistoricalRatesWithCache(
+            currencyCode,
+            fromDate,
+            toDate,
+            (p) => setProgress(p),
+            sampling // Pass sampling rate
+          );
+          // --- END TASK 2 ---
+      }
       
       if (data.length > 0) {
         data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         setChartData(data);
+      } else {
+         toast({ title: "No data available", description: "There is no historical data for this period.", variant: "destructive" });
       }
     } catch (error) {
       console.error('Error loading historical data:', error);
+       toast({ title: "Error", description: "Failed to fetch historical data.", variant: "destructive" });
     } finally {
       setIsLoadingChart(false);
       setTimeout(() => setProgress(null), 3000);
     }
   };
+  
+  // Reload data when period or currency changes
+  useEffect(() => {
+    if (selectedPeriod !== 'custom') {
+      loadHistoricalData();
+    }
+  }, [selectedPeriod, currencyCode]);
 
-  const handleCustomDateApply = async () => {
+  const handleCustomDateApply = () => {
     if (customDateRange.from && customDateRange.to) {
-      setIsLoadingChart(true);
-      setProgress(null);
-      setChartData([]);
-      
-      try {
-        const fromDate = formatDate(customDateRange.from);
-        const toDate = formatDate(customDateRange.to);
-        
-        const data = await fetchHistoricalRatesWithCache(
-          currencyCode || '',
-          fromDate,
-          toDate,
-          (p) => setProgress(p)
-        );
-        
-        if (data.length > 0) {
-          data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-          setChartData(data);
-        }
-      } catch (error) {
-        console.error('Error loading custom date range:', error);
-      } finally {
-        setIsLoadingChart(false);
-        setTimeout(() => setProgress(null), 3000);
-      }
+        loadHistoricalData(); // This will now use the custom dates
+    } else {
+        toast({ title: "Invalid Range", description: "Please select both a start and end date.", variant: "destructive" });
     }
   };
 
@@ -177,7 +219,7 @@ const CurrencyHistoricalData = () => {
     return (
       <Layout>
         <div className="py-12 px-4 text-center">
-          <p className="text-gray-500">Loading...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
         </div>
       </Layout>
     );
@@ -223,7 +265,7 @@ const CurrencyHistoricalData = () => {
               </div>
             </div>
 
-            <div id="download-container" className="bg-white p-8">
+            <div id="download-container" className="bg-white p-4 md:p-8">
               <div className="text-center mb-6">
                 <div className="flex items-center justify-center gap-3 mb-3">
                   <span className="text-4xl">{getFlagEmoji(currentCurrency.currency.iso3)}</span>
@@ -250,15 +292,17 @@ const CurrencyHistoricalData = () => {
               </div>
 
             <Tabs value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as any)} className="mb-6">
-              <TabsList className="grid grid-cols-4 lg:grid-cols-7 w-full">
-                <TabsTrigger value="week">Week</TabsTrigger>
-                <TabsTrigger value="month">Month</TabsTrigger>
-                <TabsTrigger value="3month">3 Months</TabsTrigger>
-                <TabsTrigger value="6month">6 Months</TabsTrigger>
-                <TabsTrigger value="year">Year</TabsTrigger>
-                <TabsTrigger value="5year">5 Years</TabsTrigger>
-                <TabsTrigger value="custom">Custom</TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto scrollbar-hide">
+                <TabsList className="grid grid-cols-4 lg:grid-cols-7 w-full min-w-[500px]">
+                  <TabsTrigger value="week">Week</TabsTrigger>
+                  <TabsTrigger value="month">Month</TabsTrigger>
+                  <TabsTrigger value="3month">3 Months</TabsTrigger>
+                  <TabsTrigger value="6month">6 Months</TabsTrigger>
+                  <TabsTrigger value="year">Year</TabsTrigger>
+                  <TabsTrigger value="5year">5 Years</TabsTrigger>
+                  <TabsTrigger value="custom">Custom</TabsTrigger>
+                </TabsList>
+              </div>
             </Tabs>
 
             {selectedPeriod === 'custom' && (
@@ -332,87 +376,102 @@ const CurrencyHistoricalData = () => {
                 </Alert>
               )}
 
-              <div className="w-full h-[400px] mb-6">
-                {isLoadingChart ? (
-                  <div className="flex flex-col items-center justify-center h-full gap-4">
-                    <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                    <p className="text-muted-foreground">Loading chart data...</p>
-                  </div>
-                ) : chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart 
-                      data={chartData}
-                      margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                      <XAxis 
-                        dataKey="date" 
-                        tickFormatter={(date) => format(new Date(date), 'MMM dd')}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis 
-                        domain={[(dataMin: number) => {
-                          const allValues = chartData.flatMap(d => [d.buy, d.sell]);
-                          const min = Math.min(...allValues);
-                          return (min * 0.995).toFixed(2);
-                        }, (dataMax: number) => {
-                          const allValues = chartData.flatMap(d => [d.buy, d.sell]);
-                          const max = Math.max(...allValues);
-                          return (max * 1.005).toFixed(2);
-                        }]}
-                        tick={{ fontSize: 12 }}
-                        tickFormatter={(value) => value.toFixed(2)}
-                      />
-                      <Tooltip 
-                        labelFormatter={(date) => format(new Date(date), 'PPP')}
-                        formatter={(value: number, name: string) => [
-                          `NPR ${value.toFixed(4)}`,
-                          name === 'buy' ? 'Buying Price' : 'Selling Price'
-                        ]}
-                        contentStyle={{
-                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                          border: '1px solid #e5e7eb',
-                          borderRadius: '8px',
-                          padding: '12px'
-                        }}
-                      />
-                      <Legend 
-                        wrapperStyle={{ paddingTop: '20px' }}
-                        iconType="line"
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="buy" 
-                        stroke="#10b981" 
-                        name="Buying Price" 
-                        strokeWidth={2.5}
-                        dot={{ r: 2, strokeWidth: 1 }}
-                        activeDot={{ r: 6, strokeWidth: 2 }}
-                        animationDuration={800}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="sell" 
-                        stroke="#ef4444" 
-                        name="Selling Price" 
-                        strokeWidth={2.5}
-                        strokeDasharray="5 5"
-                        dot={{ r: 2, strokeWidth: 1 }}
-                        activeDot={{ r: 6, strokeWidth: 2 }}
-                        animationDuration={800}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">No data available for selected period</p>
-                  </div>
-                )}
+              {/* --- TASK 5: Mobile Chart Responsiveness --- */}
+              <div className="w-full overflow-x-auto">
+                <div className="w-full h-[400px] mb-6" style={{ minWidth: 700 }}>
+                  {isLoadingChart ? (
+                    <div className="flex flex-col items-center justify-center h-full gap-4">
+                      <Loader2 className="h-12 w-12 animate-spin text-primary" />
+                      <p className="text-muted-foreground">Loading chart data...</p>
+                    </div>
+                  ) : chartData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart 
+                        data={chartData}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+                        <XAxis 
+                          dataKey="date" 
+                          tickFormatter={(date) => format(new Date(date + 'T00:00:00Z'), 'MMM dd, yy')} // Handle UTC date
+                          tick={{ fontSize: 12 }}
+                        />
+                        <YAxis 
+                          domain={['dataMin - 0.5', 'dataMax + 0.5']}
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(value) => value.toFixed(2)}
+                        />
+                        <Tooltip 
+                          labelFormatter={(date) => format(new Date(date + 'T00:00:00Z'), 'PPP')} // Handle UTC date
+                          formatter={(value: number, name: string) => [
+                            `NPR ${value.toFixed(4)}`,
+                            name === 'buy' ? 'Buying Price' : 'Selling Price'
+                          ]}
+                          contentStyle={{
+                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                            border: '1px solid #e5e7eb',
+                            borderRadius: '8px',
+                            padding: '12px'
+                          }}
+                        />
+                        <Legend 
+                          wrapperStyle={{ paddingTop: '20px' }}
+                          iconType="line"
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="buy" 
+                          name="Buying Price" 
+                          stroke="#10b981" 
+                          strokeWidth={2.5}
+                          dot={false}
+                          activeDot={{ r: 6, strokeWidth: 2 }}
+                          animationDuration={800}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="sell" 
+                          name="Selling Price" 
+                          stroke="#ef4444" 
+                          strokeWidth={2.5}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6, strokeWidth: 2 }}
+                          animationDuration={800}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-gray-500">No data available for selected period</p>
+                    </div>
+                  )}
+                </div>
               </div>
+              {/* --- END TASK 5 --- */}
+
+              {/* --- TASK 3: API FALLBACK BUTTON --- */}
+              {!isFullData && !isLoadingChart && (
+                <div className="mt-4 text-center">
+                   <p className="text-xs text-muted-foreground mb-2">
+                      Showing sampled data ({currentSampling}) for faster loading.
+                   </p>
+                   <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => loadHistoricalData(true)}
+                      disabled={isLoadingChart}
+                   >
+                     <RefreshCw className="h-4 w-4 mr-2" />
+                     Load Full Daily Data (Slower)
+                   </Button>
+                </div>
+              )}
+              {/* --- END TASK 3 --- */}
 
               <div className="border-t pt-4 text-center space-y-2">
                 <p className="text-sm text-gray-600">
-                  <strong>Source:</strong> Nepal Rastra Bank API
+                  <strong>Source:</strong> Nepal Rastra Bank API & D1 Database Cache
                 </p>
                 <p className="text-sm text-gray-600">
                   Last updated: {new Date().toLocaleString('en-US', { 
