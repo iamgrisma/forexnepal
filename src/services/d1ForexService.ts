@@ -2,7 +2,7 @@
 
 // Import functions for direct API calls and types
 import { fetchForexRatesByDate, fetchHistoricalRates, splitDateRangeForRequests, formatDate } from './forexService';
-import type { ChartDataPoint, Rate, RatesData } from '../types/forex'; // Ensure Rate and RatesData are imported
+import type { ChartDataPoint, Rate, RatesData, HistoricalRates as ApiHistoricalRates } from '../types/forex'; // Ensure Rate and RatesData are imported
 
 // Define progress types (keep as is)
 export interface FetchProgress {
@@ -176,10 +176,17 @@ export async function fetchRatesForDateWithCache(
 
 
 // --- fetchFromD1 (Helper for Charts - Fetches specific currency) ---
-async function fetchFromD1(currencyCode: string, fromDate: string, toDate: string): Promise<ChartDataPoint[]> {
+// --- UPDATED FOR TASK 2: Add sampling parameter ---
+async function fetchFromD1(
+  currencyCode: string, 
+  fromDate: string, 
+  toDate: string,
+  sampling: string = 'daily' // Add sampling parameter
+): Promise<ChartDataPoint[]> {
   try {
+    // Add sampling to the query string
     const response = await fetch(
-      `/api/historical-rates?currency=${currencyCode}&from=${fromDate}&to=${toDate}`
+      `/api/historical-rates?currency=${currencyCode}&from=${fromDate}&to=${toDate}&sampling=${sampling}`
     );
 
     if (response.ok) {
@@ -194,15 +201,17 @@ async function fetchFromD1(currencyCode: string, fromDate: string, toDate: strin
   }
   return []; // Return empty array on failure
 }
+// --- END OF TASK 2 UPDATE ---
 
 
 // --- fetchHistoricalRatesWithCache (FOR CHARTS - More complex logic with chunking) ---
-// This function remains largely the same, focusing on fetching specific currency data over potentially large ranges.
+// --- UPDATED FOR TASK 2: Add sampling parameter ---
 export async function fetchHistoricalRatesWithCache(
   currencyCode: string,
   fromDate: string,
   toDate: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  sampling: string = 'daily' // Add sampling parameter
 ): Promise<ChartDataPoint[]> {
   try {
     onProgress?.({ stage: 'checking', message: 'Checking database...' });
@@ -251,10 +260,14 @@ export async function fetchHistoricalRatesWithCache(
     }
 
     onProgress?.({ stage: 'loading', message: 'Loading data from database...' });
-    let data = await fetchFromD1(currencyCode, fromDate, toDate); // Use the chart-specific D1 fetcher
+    // Pass the sampling parameter to the D1 fetcher
+    let data = await fetchFromD1(currencyCode, fromDate, toDate, sampling);
 
     if (data.length > 0) {
-      data = fillMissingDatesWithPreviousData(data, fromDate, toDate);
+      // Only fill gaps if we are NOT sampling
+      if (sampling === 'daily') {
+        data = fillMissingDatesWithPreviousData(data, fromDate, toDate);
+      }
       onProgress?.({ stage: 'complete', message: 'Chart data loaded successfully!' });
       return data;
     }
@@ -265,7 +278,11 @@ export async function fetchHistoricalRatesWithCache(
     const fallbackData = await fetchFromAPIFallback(currencyCode, fromDate, toDate);
     if(fallbackData.length > 0) {
         onProgress?.({ stage: 'complete', message: 'Chart data loaded from API fallback.' });
-        return fillMissingDatesWithPreviousData(fallbackData, fromDate, toDate); // Fill gaps in fallback data too
+        // Only fill gaps if we are NOT sampling
+        if (sampling === 'daily') {
+          return fillMissingDatesWithPreviousData(fallbackData, fromDate, toDate);
+        }
+        return fallbackData; // Return raw data if sampling (gaps are expected)
     } else {
         onProgress?.({ stage: 'error', message: 'Failed to load chart data from DB and API.' });
         return []; // Return empty if fallback also fails
@@ -281,33 +298,48 @@ export async function fetchHistoricalRatesWithCache(
      }
   }
 }
+// --- END OF TASK 2 UPDATE ---
+
 
 /**
- * NEW FUNCTION TO FIX THE BUILD ERROR
+ * --- NEW FUNCTION FOR TASK 1 ---
  * Fetches high/low stats for a list of currencies over a date range.
+ * This calls the new POST /api/historical-stats endpoint.
  */
 export async function fetchHistoricalStats(
-  currencyCodes: string[],
+  currencies: string[],
   fromDate: string,
   toDate: string
-): Promise<any | null> {
+): Promise<any | null> { // Returns the 'stats' object from the worker
   try {
     const response = await fetch(
-      `/api/historical-stats?currencies=${currencyCodes.join(',')}&from=${fromDate}&to=${toDate}`
+      `/api/historical-stats`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dateRange: { from: fromDate, to: toDate },
+          currencies: currencies
+        })
+      }
     );
 
     if (response.ok) {
       const data = await response.json();
       if (data.success) {
-        return data.stats;
+        return data.stats; // Returns { USD: { highBuy: ... }, EUR: { ... } }
       }
     }
+    console.error('Failed to fetch historical stats, server responded with error.');
     return null; // Return null if fetch failed or API returned success: false
   } catch (error) {
     console.error('Error fetching historical stats:', error);
     return null;
   }
 }
+// --- END OF TASK 1 FUNCTION ---
 
 
 // --- fillMissingDatesWithPreviousData & fetchFromAPIFallback (Keep as they are) ---
@@ -321,7 +353,27 @@ function fillMissingDatesWithPreviousData(
   const dataMap = new Map(data.map(d => [d.date, d]));
   const start = new Date(fromDate + 'T00:00:00Z'); // Use UTC
   const end = new Date(toDate + 'T00:00:00Z');     // Use UTC
-  let previousDataPoint: ChartDataPoint | null = data[0]; // Start with the first available point
+  
+  // Find the first available data point *at or before* the start date
+  let previousDataPoint: ChartDataPoint | null = null;
+  for (let i = 0; i < data.length; i++) {
+      if (new Date(data[i].date + 'T00:00:00Z') <= start) {
+          previousDataPoint = data[i];
+          // Use the closest one to the start date
+      } else if (!previousDataPoint) {
+          // If start date is before *any* data, use the very first data point
+          previousDataPoint = data[0];
+          break;
+      } else {
+          // We found the last point before the start date
+          break;
+      }
+  }
+  // If no data point was found (e.g., all data is after start), use the first one
+  if (!previousDataPoint && data.length > 0) {
+      previousDataPoint = data[0];
+  }
+
 
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     // Check for invalid date objects
@@ -337,19 +389,27 @@ function fillMissingDatesWithPreviousData(
           buy: currentData.buy ?? previousDataPoint?.buy ?? 0,
           sell: currentData.sell ?? previousDataPoint?.sell ?? 0
       };
-      filledData.push(pointToAdd);
+      // Only push if rates are valid
+      if (pointToAdd.buy > 0 || pointToAdd.sell > 0) {
+        filledData.push(pointToAdd);
+      }
       previousDataPoint = pointToAdd; // Update the last known good data point
     } else if (previousDataPoint) {
       // Use previous day's data, ensuring buy/sell are numbers
-      filledData.push({
+       const pointToAdd: ChartDataPoint = {
         date: dateStr,
         buy: previousDataPoint.buy ?? 0, // Fallback to 0 if even previous is somehow null
         sell: previousDataPoint.sell ?? 0
-      });
+      };
+       // Only push if rates are valid
+      if (pointToAdd.buy > 0 || pointToAdd.sell > 0) {
+         filledData.push(pointToAdd);
+      }
       // Do NOT update previousDataPoint here, keep the last *actual* data point
     } else {
         // Very start of the range and no data, push with 0 or handle as needed
-        filledData.push({ date: dateStr, buy: 0, sell: 0 });
+        // We'll just skip this day, as there's no data to fill from
+        // filledData.push({ date: dateStr, buy: 0, sell: 0 });
     }
   }
   return filledData;
@@ -372,7 +432,7 @@ async function fetchFromAPIFallback(
     let allData: ChartDataPoint[] = [];
 
     for (const range of dateRanges) {
-      const histData = await fetchHistoricalRates(range.from, range.to); // Direct NRB call
+      const histData: ApiHistoricalRates = await fetchHistoricalRates(range.from, range.to); // Direct NRB call
 
       if (histData.status.code === 200 && histData.payload.length > 0) {
         histData.payload.forEach((dayData) => {
