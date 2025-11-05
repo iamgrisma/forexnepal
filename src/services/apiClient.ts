@@ -41,6 +41,7 @@ export const fetchRatesApiFirst = async (date: Date): Promise<RatesData | null> 
   } catch (error) {
     console.warn(`[APIClient] API-First failed for ${dateString} (Error: ${error instanceof Error ? error.message : String(error)}). Falling back to DB.`);
     // On failure or timeout, fall back to the DB-first cache
+    // Note: fetchRatesForDateWithCache has its *own* API fallback, so it's a robust cache.
     return fetchRatesForDateWithCache(dateString, null);
   }
 };
@@ -61,10 +62,9 @@ export const fetchPreviousDayRatesApiFirst = async (currentDate: Date): Promise<
     ]) as ForexResponse | null;
 
     if (apiResponse && apiResponse.data.payload.length > 0) {
-      console.log(`[APIClient] API-First success for previous day ${yesterdayString}`);
-      
-      // Find the actual date returned (in case of holiday fallback)
       const actualDate = apiResponse.data.payload[0].date;
+      console.log(`[APIClient] API-First success for previous day (found ${actualDate})`);
+      
        // Asynchronously trigger a background store to D1
       fetch(`/api/fetch-and-store?from=${actualDate}&to=${actualDate}`, { method: 'POST' })
         .catch(err => console.error(`[APIClient] Background store failed: ${err.message}`));
