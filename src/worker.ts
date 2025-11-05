@@ -69,12 +69,6 @@ const CURRENCY_MAP: { [key: string]: { name: string, unit: number } } = {
 const CURRENCIES = Object.keys(CURRENCY_MAP);
 
 // --- (All Admin/Auth functions: JWT_SECRET, formatDate, simpleHash, generateToken, etc. remain the same) ---
-// --- (Keep all admin handlers: handleAdminLogin, handlePosts, handleForexData, etc. as they are) ---
-
-// --- PASTE ALL ADMIN/AUTH FUNCTIONS HERE ---
-// (simpleHash, generateToken, verifyToken, generateSlug, etc.)
-// ... (omitted for brevity, they are unchanged from your original file) ...
-// Helper function to format date
 function formatDate(date: Date): string {
     if (!date || isNaN(date.getTime())) {
         console.warn("Invalid date passed to formatDate, using current date.");
@@ -85,8 +79,6 @@ function formatDate(date: Date): string {
     const day = date.getDate().toString().padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
-
-// --- JWT Secret & Functions ---
 const JWT_SECRET = 'forexnepal-jwt-secret-key-2025'; 
 async function simpleHash(password: string): Promise<string> {
     const encoder = new TextEncoder();
@@ -163,10 +155,10 @@ export default {
 
         // --- OPTIMIZED/NEW API Endpoints ---
         if (pathname === '/api/historical-stats') {
-            return handleHistoricalStats(request, env); // NEW (Fixes 100k reads)
+            return handleHistoricalStats(request, env); // NEW (Fixes 500 error)
         }
         if (pathname === '/api/historical-rates') {
-            return handleHistoricalRates(request, env); // MODIFIED (Adds sampling)
+            return handleHistoricalRates(request, env); // MODIFIED (Fixes 503 error)
         }
         
         // --- Existing API Endpoints (Unchanged) ---
@@ -285,14 +277,27 @@ function handleOptions(request: Request) {
 
 // --- API Route Handlers ---
 
-// --- NEW HANDLER for High/Low Stats (Fixes 100k+ reads) ---
+// --- NEW HANDLER for High/Low Stats (Fixes 500 Error) ---
 async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
+    let requestBody;
     try {
-        const { currencies, dateRange } = await request.json() as { currencies: string[], dateRange: { from: string, to: string } };
+        requestBody = await request.json() as { currencies: string[], dateRange: { from: string, to: string } };
+    } catch (e) {
+        console.error("Failed to parse JSON body in handleHistoricalStats:", e);
+        return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { currencies, dateRange } = requestBody;
+        
+        if (!dateRange || !dateRange.from || !dateRange.to) {
+             return new Response(JSON.stringify({ error: 'Invalid "dateRange" in body' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
         const { from, to } = dateRange;
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -351,14 +356,14 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
 
     } catch (error: any) {
         console.error('Database error in handleHistoricalStats:', error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed', details: error.message, cause: error.cause }), {
             status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
     }
 }
 
 
-// --- MODIFIED: handleHistoricalRates (Adds Sampling) ---
+// --- MODIFIED: handleHistoricalRates (Fixes 503 Error) ---
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency'); 
@@ -397,22 +402,27 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             let querySuffix = "";
             const bindings: (string|number)[] = [fromDate, toDate];
 
+            // We MUST include the first and last date for accurate chart scales
+            const includeFirstAndLast = `OR date = ? OR date = ?`;
+            bindings.push(fromDate, toDate);
+
             switch (sampling) {
                 case 'weekly':
-                    querySuffix = ` AND (STRFTIME('%w', date) = '0' OR date = ? OR date = ?)`;
-                    bindings.push(fromDate, toDate);
+                    querySuffix = ` AND (STRFTIME('%w', date) = '0' ${includeFirstAndLast})`;
                     break;
                 case '15day':
-                    querySuffix = ` AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0 OR date = ? OR date = ?)`;
-                    bindings.push(fromDate, fromDate, toDate); // fromDate is bound 3 times
+                    // Bind fromDate again for JULIANDAY
+                    querySuffix = ` AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0 ${includeFirstAndLast})`;
+                    bindings.push(fromDate); 
                     break;
                 case 'monthly':
-                    querySuffix = ` AND (STRFTIME('%d', date) = '01' OR date = ? OR date = ?)`;
-                    bindings.push(fromDate, toDate);
+                    querySuffix = ` AND (STRFTIME('%d', date) = '01' ${includeFirstAndLast})`;
                     break;
                 case 'daily':
                 default:
-                    // No suffix
+                    querySuffix = ""; // No sampling, remove the extra date bindings
+                    bindings.pop(); // remove toDate
+                    bindings.pop(); // remove fromDate
                     break;
             }
 
@@ -433,8 +443,13 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 buy: item.buy, 
                 sell: item.sell
             }));
+            
+            // De-duplicate in case fromDate/toDate matched sample day
+            const uniqueChartData = Array.from(new Map(chartData.map(item => [item.date, item])).values())
+                                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-            responsePayload = { success: true, data: chartData, currency: currencyCode };
+
+            responsePayload = { success: true, data: uniqueChartData, currency: currencyCode };
             return new Response(JSON.stringify(responsePayload), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
@@ -469,15 +484,20 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                     };
                 }
             }
+            // Return data in the format expected by fetchRatesForDateWithCache (DB-first)
             return new Response(JSON.stringify(ratesDataPayload), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
 
         } else {
+            // *** 503 ERROR FIX ***
             // Logic for date range, all currencies (ArchiveDetail historical tabs)
+            // Instead of selecting the whole range, just select the start and end dates.
+            // This is all the frontend `processHistoricalData` function uses.
             query = env.FOREX_DB.prepare(
-                `SELECT * FROM forex_rates WHERE date >= ? AND date <= ? ORDER BY date ASC`
-            ).bind(fromDate, toDate);
+                `SELECT * FROM forex_rates WHERE date = ? OR date = ? ORDER BY date ASC`
+            ).bind(fromDate, toDate); // Only reads 2 rows
+            
             const { results } = await query.all<any>();
             
             const payloads: RatesData[] = results.map(row => {
@@ -517,8 +537,6 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 }
 
 // --- (All other handlers: handleCheckData, handleFetchAndStore, admin, posts, etc. remain unchanged) ---
-// ... (omitted for brevity, they are unchanged from your original file) ...
-
 async function handleCheckData(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
@@ -578,7 +596,6 @@ async function handleCheckData(request: Request, env: Env): Promise<Response> {
         });
     }
 }
-
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
@@ -673,7 +690,6 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         });
     }
 }
-
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -701,23 +717,17 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         let mustChangePassword = false;
 
         if (user) {
-            const recovery = await env.FOREX_DB.prepare(`SELECT * FROM user_recovery LIMIT 1`).first();
+            const recovery = await env.FOREX_DB.prepare(`SELECT * FROM user_recovery WHERE recovery_data = ? LIMIT 1`).bind(username).first();
             
-            if (!recovery) { // No recovery record means use plaintext password
-                 if (password === user.plaintext_password) {
+            if (!recovery) { 
+                 if (user.plaintext_password && password === user.plaintext_password) {
                     isValid = true;
                     mustChangePassword = true;
                  }
-            } else { // Recovery record exists, use hash
+            } else { 
                 if (user.password_hash) {
                     isValid = await simpleHashCompare(password, user.password_hash);
                     mustChangePassword = false; // Already set
-                } else if (user.plaintext_password) {
-                     // This case handles if hash is somehow null but recovery exists
-                     if (password === user.plaintext_password) {
-                         isValid = true;
-                         mustChangePassword = true;
-                     }
                 }
             }
         }
@@ -743,7 +753,6 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error during login' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handleCheckAttempts(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const ipAddress = url.searchParams.get('ip');
@@ -762,7 +771,6 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handleChangePassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -805,9 +813,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
         
-        // This record indicates the password is no longer the default
         await env.FOREX_DB.prepare(`INSERT OR IGNORE INTO user_recovery (recovery_data, created_at) VALUES (?, datetime('now'))`).bind(username).run();
-
 
         return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
@@ -815,7 +821,6 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -848,7 +853,6 @@ async function handlePosts(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handlePostById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -895,7 +899,6 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -946,7 +949,6 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -970,7 +972,6 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handlePublicPosts(request: Request, env: Env): Promise<Response> {
     try {
         const query = env.FOREX_DB.prepare(
@@ -989,7 +990,6 @@ async function handlePublicPosts(request: Request, env: Env): Promise<Response> 
         return new Response(JSON.stringify({ success: false, error: 'Server error fetching posts.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function handlePublicPostBySlug(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const slug = url.pathname.split('/').pop();
@@ -1009,7 +1009,6 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
 async function updateForexData(env: Env): Promise<void> {
     console.log("Starting scheduled forex data update...");
     try {
