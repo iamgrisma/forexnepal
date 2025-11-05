@@ -1,3 +1,4 @@
+// src/worker.ts
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import type { Rate, RatesData } from './types/forex'; // Ensure Rate and RatesData types are imported
 
@@ -103,6 +104,13 @@ export default {
         if (pathname === '/api/historical-rates') {
             return handleHistoricalRates(request, env); 
         }
+
+        // --- ADDED THIS ROUTE ---
+        if (pathname === '/api/historical-stats') {
+            return handleHistoricalStats(request, env);
+        }
+        // --- END OF ADDED ROUTE ---
+
         if (pathname === '/api/admin/login') {
             return handleAdminLogin(request, env);
         }
@@ -954,6 +962,87 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+
+// --- ADDED THIS FUNCTION ---
+async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const fromDate = url.searchParams.get('from');
+    const toDate = url.searchParams.get('to');
+    const currenciesParam = url.searchParams.get('currencies');
+    
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    
+    if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+        return new Response(JSON.stringify({ error: 'Missing or invalid date parameters' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
+    if (!currenciesParam) {
+        return new Response(JSON.stringify({ error: 'Missing currencies parameter' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
+
+    const currencies = currenciesParam.split(',').filter(c => CURRENCIES.includes(c.toUpperCase()));
+    if (currencies.length === 0) {
+        return new Response(JSON.stringify({ error: 'No valid currencies provided' }), {
+            status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
+
+    try {
+        const stats: { [key: string]: any } = {};
+        const queries: D1PreparedStatement[] = [];
+
+        currencies.forEach(code => {
+            const buyCol = `"${code}_buy"`;
+            const sellCol = `"${code}_sell"`;
+            
+            // Create 4 queries for each currency: highBuy, lowBuy, highSell, lowSell
+            // We find the max/min rate AND the first date it occurred on.
+            
+            // High Buy
+            queries.push(env.FOREX_DB.prepare(
+                `SELECT date, ${buyCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${buyCol} IS NOT NULL ORDER BY ${buyCol} DESC, date ASC LIMIT 1`
+            ).bind(fromDate, toDate));
+            // Low Buy
+            queries.push(env.FOREX_DB.prepare(
+                `SELECT date, ${buyCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${buyCol} > 0 ORDER BY ${buyCol} ASC, date ASC LIMIT 1`
+            ).bind(fromDate, toDate));
+            // High Sell
+            queries.push(env.FOREX_DB.prepare(
+                `SELECT date, ${sellCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${sellCol} IS NOT NULL ORDER BY ${sellCol} DESC, date ASC LIMIT 1`
+            ).bind(fromDate, toDate));
+            // Low Sell
+            queries.push(env.FOREX_DB.prepare(
+                `SELECT date, ${sellCol} as rate FROM forex_rates WHERE date >= ? AND date <= ? AND ${sellCol} > 0 ORDER BY ${sellCol} ASC, date ASC LIMIT 1`
+            ).bind(fromDate, toDate));
+        });
+
+        const results = await env.FOREX_DB.batch(queries);
+
+        let i = 0;
+        for (const code of currencies) {
+            stats[code] = {
+                highBuy:  results[i++]?.results?.[0] || null,
+                lowBuy:   results[i++]?.results?.[0] || null,
+                highSell: results[i++]?.results?.[0] || null,
+                lowSell:  results[i++]?.results?.[0] || null,
+            };
+        }
+
+        return new Response(JSON.stringify({ success: true, stats }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+
+    } catch (error: any) {
+        console.error('Error in handleHistoricalStats:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+    }
+}
+// --- END OF ADDED FUNCTION ---
 
 async function updateForexData(env: Env): Promise<void> {
     console.log("Starting scheduled forex data update...");
