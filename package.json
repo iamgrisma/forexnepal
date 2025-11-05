@@ -10,6 +10,7 @@
     "build:worker": "esbuild src/worker.ts --bundle --outfile=dist/worker.js --platform=browser --target=es2020",
     "lint": "eslint .",
     "preview": "vite preview"
+    "db:backfill": "tsx backfill.ts"
   },
   "dependencies": {
     "@cloudflare/kv-asset-handler": "^0.1.3",
