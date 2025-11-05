@@ -183,7 +183,7 @@ export default {
                      return new Response('Not Found', { status: 404 });
                 }
             } else {
-                 return new Response('Internal Server Error', { status 500 });
+                 return new Response('Internal Server Error', { status: 500 });
             }
         }
     },
