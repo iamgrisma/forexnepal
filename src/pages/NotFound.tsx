@@ -1,501 +1,491 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient
-import { fetchForexRates, fetchPreviousDayRates, formatDateLong, fetchForexRatesByDate } from '../services/forexService'; // Add fetchForexRatesByDate
-import { Rate, RatesData } from '../types/forex';
-import ForexTable from '../components/ForexTable';
-import CurrencyCard from '../components/CurrencyCard';
-import ForexTicker from '../components/ForexTicker';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { format, subDays, parseISO } from 'date-fns';
+import { CalendarIcon, RefreshCw, Loader2, ArrowRight, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight } from 'lucide-react'; // Add Chevron icons
-import { useToast } from '@/components/ui/use-toast';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Layout from '@/components/Layout';
+import ForexTable from '@/components/ForexTable';
+import { Rate, RatesData, Post } from '../types/forex';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useToast } from '@/components/ui/use-toast';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { Link } from 'react-router-dom';
+import ShareButtons from '@/components/ShareButtons';
+import ForexTicker from '@/components/ForexTicker';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import AdSense from '@/components/AdSense';
-import html2canvas from 'html2canvas';
-import { cn } from "@/lib/utils";
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For date picker
-import { Calendar } from '@/components/ui/calendar'; // For date picker
-import { format, subDays, addDays } from 'date-fns'; // For date manipulation
+import { formatDateLong, getFlagEmoji } from '@/services/forexService';
+// --- MODIFIED IMPORTS ---
+import { fetchRatesApiFirst, fetchPreviousDayRatesApiFirst } from '@/services/apiClient'; // Use new API-First service
+import { cn } from '@/lib/utils';
 
-const Index = () => {
-  const queryClient = useQueryClient(); // Initialize useQueryClient
-  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
-  const [popularCurrencies, setPopularCurrencies] = useState<Rate[]>([]);
-  const [asianCurrencies, setAsianCurrencies] = useState<Rate[]>([]);
-  const [europeanCurrencies, setEuropeanCurrencies] = useState<Rate[]>([]);
-  const [middleEastCurrencies, setMiddleEastCurrencies] = useState<Rate[]>([]);
-  const [otherCurrencies, setOtherCurrencies] = useState<Rate[]>([]);
+// --- (Helper components from original Index.tsx) ---
+type AnalyzedRate = Rate & {
+  normalizedBuy: number;
+  normalizedSell: number;
+  dailyChange: number; // Normalized (per-unit) change vs. previous day
+  dailyChangePercent: number;
+};
+
+const getChangeColor = (change: number) => {
+  if (change > 0.0001) return 'text-green-600';
+  if (change < -0.0001) return 'text-red-600';
+  return 'text-gray-500';
+};
+
+const ChangeIndicator: React.FC<{ value: number, decimals?: number, unit?: 'Rs.' | '%' }> = ({ value, decimals = 2, unit = 'Rs.' }) => {
+  const color = getChangeColor(value);
+  let formattedValue = (value > 0 ? `+` : '') + value.toFixed(decimals);
+  if (value > -0.0001 && value < 0.0001) formattedValue = value.toFixed(decimals);
+  
+  return (
+    <span className={cn('font-medium inline-flex items-center text-xs', color)}>
+      {value > 0.0001 && <TrendingUp className="h-3 w-3 mr-0.5" />}
+      {value < -0.0001 && <TrendingDown className="h-3 w-3 mr-0.5" />}
+      {value >= -0.0001 && value <= 0.0001 && <Minus className="h-3 w-3 mr-0.5" />}
+      {formattedValue}{unit === '%' ? '%' : ''}
+    </span>
+  );
+};
+// --- (End of helper components) ---
+
+
+const NotFound = () => {
+  const [topRates, setTopRates] = useState<Rate[]>([]);
+  const [otherRates, setOtherRates] = useState<Rate[]>([]);
   const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date()); // State for selected date
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  // Fetch current day's rates based on selectedDate
+  const handleRefresh = () => {
+    toast({
+      title: 'Refreshing data...',
+      description: 'Fetching the latest rates from NRB.',
+    });
+    // Invalidate queries to force refetch
+    queryClient.invalidateQueries({ queryKey: ['forexRates', format(selectedDate, 'yyyy-MM-dd')] });
+    queryClient.invalidateQueries({ queryKey: ['previousDayRates', format(selectedDate, 'yyyy-MM-dd')] });
+    queryClient.invalidateQueries({ queryKey: ['publicPosts'] }); // Also refresh posts
+  };
+
+  // --- MODIFIED QUERY: Use API-First ---
   const {
     data: forexData,
     isLoading,
     isError,
     error,
-    refetch: refetchCurrentRates
   } = useQuery({
-    queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]], // Key includes date
-    queryFn: () => fetchForexRatesByDate(selectedDate), // Use fetchForexRatesByDate
+    queryKey: ['forexRates', format(selectedDate, 'yyyy-MM-dd')],
+    queryFn: () => fetchRatesApiFirst(selectedDate), // Use new API-First function
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 15, // 15 minutes
   });
 
-  // Fetch previous day's rates based on selectedDate
+  // --- MODIFIED QUERY: Use API-First ---
   const {
     data: prevDayData,
     isLoading: isLoadingPrevDay,
-    refetch: refetchPrevDayRates
   } = useQuery({
-    queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]], // Key includes date
-    queryFn: () => fetchPreviousDayRates(subDays(selectedDate, 1)), // Fetch for the day before selectedDate
+    queryKey: ['previousDayRates', format(selectedDate, 'yyyy-MM-dd')],
+    queryFn: () => fetchPreviousDayRatesApiFirst(selectedDate), // Use new API-First function
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
+  // --- (Blog Posts Query - Unchanged) ---
+  const { data: postsData, isLoading: isLoadingPosts } = useQuery<{ posts: Post[] }>({
+    queryKey: ['publicPosts'],
+    queryFn: async () => {
+      const res = await fetch('/api/posts');
+      if (!res.ok) throw new Error('Failed to fetch posts');
+      const data = await res.json();
+      return data;
+    },
+    staleTime: 1000 * 60 * 30, // 30 minutes
+  });
+
   useEffect(() => {
-    if (isError && error instanceof Error) {
+    if (isError) {
       toast({
-        title: "Error loading data",
-        description: error.message,
-        variant: "destructive",
+        title: 'Error loading data',
+        description: error?.message || 'Failed to fetch forex rates. Displaying cached data if available.',
+        variant: 'destructive',
       });
     }
   }, [isError, error, toast]);
 
-  // Update previousDayRates state when data loads
   useEffect(() => {
-    if (prevDayData?.data?.payload?.[0]?.rates) {
-      setPreviousDayRates(prevDayData.data.payload[0].rates);
+    if (prevDayData?.rates) {
+      setPreviousDayRates(prevDayData.rates);
     } else {
-      setPreviousDayRates([]); // Clear if no data
+      setPreviousDayRates([]);
     }
   }, [prevDayData]);
 
   useEffect(() => {
-    if (forexData?.data?.payload?.[0]?.rates) {
-      const allRates = forexData.data.payload[0].rates;
-
-      const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
-      const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
-      const europeanCodes = ['EUR', 'GBP', 'CHF', 'SEK', 'DKK'];
-      const middleEastCodes = ['SAR', 'QAR', 'AED', 'KWD', 'BHD', 'OMR'];
-
-      const popular = allRates.filter(rate => popularCodes.includes(rate.currency.iso3));
-      const asian = allRates.filter(rate => asianCodes.includes(rate.currency.iso3));
-      const european = allRates.filter(rate => europeanCodes.includes(rate.currency.iso3));
-      const middleEast = allRates.filter(rate => middleEastCodes.includes(rate.currency.iso3));
-
-      const allCategorizedCodes = [...new Set([...popularCodes, ...asianCodes, ...europeanCodes, ...middleEastCodes])];
-      const others = allRates.filter(rate => !allCategorizedCodes.includes(rate.currency.iso3));
-
-      setPopularCurrencies(popular);
-      setAsianCurrencies(asian);
-      setEuropeanCurrencies(european);
-      setMiddleEastCurrencies(middleEast);
-      setOtherCurrencies(others);
+    if (forexData?.rates) {
+      const allRates = forexData.rates;
+      const top = allRates.filter((rate) =>
+        ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'SAR', 'AED', 'QAR'].includes(
+          rate.currency.iso3
+        )
+      );
+      const others = allRates.filter(
+        (rate) =>
+          !['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'CNY', 'SAR', 'AED', 'QAR'].includes(
+            rate.currency.iso3
+          )
+      );
+      setTopRates(top);
+      setOtherRates(others);
     } else {
-        setPopularCurrencies([]);
-        setAsianCurrencies([]);
-        setEuropeanCurrencies([]);
-        setMiddleEastCurrencies([]);
-        setOtherCurrencies([]);
+      setTopRates([]);
+      setOtherRates([]);
     }
   }, [forexData]);
 
-  const handleRefresh = async () => {
-    toast({
-      title: "Refreshing data",
-      description: "Fetching the latest forex rates...",
+  // --- (Memoized Analysis Data - from original Index.tsx) ---
+  const analysisData = useMemo(() => {
+    if (!forexData?.rates || !prevDayData?.rates) return null;
+
+    const currentRates = forexData.rates;
+    const prevRates = prevDayData.rates;
+
+    const analyzedRates: AnalyzedRate[] = currentRates.map(rate => {
+      const buy = Number(rate.buy);
+      const sell = Number(rate.sell);
+      const unit = rate.currency.unit || 1;
+      const normalizedBuy = buy / unit;
+      const normalizedSell = sell / unit;
+
+      const prevRate = prevRates.find(pr => pr.currency.iso3 === rate.currency.iso3);
+      const prevBuy = prevRate ? (Number(prevRate.buy) / (prevRate.currency.unit || 1)) : 0;
+      
+      const dailyChange = prevRate ? (normalizedBuy - prevBuy) : 0;
+      const dailyChangePercent = (prevRate && prevBuy > 0) ? (dailyChange / prevBuy) * 100 : 0;
+
+      return {
+        ...rate,
+        buy,
+        sell,
+        normalizedBuy,
+        normalizedSell,
+        dailyChange,
+        dailyChangePercent,
+      };
     });
-    // Invalidate and refetch queries for the current selected date
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['forexRates', selectedDate.toISOString().split('T')[0]] }),
-      queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDate.toISOString().split('T')[0]] })
-    ]);
-  };
+    
+    const filteredRates = analyzedRates.filter(r => r.currency.iso3 !== 'INR');
+    const safeFilteredRates = filteredRates.length > 0 ? filteredRates : analyzedRates;
+    
+    const topGainer = [...safeFilteredRates].sort((a, b) => b.dailyChangePercent - a.dailyChangePercent)[0];
+    const topLoser = [...safeFilteredRates].sort((a, b) => a.dailyChangePercent - b.dailyChangePercent)[0];
 
-  const ratesData: RatesData | undefined = forexData?.data?.payload?.[0];
-  const rates: Rate[] = ratesData?.rates || [];
+    const majorMovers = ['USD', 'EUR', 'GBP', 'AUD', 'SAR', 'AED', 'QAR']
+      .map(iso3 => analyzedRates.find(r => r.currency.iso3 === iso3))
+      .filter((r): r is AnalyzedRate => r !== undefined);
 
-  const handleDateChange = (date: Date | undefined) => {
-    if (date) {
-      setSelectedDate(date);
-    }
-  };
+    return {
+      allRates: analyzedRates,
+      topGainer,
+      topLoser,
+      majorMovers,
+    };
+  }, [forexData, prevDayData]);
 
-  const navigateDate = (direction: 'prev' | 'next') => {
-    if (direction === 'prev') {
-      setSelectedDate(subDays(selectedDate, 1));
-    } else {
-      const nextDate = addDays(selectedDate, 1);
-      // Prevent navigating past today's date
-      if (nextDate <= new Date()) {
-        setSelectedDate(nextDate);
-      }
-    }
-  };
-
-  const downloadContentAsImage = async () => {
-    const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
-    const targetElement = document.getElementById(targetElementId);
-
-    if (!targetElement) {
-        toast({
-            title: "Error",
-            description: "Content for download not found.",
-            variant: "destructive",
-        });
-        return;
-    }
-
-    // Create a temporary wrapper to include the title and footer for both views
-    const wrapper = document.createElement('div');
-    wrapper.style.width = 'fit-content'; // Adjust width based on content
-    wrapper.style.padding = '40px';
-    wrapper.style.backgroundColor = 'white';
-    wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-    wrapper.style.display = 'flex';
-    wrapper.style.flexDirection = 'column';
-    wrapper.style.alignItems = 'center'; // Center the content
-
-    // Title for the image
-    const titleEl = document.createElement('h1');
-    titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '32px';
-    titleEl.style.fontWeight = 'bold';
-    titleEl.style.marginBottom = '30px';
-    titleEl.style.color = '#1f2937';
-    titleEl.style.whiteSpace = 'pre-wrap'; // Allows line breaks
-    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(selectedDate)}`;
-    wrapper.appendChild(titleEl);
-
-    // Clone the actual content (table or grid)
-    const contentClone = targetElement.cloneNode(true) as HTMLElement;
-    contentClone.style.fontSize = '16px'; // Standardize font size for image
-    // Ensure grid layout works well for image by potentially adjusting column count if too wide
-    if (viewMode === 'grid') {
-        contentClone.style.display = 'grid';
-        contentClone.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))'; // Adjust as needed
-        contentClone.style.gap = '20px'; // Adjust gap
-        contentClone.style.width = '1200px'; // Fixed width for consistent image output
-        contentClone.style.padding = '20px';
-    } else {
-        contentClone.style.width = '1200px'; // Fixed width for table
-        contentClone.style.padding = '20px';
-    }
-    wrapper.appendChild(contentClone);
-
-    // Footer
-    const footer = document.createElement('div');
-    footer.style.marginTop = '30px';
-    footer.style.textAlign = 'center';
-    footer.style.fontSize = '14px';
-    footer.style.color = '#6b7280';
-    footer.style.width = '100%'; // Ensure footer stretches if needed
-
-    const source = document.createElement('p');
-    source.style.marginBottom = '10px';
-    source.style.fontWeight = '600';
-    const lastUpdated = new Date().toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    source.textContent = `Source: Nepal Rastra Bank (NRB) | Last updated: ${lastUpdated}`;
-    footer.appendChild(source);
-
-    const disclaimer = document.createElement('p');
-    disclaimer.style.fontStyle = 'italic';
-    disclaimer.style.fontSize = '12px';
-    disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
-    footer.appendChild(disclaimer);
-
-    const designer = document.createElement('p');
-    designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '12px';
-    designer.style.marginTop = '10px';
-    designer.style.color = '#4b5563';
-    designer.textContent = 'Data extraction and presentation designed by Grisma Bhandari';
-    footer.appendChild(designer);
-
-    wrapper.appendChild(footer);
-
-    // Temporarily add to DOM to render for html2canvas
-    wrapper.style.position = 'absolute';
-    wrapper.style.left = '-9999px';
-    document.body.appendChild(wrapper);
-
-    try {
-      const canvas = await html2canvas(wrapper, {
-        scale: 2, // High resolution
-        backgroundColor: '#ffffff',
-        width: wrapper.offsetWidth, // Use wrapper's actual rendered width
-        height: wrapper.offsetHeight // Use wrapper's actual rendered height
-      });
-
-      const link = document.createElement('a');
-      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-
-      toast({
-        title: "Success",
-        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as image.`,
-      });
-    } catch (error) {
-      console.error('Error generating image:', error);
-      toast({
-        title: "Error",
-        description: `Failed to download ${viewMode === 'table' ? 'table' : 'grid'} as image.`,
-        variant: "destructive",
-      });
-    } finally {
-      document.body.removeChild(wrapper); // Clean up
-    }
-  };
-
-
-  // Helper function to render grid cards
-  const renderGridCards = (currencyList: Rate[]) => (
-    <div id="forex-grid-container" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-      {isLoading || isLoadingPrevDay ? ( // Indicate loading for prev day rates too
-        Array.from({ length: 9 }).map((_, index) => (
-          <div key={index} className="h-48 bg-gray-200 rounded-xl animate-pulse"></div>
-        ))
-      ) : (
-        currencyList.map((rate, index) => (
-          <CurrencyCard
-            key={rate.currency.iso3}
-            rate={rate}
-            index={index}
-            previousDayRates={previousDayRates} // Pass previous rates here
-          />
-        ))
-      )}
-    </div>
-  );
+  // Data from API-First service is RatesData | null
+  const rates: Rate[] = forexData?.rates || [];
+  const publishedDate = forexData?.published_on
+    ? new Date(forexData.published_on)
+    : null;
+  const dataDate = forexData?.date ? new Date(forexData.date + 'T00:00:00Z') : null;
 
   return (
     <Layout>
-      <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
+      <div className="container mx-auto px-4 pt-8">
         <div className="max-w-7xl mx-auto">
-          {/* Header section */}
-          <div className="text-center mb-12 animate-fade-in">
-            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4">
-              <Gitlab className="h-4 w-4 mr-1" />
-              <span>Live Forex Data</span>
-            </div>
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Nepal Rastra Bank</h1>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Track real-time foreign exchange rates with beautiful visualizations and seamless updates.
-            </p>
-          </div>
-
-          {/* New: Main Title with Date Navigation */}
-          <div className="text-center mb-8">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
-              Foreign Exchange Rates as Per Nepal Rastra Bank
-            </h2>
-            <div className="flex items-center justify-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigateDate('prev')}
-                title="Previous Day"
-                className="group relative"
-              >
-                <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
-                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
-                  Previous Day
-                </span>
-              </Button>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-[240px] justify-center text-left font-normal group relative",
-                      !selectedDate && "text-muted-foreground"
-                    )}
-                  >
-                    <span className="text-lg font-semibold text-gray-700">
-                      {formatDateLong(selectedDate)}
-                    </span>
-                    <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
-                      Click to change date
-                    </span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={handleDateChange}
-                    initialFocus
-                    captionLayout="dropdown-buttons" // For month/year dropdowns
-                    fromYear={2000} // Start year
-                    toYear={new Date().getFullYear()} // End year
-                    disabled={(date) => date > new Date()} // Disable future dates
-                  />
-                </PopoverContent>
-              </Popover>
-
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigateDate('next')}
-                title="Next Day"
-                className="group relative"
-                disabled={format(selectedDate, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')} // Disable if already today
-              >
-                <ChevronRight className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
-                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
-                  Next Day
-                </span>
-              </Button>
-            </div>
-          </div>
-
-
-          {/* Action buttons (Download, Refresh, View Mode) */}
-          <div className="flex flex-wrap justify-end items-center mb-6 gap-2">
-            <Button
-              onClick={downloadContentAsImage}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
-              disabled={isLoading || rates.length === 0} // Enabled for both views
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden sm:inline">Download Image</span>
-            </Button>
-            <Button
-              onClick={handleRefresh}
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2 text-primary hover:text-primary-foreground hover:bg-primary transition-colors"
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
-
-            <div className="bg-white/80 backdrop-blur-sm rounded-lg p-1 flex shadow-sm">
-              <Button
-                variant={viewMode === 'table' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('table')}
-                className="rounded-md h-8"
-              >
-                <List className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Table</span>
-              </Button>
-              <Button
-                variant={viewMode === 'grid' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setViewMode('grid')}
-                className="rounded-md h-8"
-              >
-                <Grid3X3 className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Grid</span>
-              </Button>
-            </div>
-          </div>
-
-
-          {/* Ticker component */}
           <ForexTicker rates={rates} isLoading={isLoading} />
+        </div>
+      </div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-5xl mx-auto">
+          
+          {/* 404 Message */}
+          <Alert variant="destructive" className="mb-8">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle className="text-xl font-bold">Page Not Found (404)</AlertTitle>
+            <AlertDescription>
+              We couldn't find the page you were looking for. Please check the URL or enjoy today's exchange rates below.
+            </AlertDescription>
+          </Alert>
 
-          <Tabs defaultValue="all" className="mb-12">
-            {/* Scrollable TabsList */}
-            <div className="w-full overflow-x-auto pb-2 mb-8 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
-              <TabsList className={cn(
-                  "mb-0 w-max bg-white/80 backdrop-blur-sm border border-gray-100",
-                  "sm:w-full sm:inline-flex"
-                )}>
-                <TabsTrigger value="all">All Currencies</TabsTrigger>
-                <TabsTrigger value="popular">Popular</TabsTrigger>
-                <TabsTrigger value="asian">Asian</TabsTrigger>
-                <TabsTrigger value="european">European</TabsTrigger>
-                <TabsTrigger value="middle-east">Middle East</TabsTrigger>
-                <TabsTrigger value="other">Other</TabsTrigger>
-              </TabsList>
-            </div>
-
-
-            {/* TabsContent sections */}
-            <TabsContent value="all" className="animate-fade-in">
-              {viewMode === 'table' ? (
-                <div id="forex-table-container">
-                  <ForexTable rates={rates} isLoading={isLoading} title="" previousDayRates={previousDayRates} /> {/* Title moved globally */}
+          <Card className="mb-8 shadow-lg bg-white/70 backdrop-blur-sm">
+            <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between pb-4">
+              <div>
+                <CardTitle className="text-2xl md:text-3xl font-bold text-gray-800">
+                  Today's Exchange Rates
+                </CardTitle>
+                <CardDescription className="text-base text-gray-600">
+                  {isLoading
+                    ? 'Loading...'
+                    : `Published by Nepal Rastra Bank for ${
+                        dataDate ? formatDateLong(dataDate) : 'today'
+                      }`}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2 mt-4 md:mt-0">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant={'outline'}
+                      className="w-[200px] justify-start text-left font-normal"
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {format(selectedDate, 'PPP')}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={(day) => setSelectedDate(day || new Date())}
+                      disabled={(date) =>
+                        date > new Date() || date < new Date('2000-01-01')
+                      }
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  onClick={handleRefresh}
+                  variant="outline"
+                  size="icon"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoading && (
+                <div className="space-y-4">
+                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-8 w-3/4" />
+                  <Skeleton className="h-32 w-full" />
+                  <Skeleton className="h-32 w-full" />
                 </div>
-              ) : (
-                renderGridCards(rates)
               )}
-            </TabsContent>
-
-            <TabsContent value="popular" className="animate-fade-in">
-              {viewMode === 'table' ? (
-                <ForexTable rates={popularCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
-              ) : (
-                renderGridCards(popularCurrencies)
+              {!isLoading && isError && (
+                 <Alert variant="destructive">
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>
+                    Could not load live data from NRB API. Please check your connection or try refreshing.
+                  </AlertDescription>
+                </Alert>
               )}
-            </TabsContent>
-
-            <TabsContent value="asian" className="animate-fade-in">
-              {viewMode === 'table' ? (
-                <ForexTable rates={asianCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
-              ) : (
-                 renderGridCards(asianCurrencies)
+              {!isLoading && !isError && rates.length === 0 && (
+                <Alert variant="default">
+                  <AlertTitle>No Data Available</AlertTitle>
+                  <AlertDescription>
+                    No exchange rate data was found for this date. It might be a weekend or a public holiday.
+                  </AlertDescription>
+                </Alert>
               )}
-            </TabsContent>
-
-            <TabsContent value="european" className="animate-fade-in">
-              {viewMode === 'table' ? (
-                <ForexTable rates={europeanCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
-              ) : (
-                 renderGridCards(europeanCurrencies)
+              {!isLoading && rates.length > 0 && (
+                <>
+                  <ForexTable
+                    title="Major Currencies"
+                    rates={topRates}
+                    previousRates={previousDayRates}
+                    isLoading={isLoadingPrevDay}
+                  />
+                  <div className="my-6">
+                     <AdSense slot="7506306569" format="fluid" layoutKey="-gw-3+1f-3d+2z" />
+                  </div>
+                  <ForexTable
+                    title="Other Currencies"
+                    rates={otherRates}
+                    previousRates={previousDayRates}
+                    isLoading={isLoadingPrevDay}
+                  />
+                </>
               )}
-            </TabsContent>
+              <div className="mt-4 text-xs text-gray-500">
+                <p>
+                  Published On:{' '}
+                  {publishedDate ? (
+                    <time dateTime={publishedDate.toISOString()}>
+                      {publishedDate.toLocaleString()}
+                    </time>
+                  ) : (
+                    'N/A'
+                  )}
+                </p>
+                <p>
+                  Disclaimer: Rates are indicative and may vary in actual
+                  transactions.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
-            <TabsContent value="middle-east" className="animate-fade-in">
-              {viewMode === 'table' ? (
-                <ForexTable rates={middleEastCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
-              ) : (
-                 renderGridCards(middleEastCurrencies)
+          <ShareButtons 
+            url="https"
+            title="Today's Forex Rates in Nepal | Nepal Rastra Bank"
+          />
+
+          {/* --- (Today's Market Analysis - from original file) --- */}
+          {!isLoading && !isLoadingPrevDay && analysisData && (
+            <Card className="my-8">
+              <CardHeader>
+                <CardTitle>Today's Market Analysis</CardTitle>
+                <CardDescription>
+                  Quick look at the day's biggest movers and key currencies.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                  <Card className="bg-green-50/50 border-green-200">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg text-green-700">Top Gainer</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Link to={`/historical-data/${analysisData.topGainer.currency.iso3}`} className="font-bold text-xl text-green-700 hover:underline">
+                        {getFlagEmoji(analysisData.topGainer.currency.iso3)} {analysisData.topGainer.currency.name}
+                      </Link>
+                      <div className="mt-1">
+                        <ChangeIndicator value={analysisData.topGainer.dailyChangePercent} decimals={3} unit="%" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-red-50/50 border-red-200">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg text-red-700">Top Loser</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Link to={`/historical-data/${analysisData.topLoser.currency.iso3}`} className="font-bold text-xl text-red-700 hover:underline">
+                        {getFlagEmoji(analysisData.topLoser.currency.iso3)} {analysisData.topLoser.currency.name}
+                      </Link>
+                      <div className="mt-1">
+                        <ChangeIndicator value={analysisData.topLoser.dailyChangePercent} decimals={3} unit="%" />
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Daily Change (Per 1 Unit)</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      {analysisData.majorMovers.map(rate => (
+                        <div key={rate.currency.iso3} className="flex justify-between items-center text-sm">
+                          <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium hover:underline">
+                            {getFlagEmoji(rate.currency.iso3)} {rate.currency.iso3}
+                          </Link>
+                          <ChangeIndicator value={rate.dailyChange} decimals={4} unit="Rs." />
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 my-8">
+             <Card className="hover:shadow-md transition-shadow">
+               <CardHeader>
+                 <CardTitle>Currency Converter</CardTitle>
+                 <CardDescription>Calculate conversions based on today's rates.</CardDescription>
+               </CardHeader>
+               <CardContent>
+                 <Button asChild>
+                   <Link to="/converter">Go to Converter <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                 </Button>
+               </CardContent>
+             </Card>
+             <Card className="hover:shadow-md transition-shadow">
+               <CardHeader>
+                 <CardTitle>Historical Data</CardTitle>
+                 <CardDescription>View historical charts and trends for all currencies.</CardDescription>
+               </CardHeader>
+               <CardContent>
+                 <Button asChild>
+                   <Link to="/historical-charts">View Charts <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                 </Button>
+               </CardContent>
+             </Card>
+          </div>
+          
+           <AdSense slot="7506306569" format="fluid" layoutKey="-gw-3+1f-3d+2z" />
+
+           {/* --- (Recent Posts - from original file) --- */}
+           <section className="mt-12">
+            <h2 className="text-3xl font-bold text-center mb-2">Forex News & Analysis</h2>
+            <p className="text-center text-muted-foreground mb-8">
+              Stay updated with the latest insights and analysis on currency trends.
+            </p>
+            {isLoadingPosts && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Skeleton className="h-64 w-full" />
+                <Skeleton className="h-64 w-full" />
+                <Skeleton className="h-64 w-full" />
+              </div>
+            )}
+            {postsData && postsData.posts.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {postsData.posts.slice(0, 3).map(post => (
+                  <Card key={post.id} className="overflow-hidden flex flex-col">
+                    <Link to={`/posts/${post.slug}`} className="block">
+                      <img 
+                        src={post.featured_image_url || '/placeholder.svg'} 
+                        alt={post.title}
+                        className="h-48 w-full object-cover"
+                        onError={(e) => (e.currentTarget.src = '/placeholder.svg')}
+                      />
+                    </Link>
+                    <CardHeader>
+                      <CardTitle className="text-xl">
+                        <Link to={`/posts/${post.slug}`} className="hover:text-primary transition-colors">
+                          {post.title}
+                        </Link>
+                      </CardTitle>
+                      <CardDescription>
+                        {format(parseISO(post.published_at || post.created_at), 'PPP')}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-grow">
+                      <p className="text-sm text-muted-foreground line-clamp-3">
+                        {post.excerpt}
+                      </p>
+                    </CardContent>
+                    <div className="p-6 pt-0">
+                      <Button asChild variant="link" className="p-0">
+                        <Link to={`/posts/${post.slug}`}>Read More <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+             {postsData && postsData.posts.length > 0 && (
+                <div className="text-center mt-8">
+                  <Button asChild variant="outline">
+                    <Link to="/posts">View All Posts</Link>
+                  </Button>
+                </div>
               )}
-            </TabsContent>
-
-             <TabsContent value="other" className="animate-fade-in">
-               {viewMode === 'table' ? (
-                 <ForexTable rates={otherCurrencies} isLoading={isLoading} title="" previousDayRates={previousDayRates} />
-               ) : (
-                  renderGridCards(otherCurrencies)
-               )}
-             </TabsContent>
-          </Tabs>
-
-          {/* Info and AdSense sections */}
-           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8 border border-gray-100">
-             <h2 className="text-xl font-semibold mb-3 text-gray-900">About Nepal's Foreign Exchange Rates</h2>
-             <p className="text-gray-600 leading-relaxed">
-               The foreign exchange rates displayed here are the official rates published by Nepal Rastra Bank (NRB),
-               Nepal's central bank. These rates are primarily influenced by Nepal's trade relationships, remittance flows,
-               and the country's foreign exchange reserves. The Nepalese Rupee (NPR) is pegged to the Indian Rupee (INR)
-               at a fixed rate, while other currency rates fluctuate based on international market conditions and Nepal's
-               economic fundamentals. These rates are used by banks, financial institutions, and money exchangers across Nepal
-               for foreign currency transactions.
-             </p>
-           </div>
-
-           <AdSense />
+           </section>
 
         </div>
       </div>
@@ -503,4 +493,4 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default NotFound;
