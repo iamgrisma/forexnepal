@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'; // CardDescription removed as it wasn't used here
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { ArrowRightLeft, Calculator, ArrowRight, Loader2 } from 'lucide-react'; // TrendingUp removed as it's in ProfitCalc
-import { formatDate } from '@/services/forexService'; // Keep formatDate
-import { fetchRatesForDateWithCache } from '@/services/d1ForexService'; // Use D1 service
+import { ArrowRightLeft, Calculator, ArrowRight, Loader2 } from 'lucide-react';
+import { formatDate } from '@/services/forexService';
+// --- TASK 4: Import DB-First Service ---
+import { fetchRatesForDateWithCache } from '@/services/d1ForexService';
+// --- END TASK 4 ---
 import type { Rate, RatesData } from '@/types/forex';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
@@ -15,7 +17,7 @@ import AdSense from '@/components/AdSense';
 import ForexTicker from '@/components/ForexTicker';
 import DateInput from '@/components/DateInput';
 import ConverterProfitCalculator from './ConverterProfitCalculator';
-import { cn } from "@/lib/utils"; // Import cn for conditional classes if needed later
+import { cn } from "@/lib/utils";
 
 const Converter = () => {
   const { toast } = useToast();
@@ -27,7 +29,7 @@ const Converter = () => {
   const [selectedDate, setSelectedDate] = useState<string>(formatDate(new Date()));
   const [ratesData, setRatesData] = useState<RatesData | null>(null);
 
-  // --- Fetch rates for the selected date using D1 Cache Service ---
+  // --- TASK 4: Fetch rates for the selected date using D1 Cache Service ---
   const { isLoading, error, data: queryData, isFetching } = useQuery<RatesData | null>({
     queryKey: ['forexRatesForDate', selectedDate],
     queryFn: async () => {
@@ -39,6 +41,7 @@ const Converter = () => {
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 15, // 15 minutes
   });
+  // --- END TASK 4 ---
 
   // Update local ratesData state and handle potential errors/no data
   useEffect(() => {
@@ -46,12 +49,8 @@ const Converter = () => {
       setRatesData(queryData);
       setResult(null); // Reset result when date changes
     } else if (!isLoading && !isFetching && selectedDate.length === 10) {
-        // Query finished but returned null/undefined
         setRatesData(null);
         setResult(null);
-        // Only toast if it wasn't an initial load potentially returning null
-        // Maybe add a check here if selectedDate actually changed
-        // toast({ title: "No Data", description: `Could not load rates for ${selectedDate}.`, variant: "destructive", duration: 2000 });
         console.warn(`No rates data loaded for ${selectedDate}. It might be a holiday or weekend.`);
     }
      if (error) { // Handle explicit query errors
@@ -205,7 +204,7 @@ const Converter = () => {
                    {/* Display message if no rates found AFTER loading attempt */}
                    {!showLoadingIndicator && (!ratesData || rates.length === 0) && selectedDate.length === 10 && (
                      <p className="text-sm text-orange-600 mt-1">
-                       No exchange rates published for {selectedDate} (e.g., holiday/weekend). Using latest available data might not be accurate for this date.
+                       No exchange rates published for {selectedDate} (e.g., holiday/weekend).
                      </p>
                    )}
                </div>
@@ -356,8 +355,6 @@ const Converter = () => {
 
                 {/* --- Content for 'profitLoss' Tab --- */}
                 <TabsContent value="profitLoss">
-                  {/* Pass the currently available rates (can be empty initially or if error) */}
-                  {/* The component itself handles fetching specific historical dates needed */}
                   <ConverterProfitCalculator rates={rates} />
                 </TabsContent>
               </Tabs>
