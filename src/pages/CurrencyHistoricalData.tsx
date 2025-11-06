@@ -1,505 +1,340 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { fetchForexRates, getDateRanges, getFlagEmoji, formatDate, fetchHistoricalRates as fetchHistoricalRatesFromAPI } from '../services/forexService';
-import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
-import { Rate, ChartDataPoint } from '../types/forex';
+import { fetchHistoricalRates, getFlagEmoji } from '@/services/forexService';
+import { Rate, ChartDataPoint } from '@/types/forex';
+import { format, subDays, parseISO } from 'date-fns';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import Layout from '@/components/Layout';
-import ShareButtons from '@/components/ShareButtons';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { CalendarIcon, Download, ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
-import { format, differenceInDays } from 'date-fns';
-import { cn } from '@/lib/utils';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useToast } from '@/components/ui/use-toast';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import ShareButtons from '@/components/ShareButtons'; // Added ShareButtons
+import {
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart"
 
-// --- Helper to determine sampling rate ---
-const getSamplingForRange = (fromDate: string, toDate: string): string => {
-  try {
-    const days = differenceInDays(new Date(toDate), new Date(fromDate));
-    if (days <= 90) return 'daily';      // 0-3 months
-    if (days <= 730) return 'weekly';     // 3 months - 2 years
-    if (days <= 1825) return '15day';   // 2-5 years
-    return 'monthly'; // 5+ years
-  } catch (e) {
-    return 'daily';
-  }
+// --- Currency Info Map ---
+const CURRENCY_MAP: { [key: string]: { name: string, unit: number, country: string } } = {
+  'INR': { name: 'Indian Rupee', unit: 100, country: 'India' },
+  'USD': { name: 'U.S. Dollar', unit: 1, country: 'United States' },
+  'EUR': { name: 'European Euro', unit: 1, country: 'European Union' },
+  'GBP': { name: 'UK Pound Sterling', unit: 1, country: 'United Kingdom' },
+  'CHF': { name: 'Swiss Franc', unit: 1, country: 'Switzerland' },
+  'AUD': { name: 'Australian Dollar', unit: 1, country: 'Australia' },
+  'CAD': { name: 'Canadian Dollar', unit: 1, country: 'Canada' },
+  'SGD': { name: 'Singapore Dollar', unit: 1, country: 'Singapore' },
+  'JPY': { name: 'Japanese Yen', unit: 10, country: 'Japan' },
+  'CNY': { name: 'Chinese Yuan', unit: 1, country: 'China' },
+  'SAR': { name: 'Saudi Arabian Riyal', unit: 1, country: 'Saudi Arabia' },
+  'QAR': { name: 'Qatari Riyal', unit: 1, country: 'Qatar' },
+  'THB': { name: 'Thai Baht', unit: 1, country: 'Thailand' },
+  'AED': { name: 'U.A.E Dirham', unit: 1, country: 'United Arab Emirates' },
+  'MYR': { name: 'Malaysian Ringgit', unit: 1, country: 'Malaysia' },
+  'KRW': { name: 'South Korean Won', unit: 100, country: 'South Korea' },
+  'SEK': { name: 'Swedish Kroner', unit: 1, country: 'Sweden' },
+  'DKK': { name: 'Danish Kroner', unit: 1, country: 'Denmark' },
+  'HKD': { name: 'Hong Kong Dollar', unit: 1, country: 'Hong Kong' },
+  'KWD': { name: 'Kuwaiti Dinar', unit: 1, country: 'Kuwait' },
+  'BHD': { name: 'Bahraini Dinar', unit: 1, country: 'Bahrain' },
+  'OMR': { name: 'Omani Rial', unit: 1, country: 'Oman' }
 };
 
-const CurrencyHistoricalData = () => {
-  const { currencyCode } = useParams<{ currencyCode: string }>();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | '3month' | '6month' | 'year' | '5year' | 'custom'>('month');
-  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
-  const [currentCurrency, setCurrentCurrency] = useState<Rate | null>(null);
-  const [customDateRange, setCustomDateRange] = useState<{ from: Date | undefined; to: Date | undefined }>({ from: undefined, to: undefined });
-  const [isLoadingChart, setIsLoadingChart] = useState(false);
-  const [progress, setProgress] = useState<FetchProgress | null>(null);
-  const [currentSampling, setCurrentSampling] = useState('daily');
-  const [isFullData, setIsFullData] = useState(true);
+// --- Date Range Definitions ---
+type RangeKey = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'MAX';
+const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
+  '1M': { days: 30, label: '1 Month' },
+  '3M': { days: 90, label: '3 Months' },
+  '6M': { days: 180, label: '6 Months' },
+  '1Y': { days: 365, label: '1 Year' },
+  '3Y': { days: 365 * 3, label: '3 Years' },
+  '5Y': { days: 365 * 5, label: '5 Years' },
+  'MAX': { days: 365 * 25, label: 'Max' }, // Fetch up to 25 years
+};
 
-  const { data: forexData } = useQuery({
-    queryKey: ['forexRates'],
-    queryFn: fetchForexRates,
-    refetchOnWindowFocus: false,
-    staleTime: 1000 * 60 * 15,
+// --- Helper Functions ---
+
+/**
+ * Calculates the start date based on the selected range.
+ */
+const getStartDate = (range: RangeKey): string => {
+  const { days } = DATE_RANGES[range];
+  if (range === 'MAX') {
+    return '2000-01-01'; // Max start date
+  }
+  return format(subDays(new Date(), days), 'yyyy-MM-dd');
+};
+
+/**
+ * Processes API data into a clean format for the chart.
+ * This is where the data logic is fixed.
+ */
+const processChartData = (data: Rate[], unit: number): { chartData: ChartDataPoint[], stats: ReturnType<typeof calculateStats> } => {
+  if (!data || data.length === 0) {
+    return { chartData: [], stats: calculateStats([], unit) };
+  }
+
+  const validData: ChartDataPoint[] = data
+    .map(rate => {
+      const buy = Number(rate.buy);
+      const sell = Number(rate.sell);
+      
+      // Normalize rates per 1 unit
+      const normalizedBuy = buy / unit;
+      const normalizedSell = sell / unit;
+
+      // Filter out invalid data points
+      if (
+        !rate.date || 
+        isNaN(normalizedBuy) || isNaN(normalizedSell) ||
+        normalizedBuy <= 0.001 || normalizedSell <= 0.001 || // Remove 0 or near-0 values
+        normalizedBuy > 1000 || normalizedSell > 1000 // Remove absurdly high values (like 375 for USD)
+      ) {
+        return null;
+      }
+      
+      return {
+        date: format(parseISO(rate.date), 'yyyy-MM-dd'),
+        buy: normalizedBuy,
+        sell: normalizedSell,
+      };
+    })
+    .filter((item): item is ChartDataPoint => item !== null)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ensure sorted by date
+
+  // Create a gap-filled dataset
+  const filledData: ChartDataPoint[] = [];
+  if (validData.length > 0) {
+    let currentDate = parseISO(validData[0].date);
+    const endDate = parseISO(validData[validData.length - 1].date);
+    let dataIndex = 0;
+
+    while (currentDate <= endDate) {
+      const dateStr = format(currentDate, 'yyyy-MM-dd');
+      if (dataIndex < validData.length && validData[dataIndex].date === dateStr) {
+        filledData.push(validData[dataIndex]);
+        dataIndex++;
+      } else {
+        // This creates a gap (null value) for Recharts to render a broken line
+        filledData.push({ date: dateStr, buy: null, sell: null });
+      }
+      currentDate = addDays(currentDate, 1); // Move to the next day
+    }
+  }
+
+  const stats = calculateStats(validData, unit);
+  return { chartData: filledData, stats };
+};
+
+/**
+ * Calculates high/low/change statistics from the *valid* data.
+ */
+const calculateStats = (data: ChartDataPoint[], unit: number) => {
+  if (data.length === 0) {
+    return { high: 0, low: 0, change: 0, changePercent: 0, firstRate: 0, lastRate: 0, unit };
+  }
+
+  let high = 0;
+  let low = Infinity;
+  data.forEach(d => {
+    if (d.buy) {
+      if (d.buy > high) high = d.buy;
+      if (d.buy < low) low = d.buy;
+    }
   });
 
-  useEffect(() => {
-    if (forexData?.data?.payload?.[0]?.rates && currencyCode) {
-      const currency = forexData.data.payload[0].rates.find(
-        (r: Rate) => r.currency.iso3 === currencyCode.toUpperCase()
-      );
-      if (currency) {
-        setCurrentCurrency(currency);
-      } else {
-        navigate('/404');
-      }
-    }
-  }, [forexData, currencyCode, navigate]);
-  
-  const getDatesForPeriod = () => {
-      const dateRanges = getDateRanges();
-      let fromDate, toDate;
+  const firstRate = data[0]?.buy || 0;
+  const lastRate = data[data.length - 1]?.buy || 0;
+  const change = lastRate - firstRate;
+  const changePercent = firstRate > 0 ? (change / firstRate) * 100 : 0;
 
-      switch (selectedPeriod) {
-        case 'week':
-          fromDate = dateRanges.week.from;
-          toDate = dateRanges.week.to;
-          break;
-        case 'month':
-          fromDate = dateRanges.month.from;
-          toDate = dateRanges.month.to;
-          break;
-        case '3month':
-          fromDate = dateRanges.threeMonth.from;
-          toDate = dateRanges.threeMonth.to;
-          break;
-        case '6month':
-          fromDate = dateRanges.sixMonth.from;
-          toDate = dateRanges.sixMonth.to;
-          break;
-        case 'year':
-          fromDate = dateRanges.year.from;
-          toDate = dateRanges.year.to;
-          break;
-        case '5year':
-          fromDate = dateRanges.fiveYear.from;
-          toDate = dateRanges.fiveYear.to;
-          break;
-        case 'custom':
-           if (customDateRange.from && customDateRange.to) {
-                fromDate = formatDate(customDateRange.from);
-                toDate = formatDate(customDateRange.to);
-                break;
-           }
-           // else fall through to default (month) if custom isn't set
-        default:
-          fromDate = dateRanges.month.from;
-          toDate = dateRanges.month.to;
-          break;
-      }
-      return { fromDate, toDate };
-  }
+  return { high, low, change, changePercent, firstRate, lastRate, unit };
+};
 
-  const loadHistoricalData = async (forceFullDaily: boolean = false) => {
-    if (!currencyCode) return;
-    
-    setIsLoadingChart(true);
-    setProgress(null);
-    setChartData([]);
-    
-    try {
-      const { fromDate, toDate } = getDatesForPeriod();
-      
-      let data: ChartDataPoint[] = [];
-      
-      if (forceFullDaily) {
-          // --- TASK 3: API FALLBACK ---
-          toast({ title: "Fetching Full Data", description: "Loading full daily data from NRB API..." });
-          const apiData = await fetchHistoricalRatesFromAPI(fromDate, toDate);
-          
-          if (apiData.status.code === 200 && apiData.payload.length > 0) {
-              data = apiData.payload.map(dayData => {
-                  const rate = dayData.rates.find(r => r.currency.iso3 === currencyCode);
-                  return {
-                      date: dayData.date,
-                      buy: rate ? Number(rate.buy) : 0,
-                      sell: rate ? Number(rate.sell) : 0,
-                  };
-              }).filter(d => d.buy > 0 || d.sell > 0);
-          }
-          setIsFullData(true);
-          setCurrentSampling('daily');
-          // --- END TASK 3 ---
-      } else {
-          // --- TASK 2: SAMPLING ---
-          const sampling = getSamplingForRange(fromDate, toDate);
-          setCurrentSampling(sampling);
-          setIsFullData(sampling === 'daily');
+// --- Custom Chart Components ---
+const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    if (data.buy === null) return null; // Don't show tooltip for gaps
 
-          data = await fetchHistoricalRatesWithCache(
-            currencyCode,
-            fromDate,
-            toDate,
-            (p) => setProgress(p),
-            sampling // Pass sampling rate
-          );
-          // --- END TASK 2 ---
-      }
-      
-      if (data.length > 0) {
-        data.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setChartData(data);
-      } else {
-         toast({ title: "No data available", description: "There is no historical data for this period.", variant: "destructive" });
-      }
-    } catch (error) {
-      console.error('Error loading historical data:', error);
-       toast({ title: "Error", description: "Failed to fetch historical data.", variant: "destructive" });
-    } finally {
-      setIsLoadingChart(false);
-      setTimeout(() => setProgress(null), 3000);
-    }
-  };
-  
-  // Reload data when period or currency changes
-  useEffect(() => {
-    if (selectedPeriod !== 'custom') {
-      loadHistoricalData();
-    }
-  }, [selectedPeriod, currencyCode]);
-
-  const handleCustomDateApply = () => {
-    if (customDateRange.from && customDateRange.to) {
-        loadHistoricalData(); // This will now use the custom dates
-    } else {
-        toast({ title: "Invalid Range", description: "Please select both a start and end date.", variant: "destructive" });
-    }
-  };
-
-  const downloadChartAsSVG = async () => {
-    const downloadElement = document.getElementById('download-container');
-    if (downloadElement) {
-      const canvas = await html2canvas(downloadElement, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-      });
-      const imgData = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = imgData;
-      link.download = `${currencyCode}_historical_chart.png`;
-      link.click();
-    }
-  };
-
-  const downloadChartAsPDF = async () => {
-    const downloadElement = document.getElementById('download-container');
-    if (downloadElement) {
-      const canvas = await html2canvas(downloadElement, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-      });
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('l', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`${currencyCode}_historical_chart.pdf`);
-    }
-  };
-
-  if (!currentCurrency) {
     return (
-      <Layout>
-        <div className="py-12 px-4 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-        </div>
-      </Layout>
+      <div className="bg-background border rounded-lg p-3 shadow-lg">
+        <p className="font-bold text-sm">{format(parseISO(label), 'MMM d, yyyy')}</p>
+        <p className="text-blue-500 text-xs">Buy: {data.buy.toFixed(4)}</p>
+        <p className="text-green-500 text-xs">Sell: {data.sell.toFixed(4)}</p>
+      </div>
     );
   }
+  return null;
+};
+
+const StatCard: React.FC<{ title: string, value: number, prefix?: string, suffix?: string, decimals?: number, colorClass?: string }> = ({
+  title,
+  value,
+  prefix = 'Rs. ',
+  suffix = '',
+  decimals = 2,
+  colorClass = 'text-foreground'
+}) => (
+  <div className="flex flex-col items-center justify-center p-4 bg-muted/50 rounded-lg">
+    <span className="text-xs text-muted-foreground uppercase">{title}</span>
+    <span className={`text-lg font-bold ${colorClass}`}>
+      {value > 0 && prefix === 'Rs. ' && '+'}
+      {prefix}{value.toFixed(decimals)}{suffix}
+    </span>
+  </div>
+);
+
+// --- Main Page Component ---
+const CurrencyHistoricalData: React.FC = () => {
+  const { currencyCode } = useParams<{ currencyCode: string }>();
+  const [range, setRange] = useState<RangeKey>('1Y');
+
+  const currencyInfo = CURRENCY_MAP[currencyCode?.toUpperCase() || ''] || { name: 'Unknown', unit: 1, country: 'Unknown' };
+  const { name, unit, country } = currencyInfo;
+  const upperCaseCurrencyCode = currencyCode?.toUpperCase() || 'UNKNOWN';
+
+  const fromDate = getStartDate(range);
+  const toDate = format(new Date(), 'yyyy-MM-dd');
+
+  const { data: apiData, isLoading, isError, error } = useQuery({
+    queryKey: ['historicalRates', upperCaseCurrencyCode, range],
+    queryFn: () => fetchHistoricalRates(upperCaseCurrencyCode!, fromDate, toDate),
+    enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN',
+    staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  const { chartData, stats } = useMemo(() => {
+    return processChartData(apiData?.payload || [], unit);
+  }, [apiData, unit]);
+
+  const changeColor = stats.change >= 0 ? 'text-green-600' : 'text-red-600';
+  const pageTitle = `Historical Data for ${name} (${upperCaseCurrencyCode})`;
+  const pageUrl = `https://forexnepal.com/historical-data/${upperCaseCurrencyCode}`;
 
   return (
     <Layout>
-      <div className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <Button
-            variant="ghost"
-            onClick={() => navigate('/historical-charts')}
-            className="mb-6"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Currency List
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+        <div className="mb-4">
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/historical-charts" className="flex items-center gap-2">
+              <ArrowLeft className="h-4 w-4" /> Back to All Currencies
+            </Link>
           </Button>
-
-          <div className="text-center mb-8">
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <span className="text-5xl">{getFlagEmoji(currentCurrency.currency.iso3)}</span>
-              <h1 className="text-4xl font-bold text-gray-900">
-                {currentCurrency.currency.name} ({currentCurrency.currency.iso3})
-              </h1>
-            </div>
-            <p className="text-xl text-gray-600">
-              Historical Forex Data for {currentCurrency.currency.unit} {currentCurrency.currency.iso3}
-            </p>
-          </div>
-
-          {/* Share Buttons */}
-          <div className="flex justify-center mb-6">
-            <ShareButtons 
-              url={`/historical-data/${currentCurrency.currency.iso3}`}
-              title={`${currentCurrency.currency.name} Historical Data - Nepal Rastra Bank`}
-              className="flex-nowrap"
-            />
-          </div>
-
-          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold">Exchange Rate Chart</h2>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={downloadChartAsSVG}>
-                  <Download className="h-4 w-4 mr-2" />
-                  PNG
-                </Button>
-                <Button variant="outline" size="sm" onClick={downloadChartAsPDF}>
-                  <Download className="h-4 w-4 mr-2" />
-                  PDF
-                </Button>
+        </div>
+        
+        <Card>
+          <CardHeader>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-2xl md:text-3xl font-bold flex items-center gap-3">
+                  {getFlagEmoji(upperCaseCurrencyCode!)}
+                  {name} ({upperCaseCurrencyCode})
+                </CardTitle>
+                <CardDescription>
+                  {country} | Official Unit: {unit}
+                </CardDescription>
+              </div>
+              {/* Share Buttons Added Here */}
+              <div className="w-full sm:w-auto">
+                <ShareButtons url={pageUrl} title={pageTitle} />
               </div>
             </div>
-
-            <div id="download-container" className="bg-white p-4 md:p-8">
-              <div className="text-center mb-6">
-                <div className="flex items-center justify-center gap-3 mb-3">
-                  <span className="text-4xl">{getFlagEmoji(currentCurrency.currency.iso3)}</span>
-                  <h3 className="text-2xl font-bold text-gray-900">
-                    {currentCurrency.currency.name} ({currentCurrency.currency.iso3})
-                  </h3>
-                </div>
-                <p className="text-base text-gray-700">
-                  Historical data of {currentCurrency.currency.name} against NPR for{' '}
-                  {selectedPeriod === 'custom' && customDateRange.from && customDateRange.to
-                    ? `${format(customDateRange.from, 'PPP')} to ${format(customDateRange.to, 'PPP')}`
-                    : selectedPeriod === 'week'
-                    ? 'last 7 days'
-                    : selectedPeriod === 'month'
-                    ? 'last 30 days'
-                    : selectedPeriod === '3month'
-                    ? 'last 3 months'
-                    : selectedPeriod === '6month'
-                    ? 'last 6 months'
-                    : selectedPeriod === 'year'
-                    ? 'last year'
-                    : 'last 5 years'}
-                </p>
-              </div>
-
-            <Tabs value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as any)} className="mb-6">
-              <div className="overflow-x-auto scrollbar-hide">
-                <TabsList className="grid grid-cols-4 lg:grid-cols-7 w-full min-w-[500px]">
-                  <TabsTrigger value="week">Week</TabsTrigger>
-                  <TabsTrigger value="month">Month</TabsTrigger>
-                  <TabsTrigger value="3month">3 Months</TabsTrigger>
-                  <TabsTrigger value="6month">6 Months</TabsTrigger>
-                  <TabsTrigger value="year">Year</TabsTrigger>
-                  <TabsTrigger value="5year">5 Years</TabsTrigger>
-                  <TabsTrigger value="custom">Custom</TabsTrigger>
+          </CardHeader>
+          <CardContent>
+            {/* Mobile Scroll Fixed: Added w-max */}
+            <Tabs value={range} onValueChange={(value) => setRange(value as RangeKey)}>
+              <div className="overflow-x-auto scrollbar-hide border-b">
+                <TabsList className="w-max"> 
+                  {Object.entries(DATE_RANGES).map(([key, { label }]) => (
+                    <TabsTrigger key={key} value={key}>{label}</TabsTrigger>
+                  ))}
                 </TabsList>
               </div>
+
+              <div className="mt-6">
+                {isLoading && (
+                  <Skeleton className="h-[400px] w-full" />
+                )}
+                
+                {isError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Error Loading Chart</AlertTitle>
+                    <AlertDescription>
+                      Could not fetch historical data: {error.message}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {!isLoading && !isError && chartData.length === 0 && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>No Data Available</AlertTitle>
+                    <AlertDescription>
+                      There is no historical data available for {name} in this date range.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {!isLoading && !isError && chartData.length > 0 && (
+                  <>
+                    <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <StatCard title="Last Rate" value={stats.lastRate} decimals={4} />
+                      <StatCard title="Period High" value={stats.high} decimals={4} colorClass="text-green-600" />
+                      <StatCard title="Period Low" value={stats.low} decimals={4} colorClass="text-red-600" />
+                      <StatCard 
+                        title="Period Change" 
+                        value={stats.changePercent} 
+                        prefix=""
+                        suffix="%" 
+                        decimals={2} 
+                        colorClass={changeColor} 
+                      />
+                    </div>
+                  
+                    <div className="h-[400px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
+                          <XAxis 
+                            dataKey="date" 
+                            tickFormatter={(dateStr) => format(parseISO(dateStr), 'MMM yy')}
+                            minTickGap={60}
+                            dy={5}
+                            stroke="hsl(var(--muted-foreground))"
+                            fontSize={12}
+                          />
+                          <YAxis 
+                            domain={['auto', 'auto']}
+                            tickFormatter={(val) => val.toFixed(2)}
+                            stroke="hsl(var(--muted-foreground))"
+                            fontSize={12}
+                          />
+                          <ChartTooltip content={<CustomTooltip />} />
+                          <Line 
+                            type="monotone" 
+                            dataKey="buy" 
+                            stroke="hsl(var(--primary))" 
+                            strokeWidth={2} 
+                            dot={false}
+                            connectNulls={false} // This creates the gaps
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Showing per-unit normalized "Buy" rate. Gaps in the line indicate weekends or public holidays.
+                    </p>
+                  </>
+                )}
+              </div>
             </Tabs>
-
-            {selectedPeriod === 'custom' && (
-              <div className="flex flex-wrap gap-4 mb-6 items-end">
-                <div>
-                  <label className="block text-sm font-medium mb-2">From Date</label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !customDateRange.from && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customDateRange.from ? format(customDateRange.from, "PPP") : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customDateRange.from}
-                        onSelect={(date) => setCustomDateRange({ ...customDateRange, from: date })}
-                        initialFocus
-                        disabled={{ after: new Date() }}
-                        className="pointer-events-auto"
-                        captionLayout="dropdown-buttons"
-                        fromYear={2000}
-                        toYear={new Date().getFullYear()}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">To Date</label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className={cn("w-[240px] justify-start text-left font-normal", !customDateRange.to && "text-muted-foreground")}>
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {customDateRange.to ? format(customDateRange.to, "PPP") : <span>Pick a date</span>}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={customDateRange.to}
-                        onSelect={(date) => setCustomDateRange({ ...customDateRange, to: date })}
-                        initialFocus
-                        disabled={{ after: new Date() }}
-                        className="pointer-events-auto"
-                        captionLayout="dropdown-buttons"
-                        fromYear={2000}
-                        toYear={new Date().getFullYear()}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <Button onClick={handleCustomDateApply} disabled={!customDateRange.from || !customDateRange.to}>
-                  Apply
-                </Button>
-              </div>
-              )}
-
-              {/* Progress indicator */}
-              {progress && (
-                <Alert className="mb-6">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <AlertDescription>
-                    <div className="font-medium">{progress.message}</div>
-                    {progress.chunkInfo && (
-                      <div className="text-sm text-muted-foreground mt-1">
-                        Chunk {progress.chunkInfo.current} of {progress.chunkInfo.total}: {progress.chunkInfo.fromDate} to {progress.chunkInfo.toDate}
-                      </div>
-                    )}
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              {/* --- TASK 5: Mobile Chart Responsiveness --- */}
-              <div className="w-full overflow-x-auto">
-                <div className="w-full h-[400px] mb-6" style={{ minWidth: 700 }}>
-                  {isLoadingChart ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-4">
-                      <Loader2 className="h-12 w-12 animate-spin text-primary" />
-                      <p className="text-muted-foreground">Loading chart data...</p>
-                    </div>
-                  ) : chartData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart 
-                        data={chartData}
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                        <XAxis 
-                          dataKey="date" 
-                          tickFormatter={(date) => format(new Date(date + 'T00:00:00Z'), 'MMM dd, yy')} // Handle UTC date
-                          tick={{ fontSize: 12 }}
-                        />
-                        <YAxis 
-                          domain={['dataMin - 0.5', 'dataMax + 0.5']}
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(value) => value.toFixed(2)}
-                        />
-                        <Tooltip 
-                          labelFormatter={(date) => format(new Date(date + 'T00:00:00Z'), 'PPP')} // Handle UTC date
-                          formatter={(value: number, name: string) => [
-                            `NPR ${value.toFixed(4)}`,
-                            name === 'buy' ? 'Buying Price' : 'Selling Price'
-                          ]}
-                          contentStyle={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '8px',
-                            padding: '12px'
-                          }}
-                        />
-                        <Legend 
-                          wrapperStyle={{ paddingTop: '20px' }}
-                          iconType="line"
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="buy" 
-                          name="Buying Price" 
-                          stroke="#10b981" 
-                          strokeWidth={2.5}
-                          dot={false}
-                          activeDot={{ r: 6, strokeWidth: 2 }}
-                          animationDuration={800}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="sell" 
-                          name="Selling Price" 
-                          stroke="#ef4444" 
-                          strokeWidth={2.5}
-                          strokeDasharray="5 5"
-                          dot={false}
-                          activeDot={{ r: 6, strokeWidth: 2 }}
-                          animationDuration={800}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <p className="text-gray-500">No data available for selected period</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              {/* --- END TASK 5 --- */}
-
-              {/* --- TASK 3: API FALLBACK BUTTON --- */}
-              {!isFullData && !isLoadingChart && (
-                <div className="mt-4 text-center">
-                   <p className="text-xs text-muted-foreground mb-2">
-                      Showing sampled data ({currentSampling}) for faster loading.
-                   </p>
-                   <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => loadHistoricalData(true)}
-                      disabled={isLoadingChart}
-                   >
-                     <RefreshCw className="h-4 w-4 mr-2" />
-                     Load Full Daily Data (Slower)
-                   </Button>
-                </div>
-              )}
-              {/* --- END TASK 3 --- */}
-
-              <div className="border-t pt-4 text-center space-y-2">
-                <p className="text-sm text-gray-600">
-                  <strong>Source:</strong> Nepal Rastra Bank API & D1 Database Cache
-                </p>
-                <p className="text-sm text-gray-600">
-                  Last updated: {new Date().toLocaleString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long', 
-                    day: 'numeric', 
-                    hour: '2-digit', 
-                    minute: '2-digit', 
-                    second: '2-digit' 
-                  })}
-                </p>
-                <p className="text-sm text-gray-600 italic">
-                  Data extraction and presentation designed by Grisma Bhandari
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </Layout>
   );
