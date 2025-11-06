@@ -1,5 +1,6 @@
 // src/worker.ts
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
+// Make sure Rate and RatesData are imported correctly
 import type { Rate, RatesData } from './types/forex';
 
 // --- SITEMAP IMPORTS ---
@@ -242,6 +243,69 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     }
 }
 
+// --- *** NEW: Handler for /api/rates/date/:date *** ---
+/**
+ * Fetches the wide-row data for a *single date* and transforms it
+ * into the RatesData object format that the frontend expects.
+ */
+async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const date = url.pathname.split('/').pop(); // Get last part of URL, e.g., "2025-11-06"
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!date || !dateRegex.test(date)) {
+        // Return an empty RatesData structure on bad request
+        return new Response(JSON.stringify({ date: date, rates: [] }), { 
+            status: 400, 
+            headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+        });
+    }
+
+    try {
+        const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
+
+        if (!row) {
+            // Return empty RatesData, frontend (d1ForexService) will fallback to NRB API
+            return new Response(JSON.stringify({ date: date, rates: [] }), { 
+                status: 404, 
+                headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+            });
+        }
+
+        // Transform wide row to RatesData
+        const rates: Rate[] = [];
+        CURRENCIES.forEach(code => {
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
+            // Only add if data exists for that currency on that day
+            if (typeof buyRate === 'number' || typeof sellRate === 'number') {
+                rates.push({
+                    // @ts-ignore
+                    currency: { ...CURRENCY_MAP[code], iso3: code },
+                    buy: buyRate ?? 0, // Default to 0 if null
+                    sell: sellRate ?? 0, // Default to 0 if null
+                });
+            }
+        });
+        
+        const ratesData: RatesData = {
+            date: row.date,
+            published_on: row.updated_at || row.date,
+            modified_on: row.updated_at || row.date,
+            rates: rates
+        };
+
+        return new Response(JSON.stringify(ratesData), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleRatesByDate for ${date}:`, error.message, error.cause);
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+
 // --- *** FINAL, CORRECTED `handleHistoricalRates` *** ---
 // This handles: 1. Single currency for charts, 2. Single date fetch, 3. Date range for ArchiveDetail tabs
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
@@ -322,6 +386,7 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                     const sellRate = row[`${code}_sell`];
                     if (typeof buyRate === 'number' && typeof sellRate === 'number') {
                         rates.push({
+                            // @ts-ignore
                             currency: { ...CURRENCY_MAP[code], iso3: code },
                             buy: buyRate, sell: sellRate,
                             date: row.date
@@ -813,6 +878,10 @@ export default {
         }
         if (pathname.startsWith('/api/posts/')) {
             return handlePublicPostBySlug(request, env);
+        }
+        // --- NEW ROUTE HANDLER ---
+        if (pathname.startsWith('/api/rates/date/')) {
+            return handleRatesByDate(request, env);
         }
 
         // ADMIN API - Login/Security
