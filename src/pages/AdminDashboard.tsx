@@ -1,70 +1,57 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React from 'react';
 import Layout from '@/components/Layout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
-import { KeyRound, Newspaper, Settings, CandlestickChart, LogOut } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
-// Import the components for each tab
-import ChangePasswordForm from '@/components/admin/ChangePasswordForm';
-import PostsManagement from '@/components/admin/PostsManagement';
-import SiteSettings from '@/components/admin/SiteSettings';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import ForexDataManagement from '@/components/admin/ForexDataManagement';
+import PostsManagement from '@/components/admin/PostsManagement';
+import ChangePasswordForm from '@/components/admin/ChangePasswordForm';
+import SiteSettings from '@/components/admin/SiteSettings'; // Import the new component
+import { Database, Settings, Lock, FileText } from 'lucide-react';
 
-const AdminDashboard = () => {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const username = localStorage.getItem('username') || 'Admin';
-
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('username');
-    toast({ title: "Logged Out", description: "You have been successfully logged out." });
-    navigate('/admin/login');
-  };
-
+const AdminDashboard: React.FC = () => {
   return (
     <Layout>
-      <div className="py-8 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          <Card className="shadow-lg border-primary/10">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div>
-                <CardTitle className="text-2xl font-bold">Admin Dashboard</CardTitle>
-                <CardDescription>Welcome, {username}! Manage your site content here.</CardDescription>
-              </div>
-              <Button onClick={handleLogout} variant="outline" size="sm">
-                <LogOut className="h-4 w-4 mr-2" />
-                Logout
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="posts" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6">
-                  <TabsTrigger value="posts"><Newspaper className="h-4 w-4 mr-2" />Posts</TabsTrigger>
-                  <TabsTrigger value="forex"><CandlestickChart className="h-4 w-4 mr-2" />Forex Data</TabsTrigger>
-                  <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-2" />Site Settings</TabsTrigger>
-                  <TabsTrigger value="password"><KeyRound className="h-4 w-4 mr-2" />Password</TabsTrigger>
-                </TabsList>
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="text-3xl font-bold">Admin Dashboard</CardTitle>
+            <CardDescription>
+              Manage site content, data, and settings from this panel.
+            </CardDescription>
+          </CardHeader>
+        </Card>
 
-                <TabsContent value="posts">
-                  <PostsManagement />
-                </TabsContent>
-                <TabsContent value="forex">
-                   <ForexDataManagement />
-                </TabsContent>
-                <TabsContent value="settings">
-                  <SiteSettings />
-                </TabsContent>
-                <TabsContent value="password">
-                  <ChangePasswordForm />
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
+        <Tabs defaultValue="settings" className="flex flex-col md:flex-row gap-6">
+          <TabsList className="flex md:flex-col md:w-1/4 h-max">
+            <TabsTrigger value="settings" className="w-full justify-start gap-2">
+              <Settings className="h-4 w-4" /> Site Settings
+            </TabsTrigger>
+            <TabsTrigger value="forex" className="w-full justify-start gap-2">
+              <Database className="h-4 w-4" /> Forex Data
+            </TabsTrigger>
+            <TabsTrigger value="posts" className="w-full justify-start gap-2">
+              <FileText className="h-4 w-4" /> Manage Posts
+            </TabsTrigger>
+            <TabsTrigger value="security" className="w-full justify-start gap-2">
+              <Lock className="h-4 w-4" /> Security
+            </TabsTrigger>
+          </TabsList>
+          
+          <div className="flex-1">
+            <TabsContent value="settings">
+              <SiteSettings />
+            </TabsContent>
+            <TabsContent value="forex">
+              <ForexDataManagement />
+            </TabsContent>
+            <TabsContent value="posts">
+              <PostsManagement />
+            </TabsContent>
+            <TabsContent value="security">
+              <ChangePasswordForm />
+            </TabsContent>
+          </div>
+        </Tabs>
       </div>
     </Layout>
   );
