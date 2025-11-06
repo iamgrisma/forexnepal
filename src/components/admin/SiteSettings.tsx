@@ -19,7 +19,8 @@ type SiteSettings = {
 // API functions for settings
 const fetchSiteSettings = async (): Promise<SiteSettings> => {
   try {
-    const { data } = await apiClient.get('/admin/settings');
+    // FIX: apiClient.get returns the data directly, not nested under { data }
+    const data = await apiClient.get<SiteSettings>('/admin/settings');
     // If no settings exist, return default values
     if (!data) {
       return { ticker_enabled: true, adsense_enabled: false };
@@ -33,7 +34,8 @@ const fetchSiteSettings = async (): Promise<SiteSettings> => {
 };
 
 const updateSiteSettings = async (settings: SiteSettings): Promise<SiteSettings> => {
-  const { data } = await apiClient.post('/admin/settings', settings);
+  // FIX: apiClient.post returns the data directly
+  const data = await apiClient.post<SiteSettings>('/admin/settings', settings);
   return data;
 };
 
