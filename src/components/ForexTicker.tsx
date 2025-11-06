@@ -1,16 +1,13 @@
 import React, { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { format, subDays } from 'date-fns';
 import { Rate } from '../types/forex';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getFlagEmoji } from '@/services/forexService';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useSiteSettings } from './Layout';
 import { cn } from "@/lib/utils";
-
-interface ForexTickerProps {
-  rates: Rate[];
-  previousDayRates: Rate[]; // Now required
-  isLoading: boolean;
-}
+import { fetchRatesForDateWithCache } from '@/services/d1ForexService'; // Fetches from DB/API
 
 /**
  * A small component to render the change indicator (arrow + amount)
@@ -40,7 +37,7 @@ const TrendIndicator: React.FC<{ change: number }> = ({ change }) => {
 
 
 /**
- * The individual item in the ticker, now with the new design.
+ * The individual item in the ticker, with the design you specified.
  */
 const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate, prevRate }) => {
   const unit = rate.currency.unit || 1;
@@ -85,8 +82,34 @@ const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate
   );
 });
 
-const ForexTicker: React.FC<ForexTickerProps> = ({ rates, previousDayRates, isLoading }) => {
+// Component takes no props, it's completely self-contained.
+const ForexTicker: React.FC = () => {
   const { ticker_enabled } = useSiteSettings(); // Get the setting
+
+  // --- COMPONENT-LEVEL DATA FETCHING ---
+  // Always fetch for the current date, regardless of the page
+  const todayString = format(new Date(), 'yyyy-MM-dd');
+  const previousDateString = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+
+  const { data: forexData, isLoading: isLoadingToday } = useQuery({
+    queryKey: ['tickerForexRates', todayString], // Use a unique key
+    queryFn: () => fetchRatesForDateWithCache(todayString, null),
+    refetchOnWindowFocus: false,
+    staleTime: Infinity, // Cache "forever" for the session
+  });
+
+  const { data: prevDayData, isLoading: isLoadingPrev } = useQuery({
+    queryKey: ['tickerPreviousDayRates', todayString], // Use a unique key
+    queryFn: () => fetchRatesForDateWithCache(previousDateString, null),
+    refetchOnWindowFocus: false,
+    staleTime: Infinity, // Cache "forever" for the session
+  });
+
+  const isLoading = isLoadingToday || isLoadingPrev;
+  const rates = forexData?.rates || [];
+  const previousDayRates = prevDayData?.rates || [];
+  // --- END OF DATA FETCHING ---
+
 
   // Create maps for today's and previous day's rates for fast lookups
   const rateMap = useMemo(() => {
@@ -125,7 +148,7 @@ const ForexTicker: React.FC<ForexTickerProps> = ({ rates, previousDayRates, isLo
       
       {/* Show ticker content if not loading, enabled, and rates exist */}
       {!isLoading && ticker_enabled && rates && rates.length > 0 && (
-        // FIX: This single parent div gets the animation
+        // This single parent div gets the animation
         <div className="flex animate-ticker-scroll group-hover:[animation-play-state:paused]">
           {/* Child 1: The first set of rates */}
           <div className="flex-shrink-0 flex items-center">
@@ -145,4 +168,5 @@ const ForexTicker: React.FC<ForexTickerProps> = ({ rates, previousDayRates, isLo
   );
 };
 
-export default ForexTicker;
+// Memoize the component to prevent re-renders when parent page state changes
+export default React.memo(ForexTicker);
