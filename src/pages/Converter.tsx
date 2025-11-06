@@ -179,7 +179,7 @@ const Converter = () => {
           </div>
 
           {/* Ticker - Pass rates array */}
-          <ForexTicker rates={rates} isLoading={showLoadingIndicator} />
+          <ForexTicker/>
 
           {/* Main Card */}
           <Card className="w-full max-w-3xl mx-auto">
