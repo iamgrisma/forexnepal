@@ -737,7 +737,7 @@ const TrendSummary: React.FC<{ data: any | null; isLoading: boolean; }> = ({ dat
                 </CardContent>
               </Card>
             )
-        })
+        })}
       </div>
     </section>
   );
@@ -978,4 +978,3 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
 };
 
 export default ArchiveDetail;
-
