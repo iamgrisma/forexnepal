@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { fetchForexRates } from '../services/forexService';
-import { Rate } from '../types/forex';
+import { fetchForexRates, formatDate } from '../services/forexService';
+import { Rate, RatesData } from '../types/forex';
 import { Input } from '@/components/ui/input';
 import { Search, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,19 +10,49 @@ import Layout from '@/components/Layout';
 import CurrencyCard from '@/components/CurrencyCard';
 import ForexTicker from '@/components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
+// FIX: Import d1 service and date-fns
+import { fetchRatesForDateWithCache } from '../services/d1ForexService';
+import { subDays } from 'date-fns';
 
 const HistoricalCharts = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
   const navigate = useNavigate();
 
+  // FIX: Get today and yesterday's date strings
+  const todayString = formatDate(new Date());
+  const previousDateString = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+
   const { data: forexData, isLoading } = useQuery({
-    queryKey: ['forexRates'],
-    queryFn: fetchForexRates,
+    // FIX: Key by today's date string for consistency
+    queryKey: ['forexRates', todayString],
+    queryFn: () => fetchRatesForDateWithCache(todayString, null), // Use caching service
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60 * 15,
   });
 
-  const rates: Rate[] = forexData?.data?.payload?.[0]?.rates || [];
+  // FIX: Add query for previous day's rates
+  const {
+    data: prevDayData,
+    isLoading: isLoadingPrevDay,
+  } = useQuery({
+    queryKey: ['previousDayRates', todayString],
+    queryFn: () => fetchRatesForDateWithCache(previousDateString, null),
+    refetchOnWindowFocus: false,
+    staleTime: 1000 * 60 * 60,
+  });
+
+  // FIX: Set previous day rates from the new query
+  useEffect(() => {
+    if (prevDayData?.rates) {
+      setPreviousDayRates(prevDayData.rates);
+    } else {
+      setPreviousDayRates([]);
+    }
+  }, [prevDayData]);
+
+
+  const rates: Rate[] = forexData?.rates || [];
   
   const filteredRates = rates.filter(rate => 
     rate.currency.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -32,6 +62,9 @@ const HistoricalCharts = () => {
   const handleCurrencyClick = (rate: Rate) => {
     navigate(`/historical-data/${rate.currency.iso3}`);
   };
+
+  // FIX: Combine loading states
+  const isTickerLoading = isLoading || isLoadingPrevDay;
 
   return (
     <Layout>
@@ -44,11 +77,15 @@ const HistoricalCharts = () => {
             </p>
           </div>
 
-          {/* Ticker component */}
-          <ForexTicker rates={rates} isLoading={isLoading} />
+          {/* Ticker component - FIX: Pass previousDayRates and combined loading state */}
+          <ForexTicker
+            rates={rates}
+            previousDayRates={previousDayRates}
+            isLoading={isTickerLoading}
+          />
 
           {/* Share Buttons */}
-          <div className="flex justify-center mb-6">
+          <div className="flex justify-center my-6"> {/* Added my-6 for spacing */}
             <ShareButtons 
               url="/historical-charts"
               title="Historical Forex Data - Nepal Rastra Bank"
@@ -79,7 +116,12 @@ const HistoricalCharts = () => {
             ) : filteredRates.length > 0 ? (
               filteredRates.map((rate, index) => (
                 <div key={rate.currency.iso3} onClick={() => handleCurrencyClick(rate)} className="cursor-pointer">
-                  <CurrencyCard rate={rate} index={index} />
+                  {/* FIX: Pass previousDayRates to CurrencyCard as well */}
+                  <CurrencyCard
+                    rate={rate}
+                    index={index}
+                    previousDayRates={previousDayRates}
+                  />
                 </div>
               ))
             ) : (
