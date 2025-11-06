@@ -978,3 +978,4 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
 };
 
 export default ArchiveDetail;
+
