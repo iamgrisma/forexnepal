@@ -471,6 +471,58 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
     }
 }
 
+// --- NEW FUNCTION: handleCheckUser ---
+async function handleCheckUser(request: Request, env: Env): Promise<Response> {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    try {
+        const { username, ipAddress, sessionId } = await request.json();
+        if (!username || !ipAddress || !sessionId) {
+             return new Response(JSON.stringify({ success: false, error: 'Missing credentials/identifiers' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Rate limit checks for 'check' type
+        const { results: attemptsResults } = await env.FOREX_DB.prepare(
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'check' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+        ).bind(ipAddress, sessionId).all<{ count: number }>();
+        const failedAttempts = attemptsResults[0]?.count || 0;
+
+        // More lenient limit for username checks (e.g., 10)
+        if (failedAttempts >= 10) {
+            return new Response(JSON.stringify({ success: false, error: 'Bro, get out of my system!' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        // Randomly redirect 1 in 20 times for security
+        if (Math.random() < 0.05) {
+            return new Response(JSON.stringify({ success: false, error: 'Redirect' }), { status: 418, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        const user = await env.FOREX_DB.prepare(
+            `SELECT username FROM users WHERE username = ?`
+        ).bind(username).first<{ username: string }>();
+
+        const userExists = !!user;
+
+        // Log this 'check' attempt
+        await env.FOREX_DB.prepare(
+            `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'check')`
+        ).bind(ipAddress, sessionId, username, userExists ? 1 : 0).run();
+
+        if (!userExists) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // User exists, allow proceeding to password step
+        return new Response(JSON.stringify({ success: true, message: "User verified" }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Check user error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error during user check' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+// --- END NEW FUNCTION ---
+
 
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
@@ -482,14 +534,17 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
              return new Response(JSON.stringify({ success: false, error: 'Missing credentials/identifiers' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
+        // --- MODIFIED: Check for 'login' type attempts ---
         const { results: attemptsResults } = await env.FOREX_DB.prepare(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE ip_address = ? AND session_id = ? AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).all<{ count: number }>();
         const failedAttempts = attemptsResults[0]?.count || 0;
 
+        // Stricter limit for password attempts
         if (failedAttempts >= 7) {
-            return new Response(JSON.stringify({ success: false, error: 'Too many failed attempts.' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            return new Response(JSON.stringify({ success: false, error: 'Too many failed password attempts.' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
+        // --- END MODIFICATION ---
 
         const user = await env.FOREX_DB.prepare(
             `SELECT username, plaintext_password, password_hash FROM users WHERE username = ?`
@@ -515,9 +570,11 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
             }
         }
 
+        // --- MODIFIED: Insert with type 'login' ---
         await env.FOREX_DB.prepare(
-            `INSERT INTO login_attempts (ip_address, session_id, username, success) VALUES (?, ?, ?, ?)`
+            `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'login')`
         ).bind(ipAddress, sessionId, username, isValid ? 1 : 0).run();
+        // --- END MODIFICATION ---
 
         if (!isValid) {
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -545,11 +602,12 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ error: 'Missing IP or session' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
+        // --- MODIFIED: Check for 'login' type attempts ---
         const result = await env.FOREX_DB.prepare(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE ip_address = ? AND session_id = ? AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).first<{ count: number }>();
         const attempts = result?.count || 0;
-        return new Response(JSON.stringify({ attempts: attempts, remaining: Math.max(0, 7 - attempts) }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        return new Response(JSON.stringify({ attempts: attempts, remaining: Math.max(0, 7 - attempts) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error("Check attempts error:", error.message, error.cause);
         return new Response(JSON.stringify({ error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -601,7 +659,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_data, created_at) VALUES (?, datetime('now'))`).bind(username).run();
 
 
-        return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error('Password change error:', error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -885,6 +943,10 @@ export default {
         }
 
         // ADMIN API - Login/Security
+        // --- ADDED NEW ROUTE ---
+        if (pathname === '/api/admin/check-user') {
+            return handleCheckUser(request, env);
+        }
         if (pathname === '/api/admin/login') {
             return handleAdminLogin(request, env);
         }
