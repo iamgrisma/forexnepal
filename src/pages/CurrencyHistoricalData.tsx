@@ -5,6 +5,7 @@ import { fetchForexRates, getDateRanges, getFlagEmoji, formatDate, fetchHistoric
 import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService';
 import { Rate, ChartDataPoint } from '../types/forex';
 import Layout from '@/components/Layout';
+import ShareButtons from '@/components/ShareButtons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar } from '@/components/ui/calendar';
@@ -248,6 +249,15 @@ const CurrencyHistoricalData = () => {
             <p className="text-xl text-gray-600">
               Historical Forex Data for {currentCurrency.currency.unit} {currentCurrency.currency.iso3}
             </p>
+          </div>
+
+          {/* Share Buttons */}
+          <div className="flex justify-center mb-6">
+            <ShareButtons 
+              url={`/historical-data/${currentCurrency.currency.iso3}`}
+              title={`${currentCurrency.currency.name} Historical Data - Nepal Rastra Bank`}
+              className="flex-nowrap"
+            />
           </div>
 
           <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 mb-8">

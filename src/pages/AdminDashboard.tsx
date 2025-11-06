@@ -4,7 +4,7 @@ import Layout from '@/components/Layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { KeyRound, Newspaper, Settings, CandlestickChart, LogOut, DatabaseZap } from 'lucide-react';
+import { KeyRound, Newspaper, Settings, CandlestickChart, LogOut } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Import the components for each tab
@@ -12,7 +12,6 @@ import ChangePasswordForm from '@/components/admin/ChangePasswordForm';
 import PostsManagement from '@/components/admin/PostsManagement';
 import SiteSettings from '@/components/admin/SiteSettings';
 import ForexDataManagement from '@/components/admin/ForexDataManagement';
-import BackfillManager from '@/components/admin/BackfillManager'; // Import the new component
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -43,10 +42,9 @@ const AdminDashboard = () => {
             </CardHeader>
             <CardContent>
               <Tabs defaultValue="posts" className="w-full">
-                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-5 mb-6">
+                <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 mb-6">
                   <TabsTrigger value="posts"><Newspaper className="h-4 w-4 mr-2" />Posts</TabsTrigger>
                   <TabsTrigger value="forex"><CandlestickChart className="h-4 w-4 mr-2" />Forex Data</TabsTrigger>
-                  <TabsTrigger value="backfill"><DatabaseZap className="h-4 w-4 mr-2" />Backfill</TabsTrigger>
                   <TabsTrigger value="settings"><Settings className="h-4 w-4 mr-2" />Site Settings</TabsTrigger>
                   <TabsTrigger value="password"><KeyRound className="h-4 w-4 mr-2" />Password</TabsTrigger>
                 </TabsList>
@@ -56,9 +54,6 @@ const AdminDashboard = () => {
                 </TabsContent>
                 <TabsContent value="forex">
                    <ForexDataManagement />
-                </TabsContent>
-                <TabsContent value="backfill">
-                   <BackfillManager />
                 </TabsContent>
                 <TabsContent value="settings">
                   <SiteSettings />

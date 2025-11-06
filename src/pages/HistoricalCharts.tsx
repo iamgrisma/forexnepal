@@ -47,6 +47,15 @@ const HistoricalCharts = () => {
           {/* Ticker component */}
           <ForexTicker rates={rates} isLoading={isLoading} />
 
+          {/* Share Buttons */}
+          <div className="flex justify-center mb-6">
+            <ShareButtons 
+              url="/historical-charts"
+              title="Historical Forex Data - Nepal Rastra Bank"
+              className="flex-nowrap"
+            />
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="relative flex-1">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -58,13 +67,6 @@ const HistoricalCharts = () => {
                 className="pl-10 pr-4 py-2 bg-white/90 backdrop-blur-sm border-gray-200 focus:ring-blue-500 rounded-lg"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-2 justify-end">
-              <ShareButtons 
-                url="/historical-charts"
-                title="Historical Forex Data - Nepal Rastra Bank"
-                className="flex-nowrap"
               />
             </div>
           </div>

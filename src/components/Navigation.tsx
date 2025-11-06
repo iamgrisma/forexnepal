@@ -2,10 +2,11 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 // Import icons
-import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText } from 'lucide-react';
+import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard } from 'lucide-react';
 
 const Navigation = () => {
   const location = useLocation();
+  const isLoggedIn = localStorage.getItem('authToken');
 
   return (
     <>
@@ -53,6 +54,12 @@ const Navigation = () => {
                   <Phone className="h-4 w-4 mr-2" />
                   Contact
                 </NavLink>
+                {isLoggedIn && (
+                  <NavLink to="/admin/dashboard" active={location.pathname === '/admin/dashboard'}>
+                    <LayoutDashboard className="h-4 w-4 mr-2" />
+                    Dashboard
+                  </NavLink>
+                )}
                 <NavLink to="/disclosure" active={location.pathname === '/disclosure'}>
                   <FileText className="h-4 w-4 mr-2" />
                   Disclosure

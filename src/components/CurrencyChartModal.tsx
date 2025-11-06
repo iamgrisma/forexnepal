@@ -154,20 +154,12 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
   const handleTabChange = (value: string) => {
     setSelectedTab(value);
     if (value !== 'custom') {
-      // Trigger load based on new tab
-      // We need to set state and then call load, but since state is async,
-      // we'll pass the *new* value directly to a modified load function (or just call it in useEffect)
-      // For simplicity, we'll just let the effect handle it.
-      // But we need to call it manually for the first time.
-      
       const ranges = getDateRanges();
-      const { fromDate, toDate } = ranges[value as keyof typeof ranges];
+      const { from: fromDate, to: toDate } = ranges[value as keyof typeof ranges];
       const sampling = getSamplingForRange(fromDate, toDate);
       setCurrentSampling(sampling);
       setIsFullData(sampling === 'daily');
 
-      // Call loadHistoricalData directly instead of relying on useEffect for tab changes
-      // This is more responsive.
       loadHistoricalData();
     }
   };

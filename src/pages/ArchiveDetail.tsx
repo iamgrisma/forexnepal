@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowLeft, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 // Import services
-import { fetchForexRatesByDate, formatDateLong, getFlagEmoji } from '../services/forexService'; // Keep formatDateLong
-import { fetchRatesForDateWithCache, fetchHistoricalRatesWithCache, fetchHistoricalStats } from '../services/d1ForexService'; // Import all D1 services
+import { fetchForexRatesByDate, formatDateLong, getFlagEmoji } from '../services/forexService';
+import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // Import types
 import { Rate, RatesData, HistoricalRates, ChartDataPoint } from '../types/forex';
 import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore, differenceInDays } from 'date-fns';
@@ -64,25 +64,6 @@ export type HistoricalChange = {
   newRate: number;
 };
 
-// Type for the new stats endpoint response
-export type StatInfo = {
-    date: string;
-    rate: number;
-} | null;
-export type CurrencyStats = {
-    highBuy: StatInfo;
-    lowBuy: StatInfo;
-    highSell: StatInfo;
-    lowSell: StatInfo;
-};
-export type AllCurrencyStats = {
-    [iso3: string]: CurrencyStats;
-};
-export type StatsData = {
-  data: AllCurrencyStats | null;
-  isLoading: boolean;
-};
-
 export type HistoricalAnalysisData = {
   data: HistoricalChange[];
   isLoading: boolean;
@@ -101,13 +82,11 @@ export type ArticleTemplateProps = {
     quarterly: HistoricalAnalysisData;
     yearly: HistoricalAnalysisData;
     fiveYear: HistoricalAnalysisData;
-    longTerm: HistoricalAnalysisData; // 20yr+
+    longTerm: HistoricalAnalysisData;
   };
-  highLowData: StatsData; // Use new StatsData type
-  allTimeHighLowData: StatsData; // Use new StatsData type
   formattedDate: string;
   shortDate: string;
-  rates: Rate[]; // Pass raw rates for ticker
+  rates: Rate[];
 };
 
 // This function now only fetches the START and END dates for the range,
@@ -240,31 +219,8 @@ const ArchiveDetail = () => {
 
   const { data: longTermData, isLoading: longTermLoading } = useQuery({
     queryKey: ['historical-long-term', targetDateStr],
-    queryFn: () => fetchHistoricalRatesFromWorker('2000-01-01', shortDate, 'monthly'), // SAMPLING
+    queryFn: () => fetchHistoricalRatesFromWorker('2000-01-01', shortDate, 'monthly'),
     enabled: isValidDate, staleTime: Infinity,
-  });
-
-  // --- NEW OPTIMIZED STATS QUERIES (TASK 1 FIX) ---
-  const { data: yearStatsData, isLoading: yearStatsLoading } = useQuery({
-      queryKey: ['stats-52-week', targetDateStr],
-      queryFn: () => fetchHistoricalStats(
-          MAJOR_CURRENCY_CODES, 
-          format(subDays(targetDate, 365), 'yyyy-MM-dd'), 
-          shortDate
-      ),
-      enabled: isValidDate,
-      staleTime: 1000 * 60 * 60 * 24, // Cache stats for 24 hours
-  });
-
-  const { data: allTimeStatsData, isLoading: allTimeStatsLoading } = useQuery({
-      queryKey: ['stats-all-time', targetDateStr],
-      queryFn: () => fetchHistoricalStats(
-          MAJOR_CURRENCY_CODES, 
-          '2000-01-01', 
-          shortDate
-      ),
-      enabled: isValidDate,
-      staleTime: 1000 * 60 * 60 * 24, // Cache stats for 24 hours
   });
   
   // --- Data Analysis (Memoized) ---
@@ -354,7 +310,7 @@ const ArchiveDetail = () => {
       .sort((a, b) => b.percent - a.percent); 
   };
   
-  // --- Memoized Historical & High/Low Data ---
+  // --- Memoized Historical Data ---
   const historicalAnalysis = useMemo(() => {
     const defaultData = { data: [], isLoading: true };
     if (!analysisData) return {
@@ -374,21 +330,6 @@ const ArchiveDetail = () => {
     weekData, monthData, quarterlyData, yearData, fiveYearData, longTermData,
     weekLoading, monthLoading, quarterlyLoading, yearLoading, fiveYearLoading, longTermLoading
   ]);
-
-  // --- UPDATED to use new stats data ---
-  const highLowData: StatsData = useMemo(() => {
-    return {
-      data: yearStatsData || null,
-      isLoading: yearStatsLoading
-    };
-  }, [yearStatsData, yearStatsLoading]);
-
-  const allTimeHighLowData: StatsData = useMemo(() => {
-     return {
-      data: allTimeStatsData || null,
-      isLoading: allTimeStatsLoading
-    };
-  }, [allTimeStatsData, allTimeStatsLoading]);
 
   // --- Render Logic ---
   const isLoading = currentDayLoading; // Only block on the main content
@@ -481,8 +422,6 @@ const ArchiveDetail = () => {
                 <GeneratedArchiveArticle 
                   analysisData={analysisData}
                   historicalAnalysis={historicalAnalysis}
-                  highLowData={highLowData}
-                  allTimeHighLowData={allTimeHighLowData}
                   formattedDate={formattedDate}
                   shortDate={shortDate}
                   rates={currentDayData.rates}
@@ -717,18 +656,8 @@ const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: bool
 };
 
 /**
- * Renders the 52-Week High/Low Grid with clickable dates
+ * Trend Summary Helper
  */
-const YearlyHighLow: React.FC<{ data: AllCurrencyStats | null; isLoading: boolean; }> = ({ data, isLoading }) => {
-  return (
-    <section>
-      <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold">52-Week High & Low Analysis</h2>
-      <p>
-        The 52-week trading range provides critical context for a currency's annual volatility. A currency trading near its 52-week high may be seen as strong but potentially overbought, while one near its low could signal weakness or a potential buying opportunity. Below is the high-low range for major currencies over the past year, based on per-unit buy and sell rates. This is essential for long-term financial planning and understanding market cycles.
-      </p>
-      <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {isLoading && Array(9).fill(0).map((_, i) => <div key={i} className="h-32 w-full bg-gray-200 rounded-lg animate-pulse" />)}
-        {data && MAJOR_CURRENCY_CODES.filter(code => data[code] && data[code].lowBuy).map((iso3) => {
             const item = data[iso3];
             const name = CURRENCY_MAP[iso3]?.name || iso3;
             return (
@@ -978,8 +907,6 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   const {
     analysisData,
     historicalAnalysis,
-    highLowData,
-    allTimeHighLowData,
     formattedDate,
     shortDate,
   } = props;
@@ -1019,10 +946,6 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
       <CurrencyRankings topHigh={top10High} topLow={top12Low} />
 
       <HistoricalAnalysisTabs analysis={historicalAnalysis} />
-
-      <YearlyHighLow data={highLowData.data} isLoading={highLowData.isLoading} />
-
-      <AllTimeHighLow data={allTimeHighLowData.data} isLoading={allTimeHighLowData.isLoading} />
 
       <section>
         <h2>Market Trend Summary</h2>

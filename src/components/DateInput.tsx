@@ -9,9 +9,10 @@ interface DateInputProps {
   placeholder?: string;
   min?: string;
   max?: string;
+  disabled?: boolean;
 }
 
-const DateInput = ({ id, value, onChange, className, placeholder = "yyyy-mm-dd", min, max }: DateInputProps) => {
+const DateInput = ({ id, value, onChange, className, placeholder = "yyyy-mm-dd", min, max, disabled }: DateInputProps) => {
   const [displayValue, setDisplayValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -69,6 +70,7 @@ const DateInput = ({ id, value, onChange, className, placeholder = "yyyy-mm-dd",
       className={className}
       placeholder={placeholder}
       maxLength={10}
+      disabled={disabled}
     />
   );
 };
