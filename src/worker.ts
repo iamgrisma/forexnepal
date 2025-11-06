@@ -27,7 +27,7 @@ interface D1PreparedStatement {
 interface D1Result<T = unknown> {
     results: T[];
     success: boolean;
-    meta?: any; 
+    meta?: any;
 }
 
 interface KVNamespace {
@@ -79,123 +79,13 @@ const CURRENCIES = Object.keys(CURRENCY_MAP);
 
 
 // --- JWT Secret ---
-const JWT_SECRET = 'forexnepal-jwt-secret-key-2025'; 
-
-// --- Default Export (Router) ---
-export default {
-    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-        const url = new URL(request.url);
-
-        if (request.method === 'OPTIONS') {
-            return handleOptions(request);
-        }
-
-        const pathname = url.pathname;
-
-        // --- API ROUTING ---
-        if (pathname === '/api/check-data') {
-            return handleCheckData(request, env);
-        }
-        if (pathname === '/api/fetch-and-store') {
-            return handleFetchAndStore(request, env);
-        }
-        if (pathname === '/api/historical-rates') {
-            return handleHistoricalRates(request, env); 
-        }
-        
-        // --- ADMIN & POSTS (Unchanged) ---
-        if (pathname === '/api/admin/login') {
-            return handleAdminLogin(request, env);
-        }
-        if (pathname === '/api/admin/check-attempts') {
-            return handleCheckAttempts(request, env);
-        }
-        if (pathname === '/api/admin/change-password') {
-            return handleChangePassword(request, env);
-        }
-        if (pathname === '/api/admin/posts') {
-            return handlePosts(request, env);
-        }
-        if (pathname.startsWith('/api/admin/posts/')) {
-            return handlePostById(request, env);
-        }
-        if (pathname === '/api/admin/forex-data') {
-            return handleForexData(request, env);
-        }
-        if (pathname === '/api/admin/settings') {
-            return handleSiteSettings(request, env);
-        }
-        if (pathname === '/api/posts') {
-            return handlePublicPosts(request, env);
-        }
-        if (pathname.startsWith('/api/posts/')) {
-            return handlePublicPostBySlug(request, env);
-        }
-
-        // --- SITEMAP ROUTING ---
-        const sitemapHeaders = {
-          "content-type": "application/xml; charset=utf-8",
-          "cache-control": "public, max-age=3600",
-        };
-        if (pathname === '/sitemap.xml') {
-          const archiveSitemapCount = getArchiveSitemapCount();
-          const xml = generateSitemapIndex(archiveSitemapCount);
-          return new Response(xml, { headers: sitemapHeaders });
-        }
-        if (pathname === '/page-sitemap.xml') {
-          const xml = generatePageSitemap();
-          return new Response(xml, { headers: sitemapHeaders });
-        }
-        if (pathname === '/post-sitemap.xml') {
-          const xml = await generatePostSitemap(env.FOREX_DB);
-          return new Response(xml, { headers: sitemapHeaders });
-        }
-        const archiveMatch = pathname.match(/\/archive-sitemap(\d+)\.xml$/);
-        if (archiveMatch && archiveMatch[1]) {
-          const id = parseInt(archiveMatch[1]);
-          const xml = generateArchiveSitemap(id);
-          if (!xml) {
-            return new Response('Sitemap not found', { status: 404 });
-          }
-          return new Response(xml, { headers: sitemapHeaders });
-        }
-        
-        // --- Static Asset Serving (SPA Fallback) ---
-        try {
-            return await getAssetFromKV(
-                { request, waitUntil: (promise: Promise<any>) => ctx.waitUntil(promise) },
-                { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
-            );
-        } catch (e: any) {
-            if (e instanceof Error && e.message.includes('404') || e.status === 404) { 
-                try {
-                    const indexRequest = new Request(new URL('/', request.url).toString(), request);
-                    return await getAssetFromKV(
-                        { request: indexRequest, waitUntil: (p) => ctx.waitUntil(p) },
-                        { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
-                    );
-                } catch (e2) {
-                     return new Response('Not Found', { status: 404 });
-                }
-            } else {
-                 // *** THIS IS THE LINE I FIXED (added colon) ***
-                 return new Response('Internal Server Error', { status: 500 });
-            }
-        }
-    },
-
-    // --- Scheduled Task ---
-    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-        console.log(`[cron ${event.cron}] Triggered...`);
-        ctx.waitUntil(updateForexData(env));
-    }
-};
+const JWT_SECRET = 'forexnepal-jwt-secret-key-2025';
 
 // --- CORS ---
 const corsHeaders = {
-    'Access-Control-Allow-Origin': '*', 
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization', 
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 function handleOptions(request: Request) {
     return new Response(null, { headers: corsHeaders });
@@ -209,8 +99,32 @@ function formatDate(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
+// --- Type for Settings (NEW) ---
+interface SiteSettings {
+    ticker_enabled: boolean;
+    adsense_enabled: boolean;
+}
+
+// Helper to safely get settings (NEW)
+async function getAllSettings(db: D1Database): Promise<SiteSettings> {
+    const { results } = await db.prepare("SELECT key, value FROM site_settings").all();
+    const settings: any = {
+        ticker_enabled: true, // default: ON
+        adsense_enabled: false // default: OFF
+    };
+    if (results) {
+        results.forEach((row: any) => {
+            if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
+                settings[row.key] = row.value === 'true';
+            }
+            // Ignore other settings keys for this specific return type
+        });
+    }
+    return settings;
+}
+
 // --- *** DATA INGESTION LOGIC *** ---
-// Only populates forex_rates table (wide format)
+// Only populates forex_rates table (wide format) - CLEANED UP
 async function processAndStoreApiData(data: any, env: Env): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
@@ -229,7 +143,7 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
         const widePlaceholders: string[] = ['?', "datetime('now')"];
         const wideValues: (string | number | null)[] = [dateStr];
         let hasRatesForDate = false;
-        
+
         for (const rate of dayData.rates) {
             const currencyCode = rate?.currency?.iso3;
             if (currencyCode && CURRENCIES.includes(currencyCode)) {
@@ -241,7 +155,7 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
                 wideColumns.push(`"${currencyCode}_buy"`, `"${currencyCode}_sell"`);
                 widePlaceholders.push('?', '?');
                 wideValues.push(buyRate, sellRate);
-                
+
                 if (buyRate !== null || sellRate !== null) {
                     hasRatesForDate = true;
                 }
@@ -259,7 +173,7 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
         await env.FOREX_DB.batch(statements);
         console.log(`D1 Batch finished. ${processedDates} dates processed.`);
     }
-    
+
     return processedDates;
 }
 
@@ -269,18 +183,19 @@ async function updateForexData(env: Env): Promise<void> {
     try {
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 7); 
+        // Fetch last 7 days to catch up any missed data or updates
+        startDate.setDate(endDate.getDate() - 7);
         const fromDateStr = formatDate(startDate);
         const toDateStr = formatDate(endDate);
-        
+
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDateStr}&to=${toDateStr}`;
         const response = await fetch(apiUrl);
 
         if (!response.ok) throw new Error(`NRB API error: ${response.status}`);
-        
+
         const data = await response.json();
         await processAndStoreApiData(data, env);
-        
+
     } catch (error: any) {
         console.error('FATAL Error during scheduled update:', error.message, error.cause);
     }
@@ -289,52 +204,21 @@ async function updateForexData(env: Env): Promise<void> {
 
 // --- API Handlers (Updated) ---
 
-async function handleCheckData(request: Request, env: Env): Promise<Response> {
-    // This queries the 'long' table, which is fast with the (code, date) index.
-    const url = new URL(request.url);
-    const fromDate = url.searchParams.get('from');
-    const toDate = url.searchParams.get('to');
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-
-    if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
-        return new Response(JSON.stringify({ error: 'Invalid date parameters' }), { status: 400, headers: corsHeaders });
-    }
-
-    try {
-        // We only need to check for one currency to see if data exists
-        const { results } = await env.FOREX_DB.prepare(
-            `SELECT DISTINCT date FROM forex_rates_historical WHERE currency_code = 'USD' AND date >= ? AND date <= ? ORDER BY date ASC`
-        ).bind(fromDate, toDate).all<{ date: string }>();
-
-        const existingDates = new Set(results.map(r => r.date));
-        const start = new Date(fromDate + 'T00:00:00Z');
-        const end = new Date(toDate + 'T00:00:00Z');
-        const expectedDates: string[] = [];
-        let expectedCount = 0;
-
-        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-            expectedDates.push(formatDate(d));
-            expectedCount++;
-        }
-
-        const missingDates = expectedDates.filter(date => !existingDates.has(date));
-
-        return new Response(JSON.stringify({
-            exists: missingDates.length === 0 && expectedCount > 0,
-            missingDates,
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    } catch (error: any) {
-        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
-    }
-}
+// --- Removed handleCheckData as it was complex and long-table dependent. Using handleHistoricalRates for single date check is easier. ---
 
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
+    // This function is now the manual run equivalent of the cron job (for admin use)
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
     if (!fromDate || !toDate) {
-         return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
+           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
     }
 
     try {
@@ -359,9 +243,10 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
 }
 
 // --- *** FINAL, CORRECTED `handleHistoricalRates` *** ---
+// This handles: 1. Single currency for charts, 2. Single date fetch, 3. Date range for ArchiveDetail tabs
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const currencyCode = url.searchParams.get('currency'); 
+    const currencyCode = url.searchParams.get('currency');
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
     const sampling = url.searchParams.get('sampling') || 'daily';
@@ -373,25 +258,25 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
     try {
         if (currencyCode) {
-            // Query for a SINGLE CURRENCY (for Charts)
+            // 1. Query for a SINGLE CURRENCY (for Charts) - API ONLY
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
                 return new Response(JSON.stringify({ success: false, error: 'Invalid currency' }), { status: 400, headers: corsHeaders });
             }
-
+            
+            // Build the query to fetch the specific column
             let samplingClause = "";
             const bindings = [fromDate, toDate];
 
+            // Sampling logic is simplified to just skip rows based on date math for efficiency
             if (sampling !== 'daily') {
                 switch (sampling) {
-                    case 'weekly': samplingClause = "AND (STRFTIME('%w', date) = '0')"; break;
-                    case '15day': 
-                        samplingClause = "AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0)";
-                        bindings.push(fromDate);
-                        break;
-                    case 'monthly': samplingClause = "AND (STRFTIME('%d', date) = '01')"; break;
+                    case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break; // Assumes Thursday as NRB's typical update day (or just some day)
+                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
+                    case 'yearly': samplingClause = "AND (CAST(STRFTIME('%j', date) AS INT) IN (1, 180, 365))"; break;
                 }
-                samplingClause += " OR date = ? OR date = ?";
+                // Always include boundary dates, which is simpler than the complex sampling before
+                samplingClause += ` OR date = ? OR date = ?`;
                 bindings.push(fromDate, toDate);
             }
 
@@ -403,74 +288,32 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 ORDER BY date ASC
             `;
             
-            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all();
+            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
             
-            // Normalize per-unit rates
+            // Normalize per-unit rates (Fixes the issue with JPY/KRW values being large)
             const currencyInfo = CURRENCY_MAP[upperCaseCurrencyCode];
             const unit = currencyInfo?.unit || 1;
             
             const chartData = results.map((item: any) => ({
                 date: item.date,
-                buy: item.buy ? item.buy / unit : 0, 
-                sell: item.sell ? item.sell / unit : 0
-            })).filter(d => d.buy > 0 || d.sell > 0);
+                // Ensure null rates are handled (e.g., if a date exists but that currency was not reported)
+                buy: item.buy && typeof item.buy === 'number' ? item.buy / unit : null,
+                sell: item.sell && typeof item.sell === 'number' ? item.sell / unit : null
+            })).filter(d => d.buy !== null || d.sell !== null);
 
             return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-        } else if (fromDate === toDate) {
-            // Query for a SINGLE DAY
-            const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ? LIMIT 1`).bind(fromDate).first<any>();
-            let ratesDataPayload: RatesData | null = null;
 
-            if (result) {
-                const rates: Rate[] = [];
-                CURRENCIES.forEach(code => {
-                    const buyRate = result[`${code}_buy`];
-                    const sellRate = result[`${code}_sell`];
-                    if (typeof buyRate === 'number' && typeof sellRate === 'number') {
-                        rates.push({
-                            currency: { ...CURRENCY_MAP[code], iso3: code },
-                            buy: buyRate, sell: sellRate,
-                        });
-                    }
-                });
-                if (rates.length > 0) {
-                    ratesDataPayload = {
-                        date: result.date,
-                        published_on: result.updated_at || result.date,
-                        modified_on: result.updated_at || result.date,
-                        rates: rates,
-                    };
-                }
-            }
-            return new Response(JSON.stringify(ratesDataPayload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        
         } else {
-             // Query for a date range, ALL currencies
-             let samplingClause = "";
-             const bindings = [fromDate, toDate];
-             if (sampling !== 'daily') {
-                 switch (sampling) {
-                     case 'weekly': samplingClause = "AND (STRFTIME('%w', date) = '0')"; break;
-                     case '15day': 
-                         samplingClause = "AND ((JULIANDAY(date) - JULIANDAY(?)) % 15 = 0)";
-                         bindings.push(fromDate);
-                         break;
-                     case 'monthly': samplingClause = "AND (STRFTIME('%d', date) = '01')"; break;
-                 }
-                 samplingClause += " OR date = ? OR date = ?";
-                 bindings.push(fromDate, toDate);
-             }
+            // 2. Query for a date range, ALL currencies (for ArchiveDetail historical tabs)
+            // Note: This logic only works efficiently for fetching boundary dates (from/to) for the ArchiveDetail tabs.
+            const sql = `
+                SELECT * FROM forex_rates
+                WHERE date = ? OR date = ?
+                ORDER BY date ASC
+            `;
+            const { results } = await env.FOREX_DB.prepare(sql).bind(fromDate, toDate).all<any>();
 
-             const sql = `
-                 SELECT * FROM forex_rates 
-                 WHERE date >= ? AND date <= ? 
-                 ${samplingClause} 
-                 ORDER BY date ASC
-             `;
-            
-            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
-            
             // Re-structure the "wide" data into the RatesData format
             const payloads: RatesData[] = results.map(row => {
                 const rates: Rate[] = [];
@@ -478,9 +321,10 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                     const buyRate = row[`${code}_buy`];
                     const sellRate = row[`${code}_sell`];
                     if (typeof buyRate === 'number' && typeof sellRate === 'number') {
-                         rates.push({
+                        rates.push({
                             currency: { ...CURRENCY_MAP[code], iso3: code },
-                            buy: buyRate, sell: sellRate
+                            buy: buyRate, sell: sellRate,
+                            date: row.date
                         });
                     }
                 });
@@ -490,17 +334,78 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                     modified_on: row.updated_at || row.date,
                     rates: rates
                 };
-            }).filter(p => p.rates.length > 0); 
+            }).filter(p => p.rates.length > 0);
 
-            return new Response(JSON.stringify({ success: true, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            // This structure aligns with the front-end expected payload for ArchiveDetail's historical tabs
+            return new Response(JSON.stringify({ status: { code: 200, message: 'OK' }, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
     } catch (error: any) {
+        console.error('handleHistoricalRates failed:', error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: corsHeaders });
     }
 }
 
 // --- Admin / Posts Handlers ---
+
+// Public endpoint for new site settings (NEW)
+async function handlePublicSettings(request: Request, env: Env): Promise<Response> {
+    try {
+        const settings = await getAllSettings(env.FOREX_DB);
+        // Use a 5-minute cache header for the public endpoint
+        return new Response(JSON.stringify(settings), {
+            status: 200,
+            headers: {
+                ...corsHeaders,
+                'Content-Type': 'application/json',
+                'Cache-Control': 'public, max-age=300'
+            }
+        });
+    } catch (e: any) {
+        return new Response(JSON.stringify({ error: 'Failed to fetch settings' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+// Admin endpoint for settings (UPDATED)
+async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        if (request.method === 'GET') {
+            const settings = await getAllSettings(env.FOREX_DB);
+            return new Response(JSON.stringify(settings), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        if (request.method === 'POST') {
+            const settings: SiteSettings = await request.json();
+
+            if (typeof settings.ticker_enabled === 'undefined' || typeof settings.adsense_enabled === 'undefined') {
+                 return new Response(JSON.stringify({ success: false, error: 'Missing settings keys' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+
+            // Using batch to insert/replace the new settings keys
+            const stmt1 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('ticker_enabled', ?, datetime('now'))")
+                .bind(settings.ticker_enabled ? 'true' : 'false');
+            const stmt2 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('adsense_enabled', ?, datetime('now'))")
+                .bind(settings.adsense_enabled ? 'true' : 'false');
+
+            await env.FOREX_DB.batch([stmt1, stmt2]);
+
+            const updatedSettings = await getAllSettings(env.FOREX_DB);
+            return new Response(JSON.stringify(updatedSettings), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error(`Error in handleSiteSettings (${request.method}):`, error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
 
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
@@ -627,7 +532,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
-        
+
         await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_data, created_at) VALUES (?, datetime('now'))`).bind(username).run();
 
 
@@ -652,7 +557,7 @@ async function handlePosts(request: Request, env: Env): Promise<Response> {
         if (request.method === 'POST') {
             const post = await request.json();
             const slug = post.slug || generateSlug(post.title);
-            const nowISO = new Date().toISOString(); 
+            const nowISO = new Date().toISOString();
             const status = ['draft', 'published'].includes(post.status) ? post.status : 'draft';
             const published_at = status === 'published' ? (post.published_at || nowISO) : null;
             const { meta } = await env.FOREX_DB.prepare(
@@ -732,6 +637,7 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
                 const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first();
                 return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             } else {
+                // Fetch paginated rates data (simplified to last 30 for admin overview)
                 const { results } = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates ORDER BY date DESC LIMIT 30`).all();
                 return new Response(JSON.stringify({ success: true, data: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             }
@@ -741,71 +647,39 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
             const date = data.date;
             const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
             if (!date || !dateRegex.test(date)) return new Response(JSON.stringify({ success: false, error: 'Invalid date' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-            
+
             const wideColumns: string[] = ['date', 'updated_at'];
             const widePlaceholders: string[] = ['?', "datetime('now')"];
             const wideValues: (string | number | null)[] = [date];
-            
-            const longStatements: D1PreparedStatement[] = [];
+
             let validRatesFound = false;
 
             for (const currency of CURRENCIES) {
                 const buyKey = `${currency}_buy`, sellKey = `${currency}_sell`;
                 const parsedBuy = (data[buyKey] === '' || data[buyKey] == null) ? null : parseFloat(data[buyKey]);
                 const parsedSell = (data[sellKey] === '' || data[sellKey] == null) ? null : parseFloat(data[sellKey]);
-                
-                wideColumns.push(`"${buyKey}"`, `"${sellKey}"`); 
+
+                wideColumns.push(`"${buyKey}"`, `"${sellKey}"`);
                 widePlaceholders.push('?', '?');
                 wideValues.push(parsedBuy, parsedSell);
 
                 if (parsedBuy !== null || parsedSell !== null) {
                     validRatesFound = true;
-                    const unit = CURRENCY_MAP[currency].unit || 1;
-                    const perUnitBuy = parsedBuy !== null ? parsedBuy / unit : null;
-                    const perUnitSell = parsedSell !== null ? parsedSell / unit : null;
-                    
-                    longStatements.push(
-                        env.FOREX_DB.prepare(
-                            `INSERT OR REPLACE INTO forex_rates_historical (date, currency_code, buy_rate, sell_rate) VALUES (?, ?, ?, ?)`
-                        ).bind(date, currency, perUnitBuy, perUnitSell)
-                    );
                 }
+                // *** REMOVED: Old forex_rates_historical insertion logic ***
             }
 
             if (!validRatesFound) return new Response(JSON.stringify({ success: false, error: 'No rates provided' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            longStatements.push(env.FOREX_DB.prepare(wideQuery).bind(wideValues));
-            await env.FOREX_DB.batch(longStatements);
-            
+            // Used bind(...wideValues) to correctly pass the array of parameters
+            await env.FOREX_DB.prepare(wideQuery).bind(...wideValues).run();
+
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error(`Error in handleForexData (${request.method}):`, error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-}
-
-async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-    try {
-        if (request.method === 'GET') {
-            const result = await env.FOREX_DB.prepare(`SELECT setting_value FROM site_settings WHERE setting_key = ?`).bind('header_tags').first<{ setting_value: string | null }>();
-            return new Response(JSON.stringify({ success: true, header_tags: result?.setting_value || '' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-        if (request.method === 'POST') {
-            const { header_tags } = await request.json();
-            if (typeof header_tags !== 'string') return new Response(JSON.stringify({ success: false, error: 'Invalid format' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-            await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO site_settings (setting_key, setting_value, updated_at) VALUES (?, ?, datetime('now'))`).bind('header_tags', header_tags).run();
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    } catch (error: any) {
-        console.error(`Error in handleSiteSettings (${request.method}):`, error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
@@ -847,7 +721,7 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
 // --- Auth Helpers (Unchanged) ---
 async function simpleHash(password: string): Promise<string> {
     const encoder = new TextEncoder();
-    const data = encoder.encode(password + JWT_SECRET); 
+    const data = encoder.encode(password + JWT_SECRET);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -911,3 +785,117 @@ function generateSlug(title: string): string {
         .replace(/&/g, '-and-').replace(/[^\w\s-]/g, '').trim()
         .replace(/\s+/g, '-').replace(/-+/g, '-');
 }
+
+// --- Default Export (Router) ---
+export default {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        const url = new URL(request.url);
+
+        if (request.method === 'OPTIONS') {
+            return handleOptions(request);
+        }
+
+        const pathname = url.pathname;
+
+        // --- API ROUTING ---
+        // PUBLIC API
+        if (pathname === '/api/settings') {
+            return handlePublicSettings(request, env);
+        }
+        if (pathname === '/api/fetch-and-store') {
+            return handleFetchAndStore(request, env);
+        }
+        if (pathname === '/api/historical-rates') {
+            return handleHistoricalRates(request, env);
+        }
+        if (pathname === '/api/posts') {
+            return handlePublicPosts(request, env);
+        }
+        if (pathname.startsWith('/api/posts/')) {
+            return handlePublicPostBySlug(request, env);
+        }
+
+        // ADMIN API - Login/Security
+        if (pathname === '/api/admin/login') {
+            return handleAdminLogin(request, env);
+        }
+        if (pathname === '/api/admin/check-attempts') {
+            return handleCheckAttempts(request, env);
+        }
+        if (pathname === '/api/admin/change-password') {
+            return handleChangePassword(request, env);
+        }
+
+        // ADMIN API - Data/Posts/Settings (Requires Token Verification)
+        // Note: The handlers perform their own token check
+        if (pathname === '/api/admin/settings') {
+            return handleSiteSettings(request, env);
+        }
+        if (pathname === '/api/admin/forex-data') {
+            return handleForexData(request, env);
+        }
+        if (pathname === '/api/admin/posts') {
+            return handlePosts(request, env);
+        }
+        if (pathname.startsWith('/api/admin/posts/')) {
+            return handlePostById(request, env);
+        }
+
+
+        // --- SITEMAP ROUTING ---
+        const sitemapHeaders = {
+            "content-type": "application/xml; charset=utf-8",
+            "cache-control": "public, max-age=3600",
+        };
+        if (pathname === '/sitemap.xml') {
+            const archiveSitemapCount = getArchiveSitemapCount();
+            const xml = generateSitemapIndex(archiveSitemapCount);
+            return new Response(xml, { headers: sitemapHeaders });
+        }
+        if (pathname === '/page-sitemap.xml') {
+            const xml = generatePageSitemap();
+            return new Response(xml, { headers: sitemapHeaders });
+        }
+        if (pathname === '/post-sitemap.xml') {
+            const xml = await generatePostSitemap(env.FOREX_DB);
+            return new Response(xml, { headers: sitemapHeaders });
+        }
+        const archiveMatch = pathname.match(/\/archive-sitemap(\d+)\.xml$/);
+        if (archiveMatch && archiveMatch[1]) {
+            const id = parseInt(archiveMatch[1]);
+            const xml = generateArchiveSitemap(id);
+            if (!xml) {
+                return new Response('Sitemap not found', { status: 404 });
+            }
+            return new Response(xml, { headers: sitemapHeaders });
+        }
+
+        // --- Static Asset Serving (SPA Fallback) ---
+        try {
+            return await getAssetFromKV(
+                { request, waitUntil: (promise: Promise<any>) => ctx.waitUntil(promise) },
+                { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
+            );
+        } catch (e: any) {
+            if (e instanceof Error && e.message.includes('404') || e.status === 404) {
+                try {
+                    const indexRequest = new Request(new URL('/', request.url).toString(), request);
+                    return await getAssetFromKV(
+                        { request: indexRequest, waitUntil: (p) => ctx.waitUntil(p) },
+                        { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
+                    );
+                } catch (e2) {
+                     return new Response('Not Found', { status: 404 });
+                }
+            } else {
+                     return new Response('Internal Server Error', { status: 500 });
+            }
+        }
+    },
+
+    // --- Scheduled Task ---
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        console.log(`[cron ${event.cron}] Triggered...`);
+        ctx.waitUntil(updateForexData(env));
+    }
+};
