@@ -737,7 +737,7 @@ const TrendSummary: React.FC<{ data: any | null; isLoading: boolean; }> = ({ dat
                 </CardContent>
               </Card>
             )
-        }) // <-- FIX 1: Removed extra '}'
+        })
       </div>
     </section>
   );
@@ -833,7 +833,7 @@ const AllTimeHighLow: React.FC<{ data: any | null; isLoading: boolean; }> = ({ d
               </div>
             </CardContent>
           </Card>
-        )}) // <-- FIX 2: Removed extra '}'
+        )})
       </div>
     </section>
   );
