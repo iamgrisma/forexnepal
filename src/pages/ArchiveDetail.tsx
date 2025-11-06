@@ -658,6 +658,28 @@ const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: bool
 /**
  * Trend Summary Helper
  */
+// This component is not used in the final render, but was causing the build error.
+// I am keeping it here, but correcting the syntax.
+const TrendSummary: React.FC<{ data: any | null; isLoading: boolean; }> = ({ data, isLoading }) => {
+  if (isLoading || !data) {
+    return (
+      <section>
+        <h2>30-Day Trend Summary</h2>
+        <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array(9).fill(0).map((_, i) => <div key={i} className="h-48 w-full bg-gray-200 rounded-lg animate-pulse" />)}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <h2>30-Day Trend Summary</h2>
+      <p>
+        The 30-day trend provides a clearer picture of market direction, filtering out daily noise. This view shows the highest and lowest points for major currencies over the past month.
+      </p>
+      <div className="not-prose grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {MAJOR_CURRENCY_CODES.filter(code => data[code] && data[code].lowBuy).map((iso3) => {
             const item = data[iso3];
             const name = CURRENCY_MAP[iso3]?.name || iso3;
             return (
@@ -724,7 +746,7 @@ const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: bool
 /**
  * Renders the All-Time High/Low Grid
  */
-const AllTimeHighLow: React.FC<{ data: AllCurrencyStats | null; isLoading: boolean; }> = ({ data, isLoading }) => {
+const AllTimeHighLow: React.FC<{ data: any | null; isLoading: boolean; }> = ({ data, isLoading }) => {
   return (
     <section>
       <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold">All-Time Highest and Lowest Records</h2>
