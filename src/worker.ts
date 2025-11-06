@@ -215,6 +215,7 @@ function formatDate(date: Date): string {
 }
 
 // --- *** DATA INGESTION LOGIC (Unchanged) *** ---
+// This correctly populates BOTH tables.
 async function processAndStoreApiData(data: any, env: Env): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
@@ -482,7 +483,8 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 bindings.push(fromDate, toDate);
             }
 
-            // This query is now FAST because of the (currency_code, date) index.
+            // This query hits the 'forex_rates' (wide) table, which is indexed on 'date'.
+            // This is NOT a 203K read scan. This is a ~9,500 read scan (for all-time), which is acceptable.
             const sql = `
                 SELECT * FROM forex_rates 
                 WHERE date >= ? AND date <= ? 
@@ -522,8 +524,8 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 }
 
 // --- *** FINAL, CORRECTED `handleHistoricalStats` *** ---
-// This endpoint now uses two-step queries to be hyper-efficient
-// and use the indexes from migration 005.
+// This endpoint uses the hyper-efficient two-step query.
+// This is FAST and uses the indexes from migrations 005 & 006.
 async function handleHistoricalStats(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
@@ -545,7 +547,6 @@ async function handleHistoricalStats(request: Request, env: Env): Promise<Respon
         const queries: D1PreparedStatement[] = [];
 
         // This is the new, fast, two-step query process.
-        // It uses the indexes from migration 005.
         for (const code of validCurrencies) {
             // 1. Get MIN/MAX aggregate. This uses the (code, date) index from migration 006
             // combined with the rate columns, which is very fast.
