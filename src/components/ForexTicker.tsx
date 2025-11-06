@@ -1,55 +1,92 @@
-import { useEffect, useRef, memo } from 'react';
+import React, { useMemo } from 'react';
 import { Rate } from '../types/forex';
-import { getFlagEmoji } from '../services/forexService';
+import { Skeleton } from '@/components/ui/skeleton';
+import { getFlagEmoji } from '@/services/forexService';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { useSiteSettings } from './Layout'; // Import the hook
 
 interface ForexTickerProps {
   rates: Rate[];
   isLoading: boolean;
 }
 
-const ForexTicker = memo(({ rates, isLoading }: ForexTickerProps) => {
-  const tickerRef = useRef<HTMLDivElement>(null);
+const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate, prevRate }) => {
+  const unit = rate.currency.unit || 1;
+  const buy = Number(rate.buy) / unit;
+  const prevBuy = prevRate ? (Number(prevRate.buy) / (prevRate.currency.unit || 1)) : 0;
+  const change = prevRate ? buy - prevBuy : 0;
 
-  useEffect(() => {
-    if (tickerRef.current && rates.length > 0) {
-      // Clone the ticker content for seamless looping
-      const originalContent = tickerRef.current.innerHTML;
-      tickerRef.current.innerHTML = originalContent + originalContent;
-    }
-  }, [rates]);
-
-  if (isLoading) {
-    return (
-      <div className="h-12 w-full bg-gradient-to-r from-gray-100 to-gray-200 animate-shimmer rounded-xl mb-6">
-        <div className="h-full shimmer-effect rounded-xl"></div>
-      </div>
-    );
-  }
+  const color = change > 0.001 ? 'text-green-500' : change < -0.001 ? 'text-red-500' : 'text-gray-500';
+  const Icon = change > 0.001 ? TrendingUp : change < -0.001 ? TrendingDown : Minus;
 
   return (
-    <div className="w-full h-12 overflow-hidden glassmorphism rounded-xl animate-scale-in mb-6">
-      <div className="overflow-hidden relative h-12">
-        <div 
-          ref={tickerRef}
-          className="whitespace-nowrap animate-ticker-scroll flex items-center h-full text-base font-medium px-4"
-        >
-          {rates.map((rate, index) => (
-            <span key={index} className="inline-flex items-center mx-4">
-              <span className="text-lg mr-1">{getFlagEmoji(rate.currency.iso3)}</span>
-              <span className="text-forex-indigo font-semibold">{rate.currency.iso3}:</span>
-              <span className="ml-1">
-                <span className="text-forex-green">{rate.buy}</span>
-                <span className="mx-1">/</span>
-                <span className="text-forex-red">{rate.sell}</span>
-              </span>
-            </span>
-          ))}
-        </div>
+    <div className="flex items-center space-x-2 flex-shrink-0 mx-4">
+      <span className="text-lg">{getFlagEmoji(rate.currency.iso3)}</span>
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-foreground">
+          {rate.currency.iso3}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {buy.toFixed(2)}
+        </span>
+      </div>
+      <div className={`flex items-center text-xs ${color}`}>
+        <Icon className="h-4 w-4 mr-0.5" />
+        {change.toFixed(2)}
       </div>
     </div>
   );
 });
 
-ForexTicker.displayName = 'ForexTicker';
+const ForexTicker: React.FC<ForexTickerProps> = ({ rates, isLoading }) => {
+  const { ticker_enabled } = useSiteSettings(); // Get the setting
+
+  // Use a map for quick lookups
+  const rateMap = useMemo(() => {
+    return new Map(rates.map(rate => [rate.currency.iso3, rate]));
+  }, [rates]);
+
+  // Define major currencies for the ticker
+  const tickerCurrencies = ['USD', 'EUR', 'GBP', 'AUD', 'CAD', 'SAR', 'AED', 'QAR', 'JPY', 'MYR', 'KRW', 'INR'];
+
+  const tickerRates = useMemo(() => {
+    return tickerCurrencies
+      .map(iso3 => rateMap.get(iso3))
+      .filter((rate): rate is Rate => !!rate);
+  }, [rateMap, tickerCurrencies]);
+
+  // Don't render anything if the ticker is disabled
+  if (!ticker_enabled) {
+    return null;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="w-full overflow-hidden">
+        <Skeleton className="h-12 w-full" />
+      </div>
+    );
+  }
+
+  if (!rates || rates.length === 0) {
+    return null; // Don't show ticker if no rates
+  }
+
+  return (
+    <div className="w-full bg-card border-b relative overflow-hidden h-12 flex items-center group">
+      <div className="animate-marquee-slow group-hover:pause flex-shrink-0 flex items-center">
+        {tickerRates.map(rate => (
+          <TickerItem key={rate.currency.iso3} rate={rate} prevRate={undefined} /> // Note: prevRate is not available here, change is vs 0
+        ))}
+      </div>
+      {/* Duplicate for seamless scroll */}
+      <div className="animate-marquee-slow group-hover:pause flex-shrink-0 flex items-center" aria-hidden="true">
+        {tickerRates.map(rate => (
+          <TickerItem key={`${rate.currency.iso3}-dup`} rate={rate} prevRate={undefined} />
+        ))}
+      </div>
+    </div>
+  );
+};
 
 export default ForexTicker;
