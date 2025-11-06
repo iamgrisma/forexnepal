@@ -1,121 +1,143 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Textarea } from '@/components/ui/textarea';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { Loader2, Info } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from 'sonner';
+import { apiClient } from '@/services/apiClient';
 
-const SiteSettings = () => {
-  const [headerTags, setHeaderTags] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isFetching, setIsFetching] = useState(true);
-  const { toast } = useToast();
+// Types for settings
+type SiteSettings = {
+  ticker_enabled: boolean;
+  adsense_enabled: boolean;
+  // We can add more settings here later
+  // adsense_pages: string; // e.g., "all", "home,archive"
+};
+
+// API functions for settings
+const fetchSiteSettings = async (): Promise<SiteSettings> => {
+  try {
+    const { data } = await apiClient.get('/admin/settings');
+    // If no settings exist, return default values
+    if (!data) {
+      return { ticker_enabled: true, adsense_enabled: false };
+    }
+    return data;
+  } catch (error) {
+    // Handle 404 or other errors if settings don't exist yet
+    console.warn("Could not fetch settings, returning defaults.");
+    return { ticker_enabled: true, adsense_enabled: false };
+  }
+};
+
+const updateSiteSettings = async (settings: SiteSettings): Promise<SiteSettings> => {
+  const { data } = await apiClient.post('/admin/settings', settings);
+  return data;
+};
+
+
+const SiteSettings: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [settings, setSettings] = useState<SiteSettings>({
+    ticker_enabled: true,
+    adsense_enabled: false,
+  });
+
+  const { data: fetchedSettings, isLoading } = useQuery({
+    queryKey: ['siteSettings'],
+    queryFn: fetchSiteSettings,
+  });
 
   useEffect(() => {
-    const fetchSettings = async () => {
-      setIsFetching(true);
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        toast({ title: "Error", description: "Not authenticated", variant: "destructive" });
-        setIsFetching(false);
-        return;
-      }
-      try {
-        const response = await fetch('/api/admin/settings', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error("Failed to fetch settings");
-        const data = await response.json();
-        if (data.success) {
-          setHeaderTags(data.header_tags || '');
-        } else {
-            throw new Error(data.error || "Could not load settings");
-        }
-      } catch (error) {
-        console.error("Fetch settings error:", error);
-        toast({ title: "Error", description: `Could not load settings: ${error instanceof Error ? error.message : 'Unknown error'}`, variant: "destructive" });
-      } finally {
-        setIsFetching(false);
-      }
-    };
-    fetchSettings();
-  }, [toast]);
-
-  const handleSave = async () => {
-    setIsLoading(true);
-    const token = localStorage.getItem('authToken');
-    if (!token) {
-      toast({ title: "Error", description: "Authentication expired.", variant: "destructive" });
-      setIsLoading(false);
-      return;
+    if (fetchedSettings) {
+      setSettings(fetchedSettings);
     }
+  }, [fetchedSettings]);
 
-    try {
-      const response = await fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ header_tags: headerTags }),
-      });
+  const mutation = useMutation({
+    mutationFn: updateSiteSettings,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['siteSettings'], data);
+      queryClient.invalidateQueries({ queryKey: ['publicSiteSettings'] }); // Invalidate public query
+      toast.success('Settings saved successfully!');
+    },
+    onError: (error) => {
+      toast.error(`Failed to save settings: ${error.message}`);
+    },
+  });
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        toast({ title: "Success", description: "Site settings saved successfully." });
-      } else {
-        throw new Error(data.error || "Failed to save settings");
-      }
-    } catch (error) {
-      console.error("Save settings error:", error);
-      toast({ title: "Error", description: error instanceof Error ? error.message : 'Could not save settings.', variant: "destructive" });
-    } finally {
-      setIsLoading(false);
-    }
+  const handleToggle = (key: keyof SiteSettings) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
   };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate(settings);
+  };
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Site Settings</CardTitle>
+          <CardDescription>Manage global site features.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-8 w-1/2" />
+          <Skeleton className="h-10 w-24" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Site Settings</CardTitle>
-        <CardDescription>Manage global site settings like header tags for analytics or ads.</CardDescription>
+        <CardDescription>Manage global site features like the ticker and advertising.</CardDescription>
       </CardHeader>
       <CardContent>
-        {isFetching ? (
-          <div className="flex justify-center items-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="flex items-center justify-between space-x-2 p-4 border rounded-lg">
+            <Label htmlFor="ticker-enabled" className="flex flex-col space-y-1">
+              <span>Forex Ticker</span>
+              <span className="font-normal text-sm text-muted-foreground">
+                Show the scrolling forex ticker at the top of pages.
+              </span>
+            </Label>
+            <Switch
+              id="ticker-enabled"
+              checked={settings.ticker_enabled}
+              onCheckedChange={() => handleToggle('ticker_enabled')}
+            />
           </div>
-        ) : (
-          <div className="space-y-4"> {/* Wrapper for content when not fetching */}
-            <Alert>
-              <Info className="h-4 w-4" />
-              {/* <AlertTitle>Information</AlertTitle> */}
-              <AlertDescription>
-                Enter HTML tags (like script or meta tags) to be injected into the head section of every page. Use with caution.
-              </AlertDescription>
-            </Alert> {/* Alert closed */}
 
-            <div> {/* Wrapper for label + textarea */}
-              <label htmlFor="headerTags" className="block text-sm font-medium mb-1">Header Tags</label>
-              <Textarea
-                id="headerTags"
-                value={headerTags}
-                onChange={(e) => setHeaderTags(e.target.value)}
-                placeholder={`<script async src="..."></script>\n<meta name="google-site-verification" content="..." />`}
-                rows={10}
-                className="font-mono text-xs"
-                disabled={isLoading}
-              />
-            </div> {/* Wrapper closed */}
+          <div className="flex items-center justify-between space-x-2 p-4 border rounded-lg">
+            <Label htmlFor="adsense-enabled" className="flex flex-col space-y-1">
+              <span>Google AdSense</span>
+              <span className="font-normal text-sm text-muted-foreground">
+                Enable or disable all AdSense ad units sitewide.
+              </span>
+            </Label>
+            <Switch
+              id="adsense-enabled"
+              checked={settings.adsense_enabled}
+              onCheckedChange={() => handleToggle('adsense_enabled')}
+            />
+          </div>
+          
+          {/* Add more settings here in the future */}
 
-            <Button onClick={handleSave} disabled={isLoading || isFetching}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLoading ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </div> // Wrapper closed
-        )} {/* Conditional rendering correctly closed */}
+          <Button type="submit" disabled={mutation.isPending}>
+            {mutation.isPending ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </form>
       </CardContent>
     </Card>
   );
