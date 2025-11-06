@@ -715,7 +715,7 @@ const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: bool
                 </CardContent>
               </Card>
             )
-        })}
+        }) // <-- FIX 1: Removed extra '}'
       </div>
     </section>
   );
@@ -811,7 +811,7 @@ const AllTimeHighLow: React.FC<{ data: AllCurrencyStats | null; isLoading: boole
               </div>
             </CardContent>
           </Card>
-        )})}
+        )}) // <-- FIX 2: Removed extra '}'
       </div>
     </section>
   );
