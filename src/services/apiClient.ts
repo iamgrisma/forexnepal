@@ -5,6 +5,73 @@ import { format, subDays } from 'date-fns';
 
 const API_TIMEOUT = 10000; // 10 seconds
 
+// --- NEW: General-Purpose API Client for Frontend Requests ---
+
+/**
+ * Utility to fetch the JWT token from localStorage.
+ */
+const getAuthToken = () => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('forex_admin_token');
+  }
+  return null;
+};
+
+/**
+ * Base function for API requests, handling headers and error parsing.
+ */
+async function fetcher(path: string, options: RequestInit = {}) {
+  const token = getAuthToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    // Attach authorization header if a token exists
+    ...(token && { 'Authorization': `Bearer ${token}` }),
+    ...options.headers,
+  };
+
+  // Prepend /api to the path for all requests
+  const response = await fetch(`/api${path}`, { ...options, headers });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+    // Throw an error that toast/react-query can easily handle
+    throw new Error(errorBody.error || errorBody.message || 'API request failed');
+  }
+
+  // Return raw response for requests that don't expect JSON (e.g. DELETE without content)
+  if (response.status === 204) return null; 
+
+  return response.json();
+}
+
+/**
+ * Exported API Client wrapper for authenticated and general calls.
+ */
+export const apiClient = {
+  get: <T>(path: string, options?: RequestInit) => {
+    return fetcher(path, { method: 'GET', ...options }) as Promise<T>;
+  },
+  post: <T>(path: string, data?: any, options?: RequestInit) => {
+    return fetcher(path, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
+    }) as Promise<T>;
+  },
+  put: <T>(path: string, data?: any, options?: RequestInit) => {
+    return fetcher(path, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+      ...options,
+    }) as Promise<T>;
+  },
+  delete: <T>(path: string, options?: RequestInit) => {
+    return fetcher(path, { method: 'DELETE', ...options }) as Promise<T>;
+  },
+};
+
+// --- Original Logic (Exported as well) ---
+
 /**
  * Creates a promise that rejects after a specified timeout.
  */
@@ -31,7 +98,7 @@ export const fetchRatesApiFirst = async (date: Date): Promise<RatesData | null> 
     if (apiResponse && apiResponse.data.payload.length > 0) {
       console.log(`[APIClient] API-First success for ${dateString}`);
       // Asynchronously trigger a background store to D1, but don't wait for it
-      fetch(`/api/fetch-and-store?from=${dateString}&to=${dateString}`, { method: 'POST' })
+      fetch(`/api/fetch-and-store?from=${dateString}&to=${dateString}`, { method: 'POST', headers: { Authorization: `Bearer ${getAuthToken()}` } })
         .catch(err => console.error(`[APIClient] Background store failed: ${err.message}`));
       return apiResponse.data.payload[0];
     }
@@ -66,7 +133,7 @@ export const fetchPreviousDayRatesApiFirst = async (currentDate: Date): Promise<
       console.log(`[APIClient] API-First success for previous day (found ${actualDate})`);
       
        // Asynchronously trigger a background store to D1
-      fetch(`/api/fetch-and-store?from=${actualDate}&to=${actualDate}`, { method: 'POST' })
+      fetch(`/api/fetch-and-store?from=${actualDate}&to=${actualDate}`, { method: 'POST', headers: { Authorization: `Bearer ${getAuthToken()}` } })
         .catch(err => console.error(`[APIClient] Background store failed: ${err.message}`));
       
       return apiResponse.data.payload[0];
