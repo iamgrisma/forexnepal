@@ -55,38 +55,39 @@ const ForexTicker: React.FC<ForexTickerProps> = ({ rates, isLoading }) => {
       .filter((rate): rate is Rate => !!rate);
   }, [rateMap, tickerCurrencies]);
 
-  // Don't render anything if the ticker is disabled
-  if (!ticker_enabled) {
-    return null;
-  }
-
-  if (isLoading) {
-    return (
-      <div className="w-full overflow-hidden">
-        <Skeleton className="h-12 w-full" />
-      </div>
-    );
-  }
-
-  if (!rates || rates.length === 0) {
-    return null; // Don't show ticker if no rates
-  }
-
+  // --- CLS FIX & ANIMATION FIX ---
+  // Always render the container to prevent CLS
   return (
     <div className="w-full bg-card border-b relative overflow-hidden h-12 flex items-center group">
-      <div className="animate-marquee-slow group-hover:pause flex-shrink-0 flex items-center">
-        {tickerRates.map(rate => (
-          <TickerItem key={rate.currency.iso3} rate={rate} prevRate={undefined} /> // Note: prevRate is not available here, change is vs 0
-        ))}
-      </div>
-      {/* Duplicate for seamless scroll */}
-      <div className="animate-marquee-slow group-hover:pause flex-shrink-0 flex items-center" aria-hidden="true">
-        {tickerRates.map(rate => (
-          <TickerItem key={`${rate.currency.iso3}-dup`} rate={rate} prevRate={undefined} />
-        ))}
-      </div>
+      
+      {/* Show skeleton inside if loading and enabled */}
+      {isLoading && ticker_enabled && (
+        <Skeleton className="h-12 w-full" />
+      )}
+      
+      {/* Show ticker content if not loading, enabled, and rates exist */}
+      {!isLoading && ticker_enabled && rates && rates.length > 0 && (
+        <>
+          {/* FIX: Changed animate-marquee-slow to animate-ticker-scroll */}
+          <div className="animate-ticker-scroll group-hover:pause flex-shrink-0 flex items-center">
+            {tickerRates.map(rate => (
+              <TickerItem key={rate.currency.iso3} rate={rate} prevRate={undefined} /> // Note: prevRate is not available here, change is vs 0
+            ))}
+          </div>
+          {/* Duplicate for seamless scroll */}
+          {/* FIX: Changed animate-marquee-slow to animate-ticker-scroll */}
+          <div className="animate-ticker-scroll group-hover:pause flex-shrink-0 flex items-center" aria-hidden="true">
+            {tickerRates.map(rate => (
+              <TickerItem key={`${rate.currency.iso3}-dup`} rate={rate} prevRate={undefined} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* If disabled or no rates, the h-12 container still renders, but it's empty, preventing layout shift. */}
     </div>
   );
+  // --- END OF FIXES ---
 };
 
 export default ForexTicker;
