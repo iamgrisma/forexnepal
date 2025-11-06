@@ -12,7 +12,8 @@ const API_TIMEOUT = 10000; // 10 seconds
  */
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
-    return localStorage.getItem('forex_admin_token');
+    // FIX: Changed 'forex_admin_token' to 'authToken' to match AdminLogin.tsx
+    return localStorage.getItem('authToken');
   }
   return null;
 };
