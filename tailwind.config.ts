@@ -94,8 +94,8 @@ export default {
 					to: { height: '0' }
 				},
 				'ticker-scroll': {
-                    // FIX: Changed animation from '100% -> -100%' to '0 -> -100%'
-                    // This makes it a standard scrolling marquee
+                    // This animation moves the parent container from 0 to -100%
+                    // (the width of one child), creating a seamless loop.
 					'0%': { transform: 'translateX(0)' },
 					'100%': { transform: 'translateX(-100%)' }
 				},
@@ -119,7 +119,7 @@ export default {
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
-                // FIX: Increased duration for a slower, more readable scroll
+                // Slower duration for readability
 				'ticker-scroll': 'ticker-scroll 40s linear infinite',
 				'fade-in': 'fade-in 0.4s ease-out',
 				'scale-in': 'scale-in 0.4s ease-out',
