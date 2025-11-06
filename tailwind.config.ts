@@ -1,4 +1,3 @@
-
 import type { Config } from "tailwindcss";
 
 export default {
@@ -95,7 +94,9 @@ export default {
 					to: { height: '0' }
 				},
 				'ticker-scroll': {
-					'0%': { transform: 'translateX(100%)' },
+                    // FIX: Changed animation from '100% -> -100%' to '0 -> -100%'
+                    // This makes it a standard scrolling marquee
+					'0%': { transform: 'translateX(0)' },
 					'100%': { transform: 'translateX(-100%)' }
 				},
 				'fade-in': {
@@ -118,7 +119,8 @@ export default {
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
-				'ticker-scroll': 'ticker-scroll 30s linear infinite',
+                // FIX: Increased duration for a slower, more readable scroll
+				'ticker-scroll': 'ticker-scroll 40s linear infinite',
 				'fade-in': 'fade-in 0.4s ease-out',
 				'scale-in': 'scale-in 0.4s ease-out',
 				'blur-in': 'blur-in 0.4s ease-out',
