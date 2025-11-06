@@ -1,26 +1,55 @@
-
-import React from 'react';
+import React, { createContext, useContext } from 'react';
 import Navigation from './Navigation';
 import Footer from './Footer';
-import PWAInstallPrompt from './PWAInstallPrompt';
+import { useQuery } from '@tanstack/react-query';
+import { apiClient } from '@/services/apiClient';
 
-interface LayoutProps {
-  children: React.ReactNode;
-  className?: string;
-}
+// Types for settings
+type SiteSettings = {
+  ticker_enabled: boolean;
+  adsense_enabled: boolean;
+};
 
-const Layout = ({ children, className = "" }: LayoutProps) => {
+// Context for settings
+const SettingsContext = createContext<SiteSettings>({
+  ticker_enabled: true,
+  adsense_enabled: false,
+});
+
+// Hook to use settings
+export const useSiteSettings = () => useContext(SettingsContext);
+
+// API function
+const fetchSiteSettings = async (): Promise<SiteSettings> => {
+  try {
+    const { data } = await apiClient.get('/settings');
+    return data || { ticker_enabled: true, adsense_enabled: false };
+  } catch (e) {
+    console.warn("Failed to fetch site settings, using defaults.");
+    return { ticker_enabled: true, adsense_enabled: false };
+  }
+};
+
+const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Fetch settings globally here
+  const { data: settings } = useQuery({
+    queryKey: ['publicSiteSettings'], // Use a public key
+    queryFn: fetchSiteSettings,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
+  const settingsValue = settings || { ticker_enabled: true, adsense_enabled: false };
+  
   return (
-    <div className={`min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 ${className}`}>
-      <Navigation />
-      <main className="pb-24 md:pb-16">
-        {children}
-      </main>
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-20 md:mb-0">
+    <SettingsContext.Provider value={settingsValue}>
+      <div className="flex flex-col min-h-screen">
+        <Navigation />
+        <main className="flex-grow">
+          {children}
+        </main>
         <Footer />
       </div>
-      <PWAInstallPrompt />
-    </div>
+    </SettingsContext.Provider>
   );
 };
 
