@@ -440,7 +440,7 @@ const NotFound = () => {
 
 
           {/* Ticker component */}
-          <ForexTicker rates={rates} isLoading={isLoading} />
+          <ForexTicker/>
 
           <Tabs defaultValue="all" className="mb-12">
             {/* Scrollable TabsList */}
