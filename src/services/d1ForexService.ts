@@ -100,16 +100,34 @@ export async function fetchRatesForDateWithCache(date: string, bypassCache: bool
 }
 
 /**
- * Fetches historical rates for a currency (API-only).
- * This function bypasses the D1 database and hits the worker's API proxy.
+ * Fetches historical rates for a currency (API-only) for charting/calculation.
+ * NOTE: The data returned here is *always* for a single currency/multiple dates, not full daily rate tables.
  */
-export async function fetchHistoricalRates(
+export async function fetchHistoricalRatesWithCache(
   currencyCode: string,
   from: string,
   to: string
-): Promise<HistoricalRates> {
-  // Use the API-only endpoint from forexService
-  return fetchRatesFromApi(currencyCode, from, to);
+): Promise<any[]> { // Returns a simplified { date, buy, sell }[] payload
+  try {
+    // This hits the worker's /api/historical-rates?currency=USD... endpoint
+    const response = await fetch(`${API_URL}/historical-rates?currency=${currencyCode}&from=${from}&to=${to}`);
+    
+    if (!response.ok) {
+        throw new Error(`Worker API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success && data.data) {
+        // The worker is now responsible for handling DB/API fetching and normalizing the data.
+        return data.data; // This is the cleaned array of { date, buy, sell }
+    }
+
+    return [];
+  } catch (error) {
+    console.error("Failed to fetch historical rates for converter:", error);
+    return []; // Return empty array on failure
+  }
 }
 
 /**
