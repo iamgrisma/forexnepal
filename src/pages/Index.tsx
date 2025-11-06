@@ -423,8 +423,12 @@ const Index = () => {
           </div>
 
 
-          {/* Ticker component */}
-          <ForexTicker rates={rates} isLoading={isLoading} />
+          {/* Ticker component - FIX: Pass previousDayRates and combined loading state */}
+          <ForexTicker
+            rates={rates}
+            previousDayRates={previousDayRates}
+            isLoading={isLoading || isLoadingPrevDay}
+          />
 
           <Tabs defaultValue="all" className="mb-12">
             {/* Scrollable TabsList */}
