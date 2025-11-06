@@ -12,19 +12,19 @@ import ForexTicker from '@/components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
 // FIX: Import d1 service and date-fns
 import { fetchRatesForDateWithCache } from '../services/d1ForexService';
-import { subDays } from 'date-fns';
+// FIX: Added 'format' to the import
+import { subDays, format } from 'date-fns';
 
 const HistoricalCharts = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [previousDayRates, setPreviousDayRates] = useState<Rate[]>([]);
   const navigate = useNavigate();
 
-  // FIX: Get today and yesterday's date strings
-  const todayString = formatDate(new Date());
+  // FIX: Use 'format' from date-fns for consistency
+  const todayString = format(new Date(), 'yyyy-MM-dd');
   const previousDateString = format(subDays(new Date(), 1), 'yyyy-MM-dd');
 
   const { data: forexData, isLoading } = useQuery({
-    // FIX: Key by today's date string for consistency
     queryKey: ['forexRates', todayString],
     queryFn: () => fetchRatesForDateWithCache(todayString, null), // Use caching service
     refetchOnWindowFocus: false,
