@@ -20,7 +20,8 @@ const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate
   const Icon = change > 0.001 ? TrendingUp : change < -0.001 ? TrendingDown : Minus;
 
   return (
-    <div className="flex items-center space-x-2 flex-shrink-0 mx-4">
+    // FIX: Add padding to space out items
+    <div className="flex items-center space-x-2 flex-shrink-0 px-4">
       <span className="text-lg">{getFlagEmoji(rate.currency.iso3)}</span>
       <div className="flex flex-col">
         <span className="text-sm font-medium text-foreground">
@@ -58,6 +59,7 @@ const ForexTicker: React.FC<ForexTickerProps> = ({ rates, isLoading }) => {
   // --- CLS FIX & ANIMATION FIX ---
   // Always render the container to prevent CLS
   return (
+    // FIX: Parent is 'flex' and 'overflow-hidden'
     <div className="w-full bg-card border-b relative overflow-hidden h-12 flex items-center group">
       
       {/* Show skeleton inside if loading and enabled */}
@@ -68,22 +70,25 @@ const ForexTicker: React.FC<ForexTickerProps> = ({ rates, isLoading }) => {
       {/* Show ticker content if not loading, enabled, and rates exist */}
       {!isLoading && ticker_enabled && rates && rates.length > 0 && (
         <>
-          {/* FIX: Changed animate-marquee-slow to animate-ticker-scroll */}
-          <div className="animate-ticker-scroll group-hover:pause flex-shrink-0 flex items-center">
+          {/* FIX: Both children get the animation.
+            'min-w-full' makes sure each child tries to be 100% width.
+            'flex-shrink-0' stops them from shrinking to fit.
+            'justify-around' spaces the items out within the full width.
+            'group-hover:[animation-play-state:paused]' is the correct class to pause on hover.
+          */}
+          <div className="animate-ticker-scroll group-hover:[animation-play-state:paused] flex-shrink-0 flex items-center justify-around min-w-full">
             {tickerRates.map(rate => (
-              <TickerItem key={rate.currency.iso3} rate={rate} prevRate={undefined} /> // Note: prevRate is not available here, change is vs 0
+              <TickerItem key={rate.currency.iso3} rate={rate} prevRate={undefined} />
             ))}
           </div>
           {/* Duplicate for seamless scroll */}
-          {/* FIX: Changed animate-marquee-slow to animate-ticker-scroll */}
-          <div className="animate-ticker-scroll group-hover:pause flex-shrink-0 flex items-center" aria-hidden="true">
+          <div className="animate-ticker-scroll group-hover:[animation-play-state:paused] flex-shrink-0 flex items-center justify-around min-w-full" aria-hidden="true">
             {tickerRates.map(rate => (
               <TickerItem key={`${rate.currency.iso3}-dup`} rate={rate} prevRate={undefined} />
             ))}
           </div>
         </>
       )}
-
       {/* If disabled or no rates, the h-12 container still renders, but it's empty, preventing layout shift. */}
     </div>
   );
