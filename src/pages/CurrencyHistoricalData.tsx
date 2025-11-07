@@ -95,6 +95,7 @@ const fetchWeekDataWithFallback = async (currency: string, fromDate: string, toD
       const result = await dbResponse.json();
       if (result.success && Array.isArray(result.data) && result.data.length > 0) {
         console.log('Loaded week data from DB');
+        // Worker-side normalization is already done
         return result.data;
       }
     }
@@ -268,10 +269,10 @@ const CurrencyHistoricalData: React.FC = () => {
   const [dailyLoadProgress, setDailyLoadProgress] = useState<{ percent: number, current: number, total: number } | null>(null);
   const [cooldownTimer, setCooldownTimer] = useState<number>(0);
   
-  // (Demand 4) NEW: State to trigger long-range (>3Y) queries
-  const [isLoadingLargeData, setIsLoadingLargeData] = useState(false);
+  // (Demand 4) State to trigger long-range (>3Y) queries
+  const [isLongRangeJobRunning, setIsLongRangeJobRunning] = useState(false);
 
-  // (Demand 4) NEW: Default custom range to 4 years
+  // (Demand 4) Default custom range to 4 years
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const fourYearsAgoStr = format(subYears(new Date(), 4), 'yyyy-MM-dd');
   const [customFromDate, setCustomFromDate] = useState<string>(fourYearsAgoStr);
@@ -325,12 +326,12 @@ const CurrencyHistoricalData: React.FC = () => {
     };
   }, [range, customFromDate, customToDate, todayStr, fourYearsAgoStr]);
 
-  // (Demand 4) NEW: Check if the current range is long (> 3 years)
+  // (Demand 4) Check if the current range is long (> 3 years)
   const isLongRange = rangeInDays > (365 * 3);
 
   // --- Main Data Fetching Query ---
   const { data: queryResult, isLoading, isError, error, isRefetching } = useQuery<QueryResult>({
-    queryKey: ['currency-chart', upperCaseCurrencyCode, range, fromDate, toDate, isLoadingLargeData],
+    queryKey: ['currency-chart', upperCaseCurrencyCode, range, fromDate, toDate, isLongRangeJobRunning],
     queryFn: async () => {
       // (Demand 1) INR Special Case
       if (isINRFixed) {
@@ -347,7 +348,6 @@ const CurrencyHistoricalData: React.FC = () => {
       }
 
       // (Demand 3 & 4) All other tabs (1M+, Custom) use NRB API + 90-day chunking
-      // Rate limit check
       const limitCheck = canMakeChartRequest(rangeInDays);
       if (!limitCheck.allowed) {
         Promise.resolve().then(() => setCooldownTimer(limitCheck.cooldownSeconds!));
@@ -355,7 +355,7 @@ const CurrencyHistoricalData: React.FC = () => {
       }
       recordChartRequest(rangeInDays);
 
-      // Set progress bar to 0%
+      // (Demand 9) Set progress bar to 0%
       Promise.resolve().then(() => setDailyLoadProgress({ percent: 0, current: 0, total: 0 }));
       
       const data = await loadDailyDataInChunks(
@@ -370,9 +370,9 @@ const CurrencyHistoricalData: React.FC = () => {
       return { data, samplingUsed: 'daily' };
     },
     // (Demand 4) NEW: Enable logic
-    enabled: (
+    enabled: !!(
       (upperCaseCurrencyCode === 'INR' ? !isCheckingINR : !!currencyInfo) && // Base check
-      (!isLongRange || isLoadingLargeData) // -> AND ( (NOT long range) OR (IS long range AND button clicked) )
+      (!isLongRange || isLongRangeJobRunning) // -> AND ( (NOT long range) OR (IS long range AND button clicked) )
     ),
     staleTime: 1000 * 60 * 10,
     retry: false, // Don't retry on rate-limit errors
@@ -386,7 +386,7 @@ const CurrencyHistoricalData: React.FC = () => {
     // (Demand 5) This triggers the lazy-loading query
     setRange(newRange);
     // (Demand 4) Reset the "load data" button click state
-    setIsLoadingLargeData(false); 
+    setIsLongRangeJobRunning(false); 
   };
 
   const handleCustomApply = () => {
@@ -398,9 +398,8 @@ const CurrencyHistoricalData: React.FC = () => {
       toast.error("Invalid date range", { description: "Start date must be before end date." });
       return;
     }
-    // This will trigger the useMemo to update, which changes the query key
-    // We also reset the button click state
-    setIsLoadingLargeData(false);
+    // (Demand 4) Reset the "load data" button click state
+    setIsLongRangeJobRunning(false);
   };
 
   // (Demand 5) Next/Prev Currency Buttons
@@ -537,7 +536,7 @@ const CurrencyHistoricalData: React.FC = () => {
                 )}
                 
                 {/* (Demand 4) NEW: Button for long-range data */}
-                {isLongRange && !isLoadingLargeData && !isPageLoading && !isError && (
+                {isLongRange && !isLongRangeJobRunning && !isPageLoading && !isError && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center z-10 space-y-4">
                     <p className="text-lg font-medium text-center">Load {DATE_RANGES[range].label} Data?</p>
                     <p className="text-sm text-muted-foreground text-center max-w-xs">
@@ -545,7 +544,7 @@ const CurrencyHistoricalData: React.FC = () => {
                     </p>
                     <Button
                       size="lg"
-                      onClick={() => setIsLoadingLargeData(true)}
+                      onClick={() => setIsLongRangeJobRunning(true)} // This triggers the query
                       disabled={isUpdating || cooldownTimer > 0}
                     >
                       {cooldownTimer > 0 ? `Please wait ${cooldownTimer}s` : "Load Daily Data"}
@@ -585,7 +584,7 @@ const CurrencyHistoricalData: React.FC = () => {
                 )}
 
                 {/* No data state */}
-                {!isPageLoading && !isError && (!processedData.chartData || processedData.chartData.length === 0) && (!isLongRange || isLoadingLargeData) && (
+                {!isPageLoading && !isError && (!processedData.chartData || processedData.chartData.length === 0) && (!isLongRange || isLongRangeJobRunning) && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>No Data Available</AlertTitle>
