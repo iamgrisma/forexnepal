@@ -992,56 +992,52 @@ export default {
 
         const pathname = url.pathname;
 
-        // --- API ROUTING ---
-        // PUBLIC API
-        if (pathname === '/api/settings') {
-            return handlePublicSettings(request, env);
-        }
-        if (pathname === '/api/fetch-and-store') {
-            return handleFetchAndStore(request, env);
-        }
-        if (pathname === '/api/historical-rates') {
-            return handleHistoricalRates(request, env);
-        }
-        if (pathname === '/api/posts') {
-            return handlePublicPosts(request, env);
-        }
-        if (pathname.startsWith('/api/posts/')) {
-            return handlePublicPostBySlug(request, env);
-        }
-        // --- NEW ROUTE HANDLER ---
-        if (pathname.startsWith('/api/rates/date/')) {
-            return handleRatesByDate(request, env);
-        }
-
-        // ADMIN API - Login/Security
-        // --- ADDED NEW ROUTE ---
-        if (pathname === '/api/admin/check-user') {
-            return handleCheckUser(request, env);
-        }
-        if (pathname === '/api/admin/login') {
-            return handleAdminLogin(request, env);
-        }
-        if (pathname === '/api/admin/check-attempts') {
-            return handleCheckAttempts(request, env);
-        }
-        if (pathname === '/api/admin/change-password') {
-            return handleChangePassword(request, env);
-        }
-
-        // ADMIN API - Data/Posts/Settings (Requires Token Verification)
-        // Note: The handlers perform their own token check
-        if (pathname === '/api/admin/settings') {
-            return handleSiteSettings(request, env);
-        }
-        if (pathname === '/api/admin/forex-data') {
-            return handleForexData(request, env);
-        }
-        if (pathname === '/api/admin/posts') {
-            return handlePosts(request, env);
-        }
-        if (pathname.startsWith('/api/admin/posts/')) {
-            return handlePostById(request, env);
+        // --- API ROUTING (All API routes go first) ---
+        if (pathname.startsWith('/api/')) {
+            if (pathname === '/api/settings') {
+                return handlePublicSettings(request, env);
+            }
+            if (pathname === '/api/fetch-and-store') {
+                return handleFetchAndStore(request, env);
+            }
+            if (pathname === '/api/historical-rates') {
+                return handleHistoricalRates(request, env);
+            }
+            if (pathname === '/api/posts') {
+                return handlePublicPosts(request, env);
+            }
+            if (pathname.startsWith('/api/posts/')) {
+                return handlePublicPostBySlug(request, env);
+            }
+            if (pathname.startsWith('/api/rates/date/')) {
+                return handleRatesByDate(request, env);
+            }
+            if (pathname === '/api/admin/check-user') {
+                return handleCheckUser(request, env);
+            }
+            if (pathname === '/api/admin/login') {
+                return handleAdminLogin(request, env);
+            }
+            if (pathname === '/api/admin/check-attempts') {
+                return handleCheckAttempts(request, env);
+            }
+            if (pathname === '/api/admin/change-password') {
+                return handleChangePassword(request, env);
+            }
+            if (pathname === '/api/admin/settings') {
+                return handleSiteSettings(request, env);
+            }
+            if (pathname === '/api/admin/forex-data') {
+                return handleForexData(request, env);
+            }
+            if (pathname === '/api/admin/posts') {
+                return handlePosts(request, env);
+            }
+            if (pathname.startsWith('/api/admin/posts/')) {
+                return handlePostById(request, env);
+            }
+            // If no API route matches, return 404
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
 
@@ -1073,32 +1069,46 @@ export default {
             return new Response(xml, { headers: sitemapHeaders });
         }
 
-        // --- MODIFIED Static Asset Serving (SPA Fallback) ---
+        // --- *** MODIFIED SPA & STATIC ASSET FALLBACK *** ---
         try {
-            // Try to get the asset (e.g., /main.tsx.js, /favicon.ico)
+            // 1. Try to fetch the static asset (e.g., /main.js, /favicon.ico, /assets/index-....js)
             return await getAssetFromKV(
                 { request, waitUntil: (promise: Promise<any>) => ctx.waitUntil(promise) },
-                { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
+                { 
+                    ASSET_NAMESPACE: env.__STATIC_CONTENT,
+                    // We must pass the manifest to getAssetFromKV
+                    // This assumes your build process (package.json) creates manifest.json
+                    // If not, you may need to import the manifest differently
+                    // For now, an empty object might be the cause of the failure.
+                    // Let's try without it, as `[site]` config might provide it.
+                    // ASSET_MANIFEST: {} // This was likely the problem
+                }
             );
         } catch (e: any) {
-            // If the asset is not found (404), it's probably a React route (e.g., /posts)
+            // 2. If it fails (404), it's a React route (e.g., /archive).
+            // We MUST serve index.html.
             if (e instanceof Error && e.message.includes('404') || e.status === 404) {
                 try {
-                    // *** THIS IS THE FIX ***
-                    // Explicitly request /index.html instead of /
-                    // This bypasses any manifest issues and directly serves your app's entry point.
+                    // This is the "rewrite rule" for the SPA
+                    // We explicitly fetch /index.html
                     const indexRequest = new Request(new URL('/index.html', request.url).toString(), request);
                     return await getAssetFromKV(
                         { request: indexRequest, waitUntil: (p) => ctx.waitUntil(p) },
-                        { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
+                        { 
+                            ASSET_NAMESPACE: env.__STATIC_CONTENT,
+                            // ASSET_MANIFEST: {} 
+                        }
                     );
                 } catch (e2) {
-                    // This means index.html itself wasn't found, which is a real 404
-                     return new Response('Not Found', { status: 404 });
+                    // This is a "real" 500. index.html is missing.
+                    console.error('CRITICAL: /index.html not found in KV store.', e2);
+                    return new Response('Internal Server Error: SPA entrypoint missing.', { status: 500 });
                 }
             } else {
-                    // For other errors (500, etc.)
-                     return new Response('Internal Server Error', { status: 500 });
+                // 3. This is the "Internal Server Error" you were seeing.
+                // The first getAssetFromKV failed for a reason OTHER than 404.
+                console.error('getAssetFromKV failed with non-404 error:', e);
+                return new Response('Internal Server Error', { status: 500 });
             }
         }
     },
