@@ -181,6 +181,26 @@ const sampleData = (data: ChartDataPoint[], days: number): { sampledData: ChartD
   return { sampledData, samplingUsed };
 };
 
+/**
+ * --- NEW INR FIX ---
+ * Generates a full array of data points for a fixed-rate currency.
+ */
+const generateINRFixedData = (fromDate: string, toDate: string, unit: number): ChartDataPoint[] => {
+  const data: ChartDataPoint[] = [];
+  let currentDate = parseISO(fromDate);
+  const endDate = parseISO(toDate);
+  
+  while (currentDate <= endDate) {
+    data.push({
+      date: format(currentDate, 'yyyy-MM-dd'),
+      buy: 160 / unit,
+      sell: 160.15 / unit,
+    });
+    currentDate = addDays(currentDate, 1);
+  }
+  return data;
+};
+
 
 // Calculate statistics
 const calculateStats = (data: ChartDataPoint[]) => {
@@ -343,16 +363,14 @@ const CurrencyHistoricalData: React.FC = () => {
       // 1. Check for fixed INR (using the state set by the query above)
       if (isINRFixed) {
         return { 
-          data: [
-            { date: fromDate, buy: 160 / unit, sell: 160.15 / unit }, // Normalized
-            { date: toDate, buy: 160 / unit, sell: 160.15 / unit }  // Normalized
-          ], 
+          // --- FIX: Generate data for the *entire* range ---
+          data: generateINRFixedData(fromDate, toDate, unit), 
           samplingUsed: 'daily (fixed)' 
         };
       }
 
-      // 2. NO LOCALSTORAGE CACHE - As requested by user
-      
+      // 2. NO LOCALSTORAGE CACHE
+
       let data: ChartDataPoint[];
       let samplingUsed = 'daily';
 
@@ -512,7 +530,7 @@ const CurrencyHistoricalData: React.FC = () => {
               <div className="overflow-x-auto scrollbar-hide border-b">
                 <TabsList className="w-max">
                   {Object.entries(DATE_RANGES).map(([key, { label }]) => (
-                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0}>
+                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0 || isINRFixed}>
                       {label}
                     </TabsTrigger>
                   ))}
