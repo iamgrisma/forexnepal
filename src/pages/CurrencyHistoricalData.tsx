@@ -3,9 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchHistoricalRates, getFlagEmoji } from '@/services/forexService';
-import { fetchRatesForDateWithCache } from '@/services/d1ForexService';
-import { ChartDataPoint, Rate } from '@/types/forex';
+import { fetchHistoricalRates, getFlagEmoji } from '../services/forexService';
+import { fetchRatesForDateWithCache } from '../services/d1ForexService';
+import { ChartDataPoint, Rate } from '../types/forex';
 import { format, subDays, parseISO, addDays, differenceInDays, isValid } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import Layout from '@/components/Layout';
@@ -20,8 +20,8 @@ import ShareButtons from '@/components/ShareButtons';
 import DateInput from '@/components/DateInput'; // Import your custom date input
 import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
-import { isValidDateString, isValidDateRange, sanitizeDateInput } from '@/lib/validation';
+import { cn } from "@/lib/utils";
+import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 
 // --- Currency Info Map ---
 const CURRENCY_MAP: { [key: string]: { name: string, unit: number, country: string } } = {
@@ -65,7 +65,7 @@ const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
 const CACHE_MAX_AGE = 1000 * 60 * 60; // 1 hour
 
 // Cache key for chart data
-const getChartCacheKey = (currency: string, range: string, daily: boolean) => `chart_cache_${currency}_${range}_${daily}`;
+const getChartCacheKey = (currency: string, range: string, from: string, to: string, daily: boolean) => `chart_cache_${currency}_${range}_${from}_${to}_${daily}`;
 
 // Save/load chart data to/from localStorage
 const saveChartCache = (key: string, data: any) => {
@@ -85,7 +85,7 @@ const loadChartCache = (key: string, maxAge: number = CACHE_MAX_AGE): any | null
       localStorage.removeItem(key); // Remove stale cache
       return null;
     }
-    return data;
+    return data; // Returns the { data, samplingUsed } object
   } catch (e) {
     return null;
   }
@@ -171,8 +171,8 @@ const loadDailyDataInChunks = async (
   unit: number,
   onProgress?: (progress: number) => void // Progress as 0-100
 ): Promise<ChartDataPoint[]> => {
-  const from = new Date(fromDate);
-  const to = new Date(toDate);
+  const from = parseISO(fromDate);
+  const to = parseISO(toDate);
   const daysDiff = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const chunkSize = 90;
   const chunks = Math.ceil(daysDiff / chunkSize);
@@ -180,12 +180,9 @@ const loadDailyDataInChunks = async (
   let allData: ChartDataPoint[] = [];
   
   for (let i = 0; i < chunks; i++) {
-    const chunkStart = new Date(from);
-    chunkStart.setDate(chunkStart.getDate() + (i * chunkSize));
-    
-    const chunkEnd = new Date(chunkStart);
-    chunkEnd.setDate(chunkEnd.getDate() + chunkSize - 1);
-    if (chunkEnd > to) chunkEnd.setTime(to.getTime());
+    const chunkStart = addDays(from, i * chunkSize);
+    let chunkEnd = addDays(chunkStart, chunkSize - 1);
+    if (chunkEnd > to) chunkEnd = to;
     
     const chunkFromDate = format(chunkStart, 'yyyy-MM-dd');
     const chunkToDate = format(chunkEnd, 'yyyy-MM-dd');
@@ -234,7 +231,7 @@ const sampleData = (data: ChartDataPoint[], days: number): { sampledData: ChartD
 
   const sampledData = data.filter((_, index) => index % interval === 0 || index === data.length - 1);
   // Ensure the last point is always included
-  if (data.length > 0 && !sampledData.find(d => d.date === data[data.length - 1].date)) {
+  if (data.length > 0 && sampledData[sampledData.length - 1]?.date !== data[data.length - 1]?.date) {
     sampledData.push(data[data.length - 1]);
   }
   
@@ -248,15 +245,37 @@ const calculateStats = (data: ChartDataPoint[]) => {
     return { high: 0, low: 0, change: 0, changePercent: 0, firstRate: 0, lastRate: 0 };
   }
 
-  let high = 0;
+  let high = -Infinity;
   let low = Infinity;
+  let firstRate = 0;
+  let lastRate = 0;
+
+  // Find first valid rate
+  for (const d of data) {
+    if (d.buy !== null) {
+      firstRate = d.buy;
+      break;
+    }
+  }
+
+  // Find last valid rate
+  for (let i = data.length - 1; i >= 0; i--) {
+    const d = data[i];
+    if (d.buy !== null) {
+      lastRate = d.buy;
+      break;
+    }
+  }
+
   data.forEach(d => {
-    if (d.buy && d.buy > high) high = d.buy;
-    if (d.buy && d.buy < low) low = d.buy;
+    if (d.buy !== null) {
+      if (d.buy > high) high = d.buy;
+      if (d.buy < low) low = d.buy;
+    }
   });
 
-  const firstRate = data[0]?.buy || 0;
-  const lastRate = data[data.length - 1]?.buy || 0;
+  if (low === Infinity) low = 0; // Handle case where all data is null
+
   const change = lastRate - firstRate;
   const changePercent = firstRate > 0 ? (change / firstRate) * 100 : 0;
 
@@ -300,6 +319,12 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
   }
   return null;
 };
+
+// --- Query Result Type ---
+type QueryResult = {
+  data: ChartDataPoint[];
+  samplingUsed: string;
+}
 
 // Main Component
 const CurrencyHistoricalData: React.FC = () => {
@@ -369,25 +394,26 @@ const CurrencyHistoricalData: React.FC = () => {
   }, [range, customFromDate, customToDate, todayStr, monthAgoStr]);
 
   // --- Main Data Fetching Query ---
-  const { data: chartData, isLoading, isError, error, refetch } = useQuery({
+  const { data: queryResult, isLoading, isError, error } = useQuery<QueryResult>({
     queryKey: ['currency-chart', upperCaseCurrencyCode, range, fromDate, toDate, showDaily],
     queryFn: async () => {
       // 1. Check for fixed INR
       if (isINRFixed) {
-        setCurrentSampling('daily (fixed)');
-        return [
-          { date: fromDate, buy: 1.60, sell: 1.6015 },
-          { date: toDate, buy: 1.60, sell: 1.6015 }
-        ];
+        return { 
+          data: [
+            { date: fromDate, buy: 160 / unit, sell: 160.15 / unit }, // Normalized
+            { date: toDate, buy: 160 / unit, sell: 160.15 / unit }  // Normalized
+          ], 
+          samplingUsed: 'daily (fixed)' 
+        };
       }
 
       // 2. Check local cache
-      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, `${range}_${fromDate}_${toDate}`, showDaily);
+      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
       const cached = loadChartCache(cacheKey);
       if (cached) {
         console.log('Loaded from cache');
-        setCurrentSampling(cached.samplingUsed || 'daily');
-        return cached.data;
+        return cached;
       }
 
       let data: ChartDataPoint[];
@@ -418,19 +444,29 @@ const CurrencyHistoricalData: React.FC = () => {
         samplingUsed = sUsed;
       }
 
-      setCurrentSampling(samplingUsed);
-      // Cache the data *and* the sampling method used
-      saveChartCache(cacheKey, { data, samplingUsed });
-      return data;
+      // 4. Cache and return
+      const result = { data, samplingUsed };
+      saveChartCache(cacheKey, result);
+      return result;
     },
-    enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN' && !isError, // Prevent refetch on error
+    enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN' && !!currencyInfo,
     staleTime: 1000 * 60 * 10, // 10 minutes
   });
-  
+
+  // --- FIX: Set sampling state based on query result ---
+  useEffect(() => {
+    if (queryResult?.samplingUsed) {
+      setCurrentSampling(queryResult.samplingUsed);
+    }
+  }, [queryResult]);
+
+  const chartData = queryResult?.data;
+
   // --- Handlers ---
   const handleRangeChange = (newRange: RangeKey) => {
     if (newRange === 'custom') {
       setRange('custom');
+      setShowDaily(false);
       return; // Wait for "Apply" click
     }
     
@@ -470,8 +506,10 @@ const CurrencyHistoricalData: React.FC = () => {
     }
     recordChartRequest(days);
 
-    // This will trigger the useQuery to refetch with the new custom dates
-    queryClient.invalidateQueries({ queryKey: ['currency-chart', upperCaseCurrencyCode, 'custom', customFromDate, customToDate, false] });
+    // Set showDaily to false to trigger a new query with sampling
+    setShowDaily(false);
+    // Invalidate just in case, though state change should trigger it
+    queryClient.invalidateQueries({ queryKey: ['currency-chart', upperCaseCurrencyCode, 'custom', customFromDate, customToDate] });
   };
 
   const handleShowDaily = () => {
@@ -488,13 +526,16 @@ const CurrencyHistoricalData: React.FC = () => {
   // --- Memoized calculations ---
   const processedData = useMemo(() => {
     if (!chartData) return { chartData: [], stats: calculateStats([]) };
+    // Use raw data for stats
+    const stats = calculateStats(chartData);
+    // Use processed data (gap-filled) for chart
     const filled = processChartData(chartData);
-    return { chartData: filled, stats: calculateStats(chartData) };
+    return { chartData: filled, stats };
   }, [chartData]);
 
   const changeColor = processedData.stats.change >= 0 ? 'text-green-600' : 'text-red-600';
   const pageTitle = `Historical Data for ${name} (${upperCaseCurrencyCode})`;
-  const pageUrl = `https://forexnepal.com/historical-data/${upperCaseCurrencyCode}`;
+  const pageUrl = `https://forex.grisma.com.np/#/historical-data/${upperCaseCurrencyCode}`;
   const remainingRequests = getRemainingRequests();
 
   return (
@@ -600,7 +641,7 @@ const CurrencyHistoricalData: React.FC = () => {
                   </Alert>
                 )}
 
-                {!isLoading && !isError && processedData.chartData.length === 0 && (
+                {!isLoading && !isError && (!processedData.chartData || processedData.chartData.length === 0) && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>No Data Available</AlertTitle>
@@ -659,9 +700,9 @@ const CurrencyHistoricalData: React.FC = () => {
                     
                     <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                       <p className="text-xs text-muted-foreground text-center sm:text-left">
-                        {isINRFixed ? 'Showing fixed rate for INR (160/160.15 per 100 units).' : 
-                         showDaily ? `Showing full daily data (${chartData.length} points).` :
-                         `Showing ${currentSampling} data (${chartData.length} points).`
+                        {isINRFixed ? `Showing fixed rate for INR (1 Unit = Rs. 1.60).` : 
+                         showDaily ? `Showing full daily data (${chartData?.length || 0} points).` :
+                         `Showing ${currentSampling} data (${chartData?.length || 0} points).`
                         }
                       </p>
                       
