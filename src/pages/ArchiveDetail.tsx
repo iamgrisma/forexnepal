@@ -559,7 +559,7 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
     <div className="not-prose grid grid-cols-1 md:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Top 10 Most Expensive Currencies</CardTitle>
+          <CardTitle className="text-xl">Todays Top 10 Most Expensive Currencies</CardTitle>
           <CardDescription>Ranked by per-unit sell rate.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -577,7 +577,7 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
       </Card>
       <Card>
         <CardHeader>
-          <CardTitle className="text-xl">Top 12 Least Expensive Currencies</CardTitle>
+          <CardTitle className="text-xl">Today's Top 12 Least Expensive Currencies</CardTitle>
           <CardDescription>Ranked by per-unit sell rate.</CardDescription>
         </CardHeader>
         <CardContent>
