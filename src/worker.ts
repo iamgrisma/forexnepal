@@ -1073,24 +1073,31 @@ export default {
             return new Response(xml, { headers: sitemapHeaders });
         }
 
-        // --- Static Asset Serving (SPA Fallback) ---
+        // --- MODIFIED Static Asset Serving (SPA Fallback) ---
         try {
+            // Try to get the asset (e.g., /main.tsx.js, /favicon.ico)
             return await getAssetFromKV(
                 { request, waitUntil: (promise: Promise<any>) => ctx.waitUntil(promise) },
                 { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
             );
         } catch (e: any) {
+            // If the asset is not found (404), it's probably a React route (e.g., /posts)
             if (e instanceof Error && e.message.includes('404') || e.status === 404) {
                 try {
-                    const indexRequest = new Request(new URL('/', request.url).toString(), request);
+                    // *** THIS IS THE FIX ***
+                    // Explicitly request /index.html instead of /
+                    // This bypasses any manifest issues and directly serves your app's entry point.
+                    const indexRequest = new Request(new URL('/index.html', request.url).toString(), request);
                     return await getAssetFromKV(
                         { request: indexRequest, waitUntil: (p) => ctx.waitUntil(p) },
                         { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
                     );
                 } catch (e2) {
+                    // This means index.html itself wasn't found, which is a real 404
                      return new Response('Not Found', { status: 404 });
                 }
             } else {
+                    // For other errors (500, etc.)
                      return new Response('Internal Server Error', { status: 500 });
             }
         }
