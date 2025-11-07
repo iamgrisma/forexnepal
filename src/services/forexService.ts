@@ -1,5 +1,5 @@
 import { ForexResponse, HistoricalRates, Rate, RatesData, ChartDataPoint } from '../types/forex';
-import { format } from 'date-fns'; // Make sure date-fns is imported
+import { format } from 'date-fns';
 
 // Define the base URL for the NRB API
 const API_BASE_URL = 'https://www.nrb.org.np/api/forex/v1';
@@ -8,15 +8,13 @@ const API_BASE_URL = 'https://www.nrb.org.np/api/forex/v1';
 export const fetchForexRates = async (): Promise<ForexResponse> => {
   try {
     const today = new Date();
-    const formattedDate = formatDate(today); // Use your existing formatDate
+    const formattedDate = formatDate(today);
 
     const response = await fetch(
-      // Corrected endpoint structure based on previous examples
       `${API_BASE_URL}/rates?from=${formattedDate}&to=${formattedDate}&per_page=100&page=1`
     );
 
     if (!response.ok) {
-        // If today's data isn't found, try yesterday
         if (response.status === 404) {
             console.warn("Today's rates not found, trying yesterday's...");
             const yesterday = new Date(today);
@@ -33,7 +31,7 @@ export const fetchForexRates = async (): Promise<ForexResponse> => {
   }
 };
 
-// New function to fetch rates for a specific date - accepts string OR Date
+// Function to fetch rates for a specific date - accepts string OR Date
 export const fetchForexRatesByDate = async (date: Date | string): Promise<ForexResponse> => {
   try {
     const formattedDate = typeof date === 'string' ? date : formatDate(date);
@@ -65,7 +63,7 @@ export const fetchForexRatesByDate = async (date: Date | string): Promise<ForexR
 export const fetchPreviousDayRates = async (currentDate: Date): Promise<ForexResponse | null> => {
    const yesterday = new Date(currentDate);
    yesterday.setDate(yesterday.getDate() - 1);
-   const formattedYesterday = formatDate(yesterday); // Format the day before
+   const formattedYesterday = formatDate(yesterday);
 
    try {
      const response = await fetch(
@@ -73,7 +71,6 @@ export const fetchPreviousDayRates = async (currentDate: Date): Promise<ForexRes
      );
 
      if (!response.ok) {
-       // If yesterday's data is 404, try the day before that
        if (response.status === 404) {
          console.warn(`No rates found for ${formattedYesterday}, trying the day before.`);
          const dayBeforeYesterday = new Date(yesterday);
@@ -87,7 +84,7 @@ export const fetchPreviousDayRates = async (currentDate: Date): Promise<ForexRes
          if (!retryResponse.ok) {
             if (retryResponse.status === 404) {
                 console.warn(`No rates found for ${formattedDayBefore} either.`);
-                return { status: { code: 404, message: "No recent previous day data found"}, data: { payload: [], pagination: { page: 1, per_page: 100, total_page: 0, total_count: 0 } }}; // Return empty structure
+                return { status: { code: 404, message: "No recent previous day data found"}, data: { payload: [], pagination: { page: 1, per_page: 100, total_page: 0, total_count: 0 } }};
             }
            throw new Error(`Retry HTTP Error: ${retryResponse.status}`);
          }
@@ -99,52 +96,81 @@ export const fetchPreviousDayRates = async (currentDate: Date): Promise<ForexRes
      return await response.json();
    } catch (error) {
      console.error("Failed to fetch previous day rates:", error);
-     // Return null or a specific error structure if the fetch fails completely
      return null;
    }
  };
 
 
-// Function to fetch historical rates over a range (potentially multiple API calls)
-export const fetchHistoricalRates = async (fromDate: string, toDate: string): Promise<HistoricalRates> => {
+/**
+ * --- THIS IS THE CRITICAL FIX ---
+ * Fetches historical rates, correctly handling pagination per the API docs.
+ * (per_page max 100).
+ */
+export const fetchHistoricalRates = async (
+  fromDate: string, 
+  toDate: string,
+  onProgress?: (progress: { percent: number, current: number, total: number }) => void
+): Promise<HistoricalRates> => {
+  const allPayloads: RatesData[] = [];
+  let currentPage = 1;
+  let totalPages = 1;
+
   try {
-    // --- FIX as per NRB API doc ---
-    // The API doc says per_page max is 100. We need to handle pagination for ranges > 100 days.
-    // For simplicity, we'll fetch a large per_page. 5000 seems to work.
-    const response = await fetch(
-      `${API_BASE_URL}/rates?from=${fromDate}&to=${toDate}&per_page=5000&page=1` // Request a large page size
-    );
+    do {
+      const response = await fetch(
+        `${API_BASE_URL}/rates?from=${fromDate}&to=${toDate}&per_page=100&page=${currentPage}`
+      );
 
-    if (!response.ok) {
-         // Handle 404 gracefully if no data exists in the entire range
-        if (response.status === 404) {
-            console.warn(`No historical data found in range: ${fromDate} to ${toDate}`);
-            return { status: { code: 404, message: "No data found for this range" }, payload: [] };
+      if (!response.ok) {
+        if (response.status === 404 && currentPage === 1) {
+          console.warn(`No historical data found in range: ${fromDate} to ${toDate}`);
+          return { status: { code: 404, message: "No data found" }, payload: [] };
         }
-      throw new Error(`HTTP Error: ${response.status}`);
-    }
+        throw new Error(`HTTP Error: ${response.status} on page ${currentPage}`);
+      }
 
-    const data = await response.json();
-    // TODO: Add pagination logic here if data.pagination.total_page > 1
-    
-    // Ensure the payload structure matches HistoricalRates expectation
+      const data = await response.json();
+      
+      if (data?.data?.payload) {
+        allPayloads.push(...data.data.payload);
+      }
+
+      if (currentPage === 1) {
+        totalPages = data.pagination?.total_page || 1;
+      }
+      
+      if (onProgress) {
+        onProgress({ percent: (currentPage / totalPages) * 100, current: currentPage, total: totalPages });
+      }
+
+      currentPage++;
+    } while (currentPage <= totalPages);
+
     return {
-      status: data.status, // Pass along the status object
-      payload: data.data.payload || [], // Ensure payload is always an array
+      status: { code: 200, message: "OK" },
+      payload: allPayloads,
     };
   } catch (error) {
-    console.error("Failed to fetch historical forex rates:", error);
-    throw error; // Re-throw the error to be handled by the caller (e.g., react-query)
+    console.error("Failed to fetch paginated historical forex rates:", error);
+    throw error;
   }
 };
 
 /**
- * --- NEW FUNCTION ---
- * Fetches data *strictly* from NRB API and NORMALIZES it by the unit.
- * This is used for all tabs *except* 'week'.
+ * --- NEW FUNCTION NAME ---
+ * Fetches data *strictly* from NRB API (using the fixed fetchHistoricalRates)
+ * and NORMALIZES it by the unit.
  */
-export const fetchFromNRBApi = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
-  const result = await fetchHistoricalRates(fromDate, toDate); // from forexService
+export const fetchAndNormalizeNRBData = async (
+  currency: string, 
+  fromDate: string, 
+  toDate: string, 
+  unit: number,
+  onProgress?: (progress: { percent: number, current: number, total: number }) => void
+): Promise<ChartDataPoint[]> => {
+  
+  // Call the new paginated function
+  const result = await fetchHistoricalRates(fromDate, toDate, onProgress); 
   
   if (!result.payload || result.payload.length === 0) {
     return [];
@@ -218,7 +244,7 @@ export const getDateRanges = () => {
 
 // Basic date formatter (YYYY-MM-DD)
 export const formatDate = (date: Date): string => {
-  return format(date, 'yyyy-MM-dd'); // Using date-fns for consistency
+  return format(date, 'yyyy-MM-dd');
 };
 
 // Long date formatter (e.g., Sunday, October 19, 2025)
@@ -229,8 +255,6 @@ export const formatDateLong = (date: Date): string => {
     month: 'long',
     day: 'numeric'
   };
-  // Ensure date is treated correctly, handle potential timezone issues if needed
-  // For display, locale string is usually fine.
   try {
       return new Date(date).toLocaleDateString('en-US', options);
   } catch (e) {
@@ -249,32 +273,8 @@ export const getFlagEmoji = (iso3: string): string => {
     "SEK": "🇸🇪", "DKK": "🇩🇰", "HKD": "🇭🇰", "KWD": "🇰🇼", "BHD": "🇧🇭",
     "OMR": "🇴🇲", "INR": "🇮🇳",
   };
-  return flagEmojis[iso3.toUpperCase()] || "🏳️"; // Default flag
+  return flagEmojis[iso3.toUpperCase()] || "🏳️";
 };
 
-// Function to split date range for API limits (if necessary, NRB seems okay with ~90 days)
-export const splitDateRangeForRequests = (fromDate: Date, toDate: Date, maxDaysChunk = 90): Array<{from: string, to: string}> => {
-  const dateRanges: Array<{from: string, to: string}> = [];
-  let currentStart = new Date(fromDate);
-
-  while (currentStart <= toDate) {
-    let currentEnd = new Date(currentStart);
-    currentEnd.setDate(currentEnd.getDate() + maxDaysChunk - 1); // Calculate end of chunk
-
-    // Ensure the chunk end date doesn't exceed the overall toDate
-    if (currentEnd > toDate) {
-      currentEnd = new Date(toDate);
-    }
-
-    dateRanges.push({
-      from: formatDate(currentStart),
-      to: formatDate(currentEnd)
-    });
-
-    // Move to the next day after the current chunk ends
-    currentStart = new Date(currentEnd);
-    currentStart.setDate(currentStart.getDate() + 1);
-  }
-
-  return dateRanges;
-};
+// This function is no longer needed as pagination is handled inside fetchHistoricalRates
+// export const splitDateRangeForRequests = ...
