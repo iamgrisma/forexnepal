@@ -1,3 +1,44 @@
+
+// --- SPA clean-URL rewrite helper added by assistant ---
+// This logic rewrites non-asset GET requests to /index.html so client-side routing (History API) works.
+// It preserves requests for known static assets and files like sitemap.xml, robots.txt, favicon.ico, etc.
+
+const ASSET_EXT_RE = /\.(?:js|mjs|css|json|png|jpg|jpeg|gif|svg|ico|map|woff2?|woff|ttf|eot|mp4|webm|wasm|xml|txt)$/i;
+const PASS_THROUGH_PREFIXES = ["/api", "/_next", "/_static", "/assets", "/r2", "/_workers_dev"];
+
+async function spaRewrite(request: Request) {
+  // Let non-GET requests through
+  if (request.method !== "GET") return fetch(request);
+
+  const url = new URL(request.url);
+  const pathname = url.pathname;
+
+  // Allowlisted files that should not be rewritten
+  if (pathname === "/sitemap.xml" || pathname === "/robots.txt" || pathname === "/favicon.ico") {
+    return fetch(request);
+  }
+
+  // Pass through known prefixes (APIs, admin, static asset paths)
+  for (const p of PASS_THROUGH_PREFIXES) {
+    if (pathname.startsWith(p)) return fetch(request);
+  }
+
+  // If path looks like a file with an extension, pass through (so existing files are served)
+  if (ASSET_EXT_RE.test(pathname)) {
+    return fetch(request);
+  }
+
+  // Otherwise rewrite to /index.html so the SPA router can handle the route
+  const indexUrl = new URL("/index.html", request.url).toString();
+  const indexRequest = new Request(indexUrl, {
+    method: "GET",
+    headers: request.headers
+  });
+  return fetch(indexRequest);
+}
+// --- end helper ---
+
+
 // src/worker.ts
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 // Make sure Rate and RatesData are imported correctly
@@ -1119,3 +1160,8 @@ export default {
         ctx.waitUntil(handleScheduled(event, env));
     }
 };
+
+
+addEventListener("fetch", event => {
+  event.respondWith(spaRewrite(event.request));
+});
