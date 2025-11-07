@@ -59,66 +59,6 @@ const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
   'custom': { days: 0, label: 'Custom' },
 };
 
-// Use a long cache time for chart data as requested
-const CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30; // 30 days cache
-
-// Cache key for chart data
-const getChartCacheKey = (currency: string, range: string, from: string, to: string, daily: boolean) => `chart_cache_${currency}_${range}_${from}_${to}_${daily}`;
-
-// Save/load chart data to/from localStorage
-const saveChartCache = (key: string, data: any) => {
-  try {
-    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) {
-    // If cache is full, try to remove old chart data
-    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-      console.warn('Cache quota exceeded. Clearing old chart cache...');
-      let keysToRemove: { key: string, timestamp: number }[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('chart_cache_')) {
-          const item = localStorage.getItem(key);
-          if (item) {
-            try {
-              const { timestamp } = JSON.parse(item);
-              keysToRemove.push({ key, timestamp: timestamp || 0 });
-            } catch (e) { /* ignore broken cache item */ }
-          }
-        }
-      }
-      // Sort by oldest and remove 5 items
-      keysToRemove.sort((a, b) => a.timestamp - b.timestamp).slice(0, 5).forEach(item => {
-        console.log(`Removing old cache: ${item.key}`);
-        localStorage.removeItem(item.key);
-      });
-      
-      // Try saving again
-      try {
-        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-      } catch (e2) {
-        console.error('Failed to cache chart data even after clearing:', e2);
-      }
-    } else {
-      console.error('Failed to cache chart data:', e);
-    }
-  }
-};
-
-const loadChartCache = (key: string, maxAge: number = CACHE_MAX_AGE): any | null => {
-  try {
-    const cached = localStorage.getItem(key);
-    if (!cached) return null;
-    const { data, timestamp } = JSON.parse(cached);
-    if (Date.now() - timestamp > maxAge) {
-      localStorage.removeItem(key); // Remove stale cache
-      return null;
-    }
-    return data; // Returns the { data, samplingUsed } object
-  } catch (e) {
-    return null;
-  }
-};
-
 // Helper to fetch data with timeout
 const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
   const controller = new AbortController();
@@ -411,13 +351,10 @@ const CurrencyHistoricalData: React.FC = () => {
         };
       }
 
-      // 2. Check local cache
-      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
-      const cached = loadChartCache(cacheKey);
-      if (cached) {
-        console.log('Loaded from cache');
-        return cached; // This is { data, samplingUsed }
-      }
+      // 2. NO LOCALSTORAGE CACHE
+      // const cacheKey = ...
+      // const cached = loadChartCache(cacheKey);
+      // if (cached) return cached;
 
       let data: ChartDataPoint[];
       let samplingUsed = 'daily';
@@ -463,8 +400,11 @@ const CurrencyHistoricalData: React.FC = () => {
 
       // 5. Cache and return
       const result = { data, samplingUsed };
+      
       // --- FIX: ONLY CACHE IF DATA IS NOT EMPTY ---
       if (data && data.length > 0) {
+        // Re-enabled caching as per your request, but only for non-empty data
+        const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
         saveChartCache(cacheKey, result);
       }
       return result;
@@ -475,7 +415,7 @@ const CurrencyHistoricalData: React.FC = () => {
     retry: false, // Don't retry on rate-limit errors
   });
 
-  // --- Set sampling state based on query result ---
+  // --- FIX: Set sampling state based on query result ---
   useEffect(() => {
     if (queryResult?.samplingUsed) {
       setCurrentSampling(queryResult.samplingUsed);
