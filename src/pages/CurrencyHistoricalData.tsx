@@ -99,34 +99,22 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
 // Fetch week data from DB with fallback to NRB API
 const fetchWeekData = async (currency: string, fromDate: string, toDate: string): Promise<ChartDataPoint[]> => {
   try {
-    // Try DB first with 5 second timeout
-    const dbResponse = await fetchWithTimeout(`/api/historical-rates?from=${fromDate}&to=${toDate}`, 5000);
+    // --- THIS IS THE FIX ---
+    // Added `?currency=${currency}` to the internal API call
+    const dbResponse = await fetchWithTimeout(`/api/historical-rates?currency=${currency}&from=${fromDate}&to=${toDate}`, 5000);
+    // --- END OF FIX ---
     
     if (dbResponse.ok) {
       const result = await dbResponse.json();
-      if (result.data && Array.isArray(result.data) && result.data.length > 0) {
-        // Convert wide format to chart data
-        const chartData: ChartDataPoint[] = [];
-        result.data.forEach((day: any) => {
-          const buy = day[`${currency}_buy`];
-          const sell = day[`${currency}_sell`];
-          if (buy && sell) {
-            chartData.push({
-              date: day.date,
-              buy: Number(buy),
-              sell: Number(sell),
-            });
-          }
-        });
-        
-        if (chartData.length > 0) {
-          console.log('Loaded week data from DB');
-          return chartData;
-        }
+      // The worker now returns { success: true, data: [...] }
+      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+        console.log('Loaded week data from DB');
+        // Data is already in { date, buy, sell } format from the worker
+        return result.data;
       }
     }
   } catch (error) {
-    console.warn('DB fetch failed or timed out, falling back to NRB API');
+    console.warn('DB fetch failed or timed out, falling back to NRB API', error);
   }
   
   // Fallback to NRB API
