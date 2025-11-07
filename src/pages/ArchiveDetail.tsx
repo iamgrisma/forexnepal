@@ -269,13 +269,19 @@ const ArchiveDetail = () => {
     
     // Sort by percent change (desc), then alphabetically
     const sortedByChange = [...currenciesToSort].sort((a, b) => {
-        if (a.dailyChangePercent > b.dailyChangePercent) return -1;
-        if (a.dailyChangePercent < b.dailyChangePercent) return 1;
+        // --- FIX: Sort by *absolute* change percentage for interleaving ---
+        const absA = Math.abs(a.dailyChangePercent);
+        const absB = Math.abs(b.dailyChangePercent);
+        
+        if (absA > absB) return -1; // Sort by ABSOLUTE value, descending
+        if (absA < absB) return 1;
+        
+        // If percentages are equal, sort alphabetically
         return a.currency.iso3.localeCompare(b.currency.iso3);
     });
 
     const positiveChanges = sortedByChange.filter(r => r.dailyChangePercent > 0.0001);
-    const negativeChanges = sortedByChange.filter(r => r.dailyChangePercent < -0.0001).reverse(); // .reverse() to get most negative first
+    const negativeChanges = sortedByChange.filter(r => r.dailyChangePercent < -0.0001); // No reverse needed now
     const stableChanges = sortedByChange.filter(r => Math.abs(r.dailyChangePercent) <= 0.0001);
 
     const interleavedList: AnalyzedRate[] = [];
@@ -291,7 +297,9 @@ const ArchiveDetail = () => {
     const allNegative = positiveChanges.length === 0 && negativeChanges.length > 0;
     
     const topGainer = positiveChanges[0] || stableChanges[0] || analyzedRates[0];
-    const topLoser = negativeChanges[0] || stableChanges[0] || analyzedRates[0];
+    // --- FIX: Find most negative ---
+    const topLoser = negativeChanges.length > 0 ? negativeChanges[0] : (stableChanges[0] || analyzedRates[0]);
+
 
     const majorRates = MAJOR_CURRENCY_CODES.map(code => 
       analyzedRates.find(r => r.currency.iso3 === code)
@@ -734,6 +742,7 @@ const ArchiveTextGenerator = {
       `<p><strong>${longDateHeader}</strong> | While banks are closed today, Nepal Rastra Bank has published the reference exchange rates that will be effective for today's transactions where applicable. The <strong>U.S. Dollar</strong> is quoted at <strong>Rs. ${usdBuy}</strong> (Buy) and <strong>Rs. ${usdSell}</strong> (Sell). Often, weekend rates reflect the closing rates of the previous day. Today’s report analyzes these figures, including the daily change of the ${gainerName} (up by Rs. ${gainerChange}) and the ${loserName} (down by Rs. ${loserChange}), providing a full summary and historical context.</p>`
     ];
     
+    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -743,46 +752,47 @@ const ArchiveTextGenerator = {
   getTodaysForexDetail: (analysisData: DailyAnalysis, dayOfWeek: number) => {
     const { allRates, interleavedList, allStable, allPositive, allNegative } = analysisData;
     
-    // --- Define 7 variations for each sentence type ---
-    const link = (r: AnalyzedRate) => `<a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>`;
-    const flag = (r: AnalyzedRate) => getFlagEmoji(r.currency.iso3);
-    const buy = (r: AnalyzedRate) => `<strong>Rs. ${r.buy.toFixed(2)}</strong>`;
-    const sell = (r: AnalyzedRate) => `<strong>Rs. ${r.sell.toFixed(2)}</strong>`;
-    const unit = (r: AnalyzedRate) => `${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}`;
-    const change = (r: AnalyzedRate) => `Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}`;
-    const changePercent = (r: AnalyzedRate) => `(${Math.abs(r.dailyChangePercent).toFixed(2)}%)`;
+    // --- TEMPLATE VARIABLES (These are now inlined) ---
+    // const link = (r: AnalyzedRate) => `<a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>`;
+    // const flag = (r: AnalyzedRate) => getFlagEmoji(r.currency.iso3);
+    // const buy = (r: AnalyzedRate) => `<strong>Rs. ${r.buy.toFixed(2)}</strong>`;
+    // const sell = (r: AnalyzedRate) => `<strong>Rs. ${r.sell.toFixed(2)}</strong>`;
+    // const unit = (r: AnalyzedRate) => `${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}`;
+    // const change = (r: AnalyzedRate) => `<strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong>`;
+    // const changePercent = (r: AnalyzedRate) => `(<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>)`;
+    // --- END TEMPLATE VARIABLES ---
 
-    // 7 variations for a positive change sentence
+    // --- FIX: 7 variations for a positive change sentence (INLINED) ---
     const positiveSentences = [
-      (r: AnalyzedRate) => `The ${link(r)} ${flag(r)} advanced against the NPR, gaining ${change(r)} ${changePercent} to reach a buying rate of ${buy(r)} and a selling rate of ${sell(r)} per ${unit(r)}.`,
-      (r: AnalyzedRate) => `A notable gainer today is the ${link(r)}, which appreciated by ${change(r)} ${changePercent}; it is now trading at ${buy(r)} (Buy) and ${sell(r)} (Sell) for ${unit(r)}.`,
-      (r: AnalyzedRate) => `The Nepali Rupee weakened against the ${link(r)} ${flag(r)}, which climbed by ${change(r)}. Financial institutions will now buy ${unit(r)} for ${buy(r)} and sell for ${sell(r)}.`,
-      (r: AnalyzedRate) => `Showing strength, the ${link(r)} rose by ${change(r)} ${changePercent}, bringing its official buy rate to ${buy(r)} and sell rate to ${sell(r)} for ${unit(r)}.`,
-      (r: AnalyzedRate) => `Similarly, the ${link(r)} ${flag(r)} also saw an increase of ${change(r)}. Its value is now set at ${buy(r)} (Buy) and ${sell(r)} (Sell) per ${unit(r)}.`,
-      (r: AnalyzedRate) => `The ${link(r)} has become more expensive, appreciating by ${change(r)} ${changePercent}. The new rate is ${buy(r)} for buying and ${sell(r)} for selling per ${unit(r)}.`,
-      (r: AnalyzedRate) => `An upward trend was seen in the ${link(r)} ${flag(r)}, which increased by ${change(r)}. Today, ${unit(r)} can be bought for ${buy(r)} and sold for ${sell(r)}.`
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} advanced against the NPR, gaining <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>) to reach a buying rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a selling rate of <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `A notable gainer today is the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which appreciated by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>); it is now trading at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The Nepali Rupee weakened against the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which climbed by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Financial institutions will now buy ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sell for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`,
+      (r: AnalyzedRate) => `Showing strength, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> rose by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>), bringing its official buy rate to <strong>Rs. ${r.buy.toFixed(2)}</strong> and sell rate to <strong>Rs. ${r.sell.toFixed(2)}</strong> for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `Similarly, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} also saw an increase of <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Its value is now set at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> has become more expensive, appreciating by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). The new rate is <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> for selling per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `An upward trend was seen in the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which increased by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Today, ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} can be bought for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sold for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`
     ];
     
-    // 7 variations for a negative change sentence
+    // --- FIX: 7 variations for a negative change sentence (INLINED) ---
     const negativeSentences = [
-      (r: AnalyzedRate) => `Conversely, the ${link(r)} ${flag(r)} depreciated by ${change(r)} ${changePercent}, settling at a buying rate of ${buy(r)} and a selling rate of ${sell(r)} per ${unit(r)}.`,
-      (r: AnalyzedRate) => `The ${link(r)} weakened today, dropping by ${change(r)} ${changePercent}. It is now listed at ${buy(r)} (Buy) and ${sell(r)} (Sell) for ${unit(r)}.`,
-      (r: AnalyzedRate) => `The Nepali Rupee strengthened against the ${link(r)} ${flag(r)}, which fell by ${change(r)}. Banks will now purchase ${unit(r)} for ${buy(r)} and sell for ${sell(r)}.`,
-      (r: AnalyzedRate) => `Showing weakness, the ${link(r)} declined by ${change(r)} ${changePercent}, adjusting its official buy rate to ${buy(r)} and sell rate to ${sell(r)} for ${unit(r)}.`,
-      (r: AnalyzedRate) => `In contrast, the ${link(r)} ${flag(r)} saw a decrease of ${change(r)}. Its value is now fixed at ${buy(r)} (Buy) and ${sell(r)} (Sell) per ${unit(r)}.`,
-      (r: AnalyzedRate) => `The ${link(r)} has become cheaper, depreciating by ${change(r)} ${changePercent}. The new rate is ${buy(r)} for buying and ${sell(r)} for selling per ${unit(r)}.`,
-      (r: AnalyzedRate) => `A downward trend was observed for the ${link(r)} ${flag(r)}, which decreased by ${change(r)}. Today, ${unit(r)} can be bought for ${buy(r)} and sold for ${sell(r)}.`
+      (r: AnalyzedRate) => `Conversely, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} depreciated by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>), settling at a buying rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a selling rate of <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> weakened today, dropping by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). It is now listed at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The Nepali Rupee strengthened against the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which fell by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Banks will now purchase ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sell for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`,
+      (r: AnalyzedRate) => `Showing weakness, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> declined by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>), adjusting its official buy rate to <strong>Rs. ${r.buy.toFixed(2)}</strong> and sell rate to <strong>Rs. ${r.sell.toFixed(2)}</strong> for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `In contrast, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} saw a decrease of <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Its value is now fixed at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> has become cheaper, depreciating by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). The new rate is <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> for selling per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `A downward trend was observed for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which decreased by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Today, ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} can be bought for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sold for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`
     ];
 
-    // 7 variations for a stable sentence
+    // --- FIX: 7 variations for a stable sentence (INLINED) ---
     const stableSentences = [
-      (r: AnalyzedRate) => `The ${link(r)} ${flag(r)} remained stable with no change from yesterday, holding at ${buy(r)} (Buy) and ${sell(r)} (Sell) per ${unit(r)}.`,
-      (r: AnalyzedRate) => `No change was recorded for the ${link(r)}, which maintains its rate of ${buy(r)} for buying and ${sell(r)} for selling (${unit(r)}).`,
-      (r: AnalyzedRate) => `The ${link(r)} ${flag(r)} held steady, with its buying rate at ${buy(r)} and selling rate at ${sell(r)} per ${unit(r)}.`,
-      (r: AnalyzedRate) => `Similarly, the ${link(r)} also showed no fluctuation, remaining at ${buy(r)} (Buy) and ${sell(r)} (Sell) for ${unit(r)}.`,
-      (r: AnalyzedRate) => `The rate for the ${link(r)} ${flag(r)} is unchanged, listed at ${buy(r)} (Buy) and ${sell(r)} (Sell) per ${unit(r)}.`,
-      (r: AnalyzedRate) => `A stable rate was posted for the ${link(r)}, which continues to trade at ${buy(r)} (Buy) and ${sell(r)} (Sell) per ${unit(r)}.`,
-      (r: AnalyzedRate) => `The ${link(r)} ${flag(r)} saw no movement, with its value constant at ${buy(r)} for buying and ${sell(r)} for selling (${unit(r)}).`
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} remained stable with no change from yesterday, holding at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `No change was recorded for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which maintains its rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> for selling (${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}).`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} held steady, with its buying rate at <strong>Rs. ${r.buy.toFixed(2)}</strong> and selling rate at <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `Similarly, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> also showed no fluctuation, remaining at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The rate for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} is unchanged, listed at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `A stable rate was posted for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which continues to trade at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} saw no movement, with its value constant at <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> (${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}).`
     ];
 
     let html = `<h2>Today's Forex Detail:</h2>`;
@@ -790,7 +800,7 @@ const ArchiveTextGenerator = {
     // Start with INR
     const inr = allRates.find(r => r.currency.iso3 === 'INR');
     if (inr) {
-      html += `<p>The <strong>Indian Rupee (INR)</strong>, to which the NPR is pegged, maintains its fixed rate. Today's official rate for ${unit(inr)} is <strong>Rs. ${inr.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${inr.sell.toFixed(2)}</strong> (Sell).</p>`;
+      html += `<p>The <strong>Indian Rupee (INR)</strong>, to which the NPR is pegged, maintains its fixed rate. Today's official rate for ${inr.currency.unit} unit${inr.currency.unit > 1 ? 's' : ''} is <strong>Rs. ${inr.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${inr.sell.toFixed(2)}</strong> (Sell).</p>`;
     }
     
     // Handle Edge Cases
@@ -853,13 +863,13 @@ const ArchiveTextGenerator = {
 
     // --- Default: Mixed Market ---
     const mixedIntros = [
-      `Today's market shows a mixed performance. The biggest gain was seen in the ${link(interleavedList[0])}, while the ${link(interleavedList[1])} saw the largest drop.`,
-      `It was a volatile day for the NPR. While the ${link(interleavedList[0])} advanced significantly, the ${link(interleavedList[1])} faced a notable decline.`,
-      `The currency market was mixed today. The ${link(interleavedList[0])} led the gainers, as the ${link(interleavedList[1])} led the losers.`,
-      `A day of mixed trends: the ${link(interleavedList[0])} was the top performer, whereas the ${link(interleavedList[1])} depreciated the most.`,
-      `The market saw movements in both directions. The ${link(interleavedList[0])} appreciated the most, while the ${link(interleavedList[1])} saw the biggest fall.`,
-      `Key currencies were split: the ${link(interleavedList[0])} recorded the largest gain, and the ${link(interleavedList[1])} posted the largest loss.`,
-      `Today's bulletin highlights a divided market. The ${link(interleavedList[0])} surged, but the ${link(interleavedList[1])} fell.`,
+      `Today's market shows a mixed performance. The biggest gain was seen in the <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a>, while the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> saw the largest drop.`,
+      `It was a volatile day for the NPR. While the <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> advanced significantly, the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> faced a notable decline.`,
+      `The currency market was mixed today. The <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> led the gainers, as the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> led the losers.`,
+      `A day of mixed trends: the <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> was the top performer, whereas the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> depreciated the most.`,
+      `The market saw movements in both directions. The <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> appreciated the most, while the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> saw the biggest fall.`,
+      `Key currencies were split: the <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> recorded the largest gain, and the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> posted the largest loss.`,
+      `Today's bulletin highlights a divided market. The <a href="/#/historical-data/${interleavedList[0].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[0].currency.name}</a> surged, but the <a href="/#/historical-data/${interleavedList[1].currency.iso3}" class="font-medium text-blue-600 hover:underline">${interleavedList[1].currency.name}</a> fell.`,
     ];
     html += `<p>${ArchiveTextGenerator._getVariant(dayOfWeek, mixedIntros)} `;
     
@@ -876,6 +886,7 @@ const ArchiveTextGenerator = {
     html += `</p>`;
     return html;
   },
+
 
   /**
    * Generates the expanded "Currency Rankings" text (7 Variations)
@@ -900,6 +911,7 @@ const ArchiveTextGenerator = {
       // 6: Saturday
       `<p>The value of a single unit of currency can vary dramatically, as shown in these rankings for ${date}. The "Most Expensive" list features the global heavyweights in nominal value, such as the KWD and BHD. This demonstrates the significant capital required to purchase even one unit of these currencies. The "Least Expensive" list, however, is a matter of denomination. The JPY, KRW, and INR all have small base units, making them appear "cheap" in this 1-to-1 comparison. This ranking is for informational purposes; real-world transactions will use the official units (e.g., 100 for KRW, 10 for JPY) as specified in the main table. Our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter</a> handles this automatically.</p>`
     ];
+    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -923,6 +935,7 @@ const ArchiveTextGenerator = {
       // 6: Saturday
       `<p>Context is key in finance. This section provides that context by comparing today's rates to historical benchmarks. We analyze the change in the normalized 'Buy' rate over six different timeframes, from one week to over two decades. This allows you to assess the long-term performance and stability of each currency against the NPR. The data is loaded dynamically when you select a tab to ensure performance. This analysis is crucial for understanding the true appreciation or depreciation of assets over time. For a more detailed visual breakdown, please visit our interactive <a href="/#/historical-charts" class="text-blue-600 hover:underline font-medium">historical charts page</a>.</p>`
     ];
+    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -987,7 +1000,7 @@ const ArchiveTextGenerator = {
        ${topWeekly && bottomWeekly ? `<p>This week, the <strong>${topWeekly.name}</strong> has emerged as the strongest currency with a <strong>${topWeekly.percent.toFixed(2)}%</strong> increase. The <strong>${bottomWeekly.name}</strong>, on the other hand, has seen the most significant decline over the past seven days, falling <strong>${bottomWeekly.percent.toFixed(2)}%</strong>. This weekly summary helps to understand the underlying momentum of currencies.</p>` : ''}`
     ];
     
-    // --- FIX: Call ArchiveTextGenerator._getVariant ---
+    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   }
 };
@@ -1007,8 +1020,9 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
     onTabChange,
   } = props;
 
+  // This check is crucial, as analysisData might be null during the first render
   if (!analysisData || analysisData.allRates.length === 0) {
-    return null;
+    return <PageSkeleton />; // Or some other loading/empty state
   }
 
   const { topGainer, topLoser, allRates, top10High, top12Low } = analysisData;
@@ -1049,7 +1063,6 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
         <div dangerouslySetInnerHTML={{ __html: marketSummaryText }} />
       </section>
 
-      {/* --- Pass dayOfWeek to generator --- */}
       <CurrencyRankings 
         topHigh={top10High} 
         topLow={top12Low} 
