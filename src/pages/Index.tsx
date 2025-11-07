@@ -80,9 +80,20 @@ const Index = () => {
     }
   }, [prevDayData]);
 
+  // --- THIS IS THE KEY FIX ---
+  // Determine which data to display.
+  // Use today's data (forexData) if it's available and has rates.
+  // Otherwise, fall back to the previous day's data (prevDayData).
+  const displayData: RatesData | undefined = 
+    (forexData?.rates && forexData.rates.length > 0) 
+    ? forexData 
+    : prevDayData;
+  // --- END OF FIX ---
+
   useEffect(() => {
-    if (forexData?.rates) {
-      const allRates = forexData.rates;
+    // --- UPDATE: Use displayData ---
+    if (displayData?.rates) {
+      const allRates = displayData.rates;
 
       const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
       const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
@@ -109,7 +120,7 @@ const Index = () => {
         setMiddleEastCurrencies([]);
         setOtherCurrencies([]);
     }
-  }, [forexData]);
+  }, [displayData]); // --- UPDATE: Depend on displayData ---
 
   const handleRefresh = async () => {
     toast({
@@ -122,9 +133,12 @@ const Index = () => {
       queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDateString] })
     ]);
   };
+  
+  // --- UPDATE: Use displayData to populate rates ---
+  const rates: Rate[] = displayData?.rates || [];
+  // --- UPDATE: Check if the data being shown is from the fallback ---
+  const isShowingFallback = (!forexData || forexData.rates.length === 0) && (prevDayData?.rates && prevDayData.rates.length > 0);
 
-  const ratesData: RatesData | undefined = forexData;
-  const rates: Rate[] = ratesData?.rates || [];
 
   const handleDateChange = (date: Date | undefined) => {
     if (date) {
@@ -308,7 +322,16 @@ const Index = () => {
             <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
               Foreign Exchange Rates as Per Nepal Rastra Bank
             </h2>
-            <div className="flex items-center justify-center gap-2 h-10">
+
+            {/* --- NEW: Show fallback message --- */}
+            {isShowingFallback && (
+              <div className="text-sm text-orange-600 font-medium animate-fade-in">
+                No data found for {formatDateLong(selectedDate)}. Showing data for {formatDateLong(subDays(selectedDate, 1))}.
+              </div>
+            )}
+            {/* --- END NEW --- */}
+
+            <div className="flex items-center justify-center gap-2 h-10 mt-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -328,7 +351,9 @@ const Index = () => {
                     variant="outline"
                     className={cn(
                       "w-[240px] justify-center text-left font-normal group relative",
-                      !selectedDate && "text-muted-foreground"
+                      !selectedDate && "text-muted-foreground",
+                      // --- NEW: Highlight if showing fallback ---
+                      isShowingFallback && "border-orange-300 bg-orange-50 hover:bg-orange-100"
                     )}
                   >
                     <span className="text-lg font-semibold text-gray-700">
@@ -423,7 +448,7 @@ const Index = () => {
           </div>
 
 
-          {/* Ticker component - FIX: Pass previousDayRates and combined loading state */}
+          {/* Ticker component */}
           <ForexTicker/>
 
           <Tabs defaultValue="all" className="mb-12">
