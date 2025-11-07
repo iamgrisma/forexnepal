@@ -337,7 +337,6 @@ const CurrencyHistoricalData: React.FC = () => {
   const [showDaily, setShowDaily] = useState(false);
   const [dailyLoadProgress, setDailyLoadProgress] = useState<number | null>(null);
   const [cooldownTimer, setCooldownTimer] = useState<number>(0);
-  const [isINRFixed, setIsINRFixed] = useState(false);
   const [currentSampling, setCurrentSampling] = useState('daily');
   
   // Custom date states
@@ -361,20 +360,21 @@ const CurrencyHistoricalData: React.FC = () => {
   }, [cooldownTimer]);
 
   // --- INR Fixed Rate Check ---
-  useQuery({
-    queryKey: ['currentRateCheckINR'],
+  // This query runs ONLY for INR to check if its rate is fixed.
+  const { data: inrCheckData, isFetching: isCheckingINR } = useQuery({
+    queryKey: ['currentRateCheckINR', upperCaseCurrencyCode],
     queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')), // DB-first check
-    enabled: upperCaseCurrencyCode === 'INR',
-    staleTime: Infinity,
-    onSuccess: (data) => {
-      if (data?.rates) {
-        const inrRate = data.rates.find(r => r.currency.iso3 === 'INR');
-        if (inrRate && inrRate.buy === 160 && inrRate.sell === 160.15) {
-          setIsINRFixed(true);
-        }
-      }
-    }
+    enabled: upperCaseCurrencyCode === 'INR', // Only run this query for INR
+    staleTime: 1000 * 60 * 60, // 1 hour
+    refetchOnWindowFocus: false,
   });
+
+  // Determine if INR rate is fixed
+  const isINRFixed = useMemo(() => {
+    if (upperCaseCurrencyCode !== 'INR' || !inrCheckData) return false;
+    const inrRate = inrCheckData.rates.find(r => r.currency.iso3 === 'INR');
+    return inrRate && inrRate.buy === 160 && inrRate.sell === 160.15;
+  }, [inrCheckData, upperCaseCurrencyCode]);
 
   // Calculate date range
   const { fromDate, toDate, rangeInDays } = useMemo(() => {
@@ -400,7 +400,7 @@ const CurrencyHistoricalData: React.FC = () => {
   const { data: queryResult, isLoading, isError, error } = useQuery<QueryResult>({
     queryKey: ['currency-chart', upperCaseCurrencyCode, range, fromDate, toDate, showDaily],
     queryFn: async () => {
-      // 1. Check for fixed INR
+      // 1. Check for fixed INR (using the state set by the query above)
       if (isINRFixed) {
         return { 
           data: [
@@ -463,15 +463,19 @@ const CurrencyHistoricalData: React.FC = () => {
 
       // 5. Cache and return
       const result = { data, samplingUsed };
-      saveChartCache(cacheKey, result);
+      // --- FIX: ONLY CACHE IF DATA IS NOT EMPTY ---
+      if (data && data.length > 0) {
+        saveChartCache(cacheKey, result);
+      }
       return result;
     },
-    enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN' && !!currencyInfo,
+    // --- FIX: This query should be enabled *after* the INR check is done (if INR), or immediately if not INR ---
+    enabled: (upperCaseCurrencyCode === 'INR' ? !isCheckingINR : !!currencyInfo),
     staleTime: 1000 * 60 * 10, // 10 minutes
     retry: false, // Don't retry on rate-limit errors
   });
 
-  // --- FIX: Set sampling state based on query result ---
+  // --- Set sampling state based on query result ---
   useEffect(() => {
     if (queryResult?.samplingUsed) {
       setCurrentSampling(queryResult.samplingUsed);
@@ -527,6 +531,9 @@ const CurrencyHistoricalData: React.FC = () => {
   const pageTitle = `Historical Data for ${name} (${upperCaseCurrencyCode})`;
   const pageUrl = `https://forex.grisma.com.np/#/historical-data/${upperCaseCurrencyCode}`;
   const remainingRequests = getRemainingRequests();
+
+  // Handle combined loading state
+  const isPageLoading = isLoading || (upperCaseCurrencyCode === 'INR' && isCheckingINR);
 
   return (
     <Layout>
@@ -600,14 +607,14 @@ const CurrencyHistoricalData: React.FC = () => {
                       className="w-36 h-9"
                     />
                   </div>
-                  <Button onClick={handleCustomApply} size="sm" disabled={isLoading || cooldownTimer > 0}>
+                  <Button onClick={handleCustomApply} size="sm" disabled={isPageLoading || cooldownTimer > 0}>
                     Apply
                   </Button>
                 </div>
               )}
 
               <div className="mt-6">
-                {(isLoading || dailyLoadProgress !== null) && (
+                {(isPageLoading || dailyLoadProgress !== null) && (
                   <div className="space-y-4">
                     <Skeleton className="h-[400px] w-full" />
                     {dailyLoadProgress !== null && (
@@ -631,7 +638,7 @@ const CurrencyHistoricalData: React.FC = () => {
                   </Alert>
                 )}
 
-                {!isLoading && !isError && (!processedData.chartData || processedData.chartData.length === 0) && (
+                {!isPageLoading && !isError && (!processedData.chartData || processedData.chartData.length === 0) && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>No Data Available</AlertTitle>
@@ -641,7 +648,7 @@ const CurrencyHistoricalData: React.FC = () => {
                   </Alert>
                 )}
 
-                {!isLoading && !isError && processedData.chartData.length > 0 && (
+                {!isPageLoading && !isError && processedData.chartData.length > 0 && (
                   <>
                     <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                       <StatCard title="Last Rate" value={processedData.stats.lastRate} decimals={4} />
@@ -712,7 +719,7 @@ const CurrencyHistoricalData: React.FC = () => {
                           variant="outline"
                           size="sm"
                           onClick={handleShowDaily}
-                          disabled={isLoading || cooldownTimer > 0}
+                          disabled={isPageLoading || cooldownTimer > 0}
                         >
                           <RefreshCw className="h-4 w-4 mr-2" />
                           Load Full Daily Data
