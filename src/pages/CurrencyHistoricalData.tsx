@@ -607,7 +607,7 @@ const CurrencyHistoricalData: React.FC = () => {
               <div className="overflow-x-auto scrollbar-hide border-b">
                 <TabsList className="w-max">
                   {Object.entries(DATE_RANGES).map(([key, { label }]) => (
-                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0 || (isINRFixed && key !== 'custom' && key !== 'week') /* Allow changing tabs for INR, but data will be same */}>
+                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0}>
                       {label}
                     </TabsTrigger>
                   ))}
