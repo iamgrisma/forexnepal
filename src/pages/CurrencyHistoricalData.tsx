@@ -1,26 +1,23 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchHistoricalRates, getFlagEmoji } from '../services/forexService';
+import { getFlagEmoji, fetchFromNRBApi as fetchFromNRBApiRaw } from '../services/forexService';
 import { fetchRatesForDateWithCache } from '../services/d1ForexService';
-import { ChartDataPoint, Rate } from '../types/forex';
+import { ChartDataPoint } from '../types/forex';
 import { format, subDays, parseISO, addDays, differenceInDays, isValid } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import Layout from '@/components/Layout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, ArrowLeft, RefreshCw, CalendarIcon, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import ShareButtons from '@/components/ShareButtons';
 import DateInput from '@/components/DateInput'; // Import your custom date input
 import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
 import { toast } from 'sonner';
-import { cn } from "@/lib/utils";
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 
 // --- Currency Info Map ---
@@ -62,7 +59,8 @@ const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
   'custom': { days: 0, label: 'Custom' },
 };
 
-const CACHE_MAX_AGE = 1000 * 60 * 60; // 1 hour
+// Use a long cache time for chart data as requested
+const CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30; // 30 days cache
 
 // Cache key for chart data
 const getChartCacheKey = (currency: string, range: string, from: string, to: string, daily: boolean) => `chart_cache_${currency}_${range}_${from}_${to}_${daily}`;
@@ -72,7 +70,37 @@ const saveChartCache = (key: string, data: any) => {
   try {
     localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
   } catch (e) {
-    console.error('Failed to cache chart data');
+    // If cache is full, try to remove old chart data
+    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+      console.warn('Cache quota exceeded. Clearing old chart cache...');
+      let keysToRemove: { key: string, timestamp: number }[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chart_cache_')) {
+          const item = localStorage.getItem(key);
+          if (item) {
+            try {
+              const { timestamp } = JSON.parse(item);
+              keysToRemove.push({ key, timestamp: timestamp || 0 });
+            } catch (e) { /* ignore broken cache item */ }
+          }
+        }
+      }
+      // Sort by oldest and remove 5 items
+      keysToRemove.sort((a, b) => a.timestamp - b.timestamp).slice(0, 5).forEach(item => {
+        console.log(`Removing old cache: ${item.key}`);
+        localStorage.removeItem(item.key);
+      });
+      
+      // Try saving again
+      try {
+        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+      } catch (e2) {
+        console.error('Failed to cache chart data even after clearing:', e2);
+      }
+    } else {
+      console.error('Failed to cache chart data:', e);
+    }
   }
 };
 
@@ -109,15 +137,14 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
   }
 };
 
-// --- DATA FETCHING FUNCTIONS (NOW WITH NORMALIZATION) ---
+// --- DATA FETCHING FUNCTIONS ---
 
 /**
  * Fetches week data from DB (via internal API) with 5s timeout, falls back to NRB API.
- * Data from internal API is assumed to be normalized.
- * Data from NRB API will be normalized here.
  */
 const fetchWeekData = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
   try {
+    // Try DB first with 5 second timeout
     const dbResponse = await fetchWithTimeout(`/api/historical-rates?currency=${currency}&from=${fromDate}&to=${toDate}`, 5000);
     
     if (dbResponse.ok) {
@@ -133,32 +160,7 @@ const fetchWeekData = async (currency: string, fromDate: string, toDate: string,
   }
   
   // Fallback to NRB API
-  return fetchFromNRBApi(currency, fromDate, toDate, unit);
-};
-
-/**
- * Fetches data *strictly* from NRB API and NORMALIZES it by the unit.
- */
-const fetchFromNRBApi = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
-  const result = await fetchHistoricalRates(fromDate, toDate); // from forexService
-  
-  if (!result.payload || result.payload.length === 0) {
-    return [];
-  }
-  
-  const chartData: ChartDataPoint[] = [];
-  result.payload.forEach((day: any) => {
-    const rate = day.rates?.find((r: any) => r.currency?.iso3 === currency);
-    if (rate && rate.buy && rate.sell) {
-      chartData.push({
-        date: day.date,
-        buy: Number(rate.buy) / unit, // Normalize
-        sell: Number(rate.sell) / unit, // Normalize
-      });
-    }
-  });
-  
-  return chartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  return fetchFromNRBApiRaw(currency, fromDate, toDate, unit);
 };
 
 /**
@@ -169,7 +171,7 @@ const loadDailyDataInChunks = async (
   fromDate: string, 
   toDate: string,
   unit: number,
-  onProgress?: (progress: number) => void // Progress as 0-100
+  onProgress: (progress: number) => void // Progress as 0-100
 ): Promise<ChartDataPoint[]> => {
   const from = parseISO(fromDate);
   const to = parseISO(toDate);
@@ -187,8 +189,7 @@ const loadDailyDataInChunks = async (
     const chunkFromDate = format(chunkStart, 'yyyy-MM-dd');
     const chunkToDate = format(chunkEnd, 'yyyy-MM-dd');
     
-    // Use fetchFromNRBApi which now handles normalization
-    const chunkData = await fetchFromNRBApi(
+    const chunkData = await fetchFromNRBApiRaw(
       currency,
       chunkFromDate,
       chunkToDate,
@@ -196,7 +197,7 @@ const loadDailyDataInChunks = async (
     );
     
     allData = [...allData, ...chunkData];
-    onProgress?.(((i + 1) / chunks) * 100); // Report progress as 0-100
+    onProgress(((i + 1) / chunks) * 100); // Report progress as 0-100
   }
   
   // De-duplicate (in case of overlapping chunk fetches) and sort
@@ -229,10 +230,12 @@ const sampleData = (data: ChartDataPoint[], days: number): { sampledData: ChartD
 
   if (interval === 1) return { sampledData: data, samplingUsed };
 
-  const sampledData = data.filter((_, index) => index % interval === 0 || index === data.length - 1);
+  const sampledData = data.filter((_, index) => index % interval === 0);
+  
   // Ensure the last point is always included
-  if (data.length > 0 && sampledData[sampledData.length - 1]?.date !== data[data.length - 1]?.date) {
-    sampledData.push(data[data.length - 1]);
+  const lastDataPoint = data[data.length - 1];
+  if (lastDataPoint && (!sampledData.length || sampledData[sampledData.length - 1].date !== lastDataPoint.date)) {
+    sampledData.push(lastDataPoint);
   }
   
   return { sampledData, samplingUsed };
@@ -312,8 +315,8 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
     return (
       <div className="bg-background border rounded-lg p-3 shadow-lg">
         <p className="font-bold text-sm">{format(parseISO(label), 'MMM d, yyyy')}</p>
-        <p className="text-blue-500 text-xs">Buy: {data.buy.toFixed(4)}</p>
-        <p className="text-green-500 text-xs">Sell: {data.sell.toFixed(4)}</p>
+        <p className="text-primary text-xs">Buy: {data.buy.toFixed(4)}</p>
+        <p className="text-red-500 text-xs">Sell: {data.sell.toFixed(4)}</p>
       </div>
     );
   }
@@ -360,7 +363,7 @@ const CurrencyHistoricalData: React.FC = () => {
   // --- INR Fixed Rate Check ---
   useQuery({
     queryKey: ['currentRateCheckINR'],
-    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')),
+    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')), // DB-first check
     enabled: upperCaseCurrencyCode === 'INR',
     staleTime: Infinity,
     onSuccess: (data) => {
@@ -413,44 +416,59 @@ const CurrencyHistoricalData: React.FC = () => {
       const cached = loadChartCache(cacheKey);
       if (cached) {
         console.log('Loaded from cache');
-        return cached;
+        return cached; // This is { data, samplingUsed }
       }
 
       let data: ChartDataPoint[];
       let samplingUsed = 'daily';
 
-      // 3. Fetch new data
+      // 3. Rate Limit Check (for NRB API calls)
+      if (range !== 'week' || showDaily) {
+        const limitCheck = canMakeChartRequest(rangeInDays);
+        if (!limitCheck.allowed) {
+          if (limitCheck.cooldownSeconds) {
+            // Use a stable state update, not one inside queryFn
+            Promise.resolve().then(() => setCooldownTimer(limitCheck.cooldownSeconds!));
+          }
+          throw new Error(limitCheck.reason || 'Rate limit exceeded');
+        }
+        recordChartRequest(rangeInDays);
+      }
+
+      // 4. Fetch new data
       if (range === 'week' && !showDaily) {
         // Use DB-first for 'week' tab
         data = await fetchWeekData(upperCaseCurrencyCode, fromDate, toDate, unit);
         samplingUsed = 'daily';
       } else if (showDaily) {
         // Load full daily data in chunks from NRB API
-        setDailyLoadProgress(0);
+        // Use stable state update for progress
+        Promise.resolve().then(() => setDailyLoadProgress(0));
         data = await loadDailyDataInChunks(
           upperCaseCurrencyCode,
           fromDate,
           toDate,
           unit,
-          (progress) => setDailyLoadProgress(progress)
+          (progress) => Promise.resolve().then(() => setDailyLoadProgress(progress))
         );
-        setDailyLoadProgress(null);
+        Promise.resolve().then(() => setDailyLoadProgress(null));
         samplingUsed = 'daily';
       } else {
         // Load full data from NRB API, then sample
-        const fullData = await fetchFromNRBApi(upperCaseCurrencyCode, fromDate, toDate, unit);
+        const fullData = await fetchFromNRBApiRaw(upperCaseCurrencyCode, fromDate, toDate, unit);
         const { sampledData, samplingUsed: sUsed } = sampleData(fullData, rangeInDays);
         data = sampledData;
         samplingUsed = sUsed;
       }
 
-      // 4. Cache and return
+      // 5. Cache and return
       const result = { data, samplingUsed };
       saveChartCache(cacheKey, result);
       return result;
     },
     enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN' && !!currencyInfo,
     staleTime: 1000 * 60 * 10, // 10 minutes
+    retry: false, // Don't retry on rate-limit errors
   });
 
   // --- FIX: Set sampling state based on query result ---
@@ -470,19 +488,6 @@ const CurrencyHistoricalData: React.FC = () => {
       return; // Wait for "Apply" click
     }
     
-    const newRangeInDays = DATE_RANGES[newRange]?.days || 7;
-    
-    // Only rate limit API calls (not 'week' tab)
-    if (newRange !== 'week') {
-      const limitCheck = canMakeChartRequest(newRangeInDays);
-      if (!limitCheck.allowed) {
-        toast.error(limitCheck.reason || 'Rate limit exceeded');
-        if (limitCheck.cooldownSeconds) setCooldownTimer(limitCheck.cooldownSeconds);
-        return;
-      }
-      recordChartRequest(newRangeInDays);
-    }
-    
     setRange(newRange);
     setShowDaily(false);
   };
@@ -497,15 +502,6 @@ const CurrencyHistoricalData: React.FC = () => {
       return;
     }
 
-    const days = differenceInDays(parseISO(customToDate), parseISO(customFromDate)) + 1;
-    const limitCheck = canMakeChartRequest(days);
-    if (!limitCheck.allowed) {
-      toast.error(limitCheck.reason || 'Rate limit exceeded');
-      if (limitCheck.cooldownSeconds) setCooldownTimer(limitCheck.cooldownSeconds);
-      return;
-    }
-    recordChartRequest(days);
-
     // Set showDaily to false to trigger a new query with sampling
     setShowDaily(false);
     // Invalidate just in case, though state change should trigger it
@@ -513,13 +509,6 @@ const CurrencyHistoricalData: React.FC = () => {
   };
 
   const handleShowDaily = () => {
-    const limitCheck = canMakeChartRequest(rangeInDays);
-    if (!limitCheck.allowed) {
-      toast.error(limitCheck.reason || 'Rate limit exceeded');
-      if (limitCheck.cooldownSeconds) setCooldownTimer(limitCheck.cooldownSeconds);
-      return;
-    }
-    recordChartRequest(rangeInDays);
     setShowDaily(true);
   };
 
@@ -529,9 +518,10 @@ const CurrencyHistoricalData: React.FC = () => {
     // Use raw data for stats
     const stats = calculateStats(chartData);
     // Use processed data (gap-filled) for chart
-    const filled = processChartData(chartData);
+    // Don't gap-fill for INR fixed, as it only has 2 points
+    const filled = isINRFixed ? chartData : processChartData(chartData);
     return { chartData: filled, stats };
-  }, [chartData]);
+  }, [chartData, isINRFixed]);
 
   const changeColor = processedData.stats.change >= 0 ? 'text-green-600' : 'text-red-600';
   const pageTitle = `Historical Data for ${name} (${upperCaseCurrencyCode})`;
@@ -689,10 +679,21 @@ const CurrencyHistoricalData: React.FC = () => {
                           <Line 
                             type="monotone" 
                             dataKey="buy" 
+                            name="Buy (per 1 Unit)"
                             stroke="hsl(var(--primary))" 
                             strokeWidth={2} 
                             dot={false}
                             connectNulls={false}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="sell" 
+                            name="Sell (per 1 Unit)"
+                            stroke="#ef4444" // red-500
+                            strokeWidth={2} 
+                            dot={false}
+                            connectNulls={false}
+                            strokeDasharray="5 5"
                           />
                         </LineChart>
                       </ResponsiveContainer>
@@ -703,7 +704,7 @@ const CurrencyHistoricalData: React.FC = () => {
                         {isINRFixed ? `Showing fixed rate for INR (1 Unit = Rs. 1.60).` : 
                          showDaily ? `Showing full daily data (${chartData?.length || 0} points).` :
                          `Showing ${currentSampling} data (${chartData?.length || 0} points).`
-                        }
+                        } Gaps indicate missing data.
                       </p>
                       
                       {!showDaily && range !== 'week' && !isINRFixed && (
