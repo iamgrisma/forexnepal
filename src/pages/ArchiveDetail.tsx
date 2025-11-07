@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, Suspense, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,7 +17,7 @@ import ShareButtons from '@/components/ShareButtons';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from '@/lib/utils';
-import { Loader2 } from 'lucide-react'; // Import Loader
+import { Loader2 } from 'lucide-react';
 
 // --- CURRENCY MAP (Needed for stats) ---
 const CURRENCY_MAP: { [key: string]: { name: string, unit: number } } = {
@@ -514,6 +514,7 @@ const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = (
  * Renders the Top 10 High / Top 12 Low Ranking Grids (with expanded text)
  */
 const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate[], date: string, allRates: AnalyzedRate[] }> = ({ topHigh, topLow, date, allRates }) => {
+  // --- FIX: Call the correct text generator ---
   const text = ArchiveTextGenerator.getCurrencyRankingsText(date, allRates);
   return (
     <section>
@@ -645,7 +646,8 @@ const ArchiveTextGenerator = {
   // Helper to pick a random item based on date
   _getVariant: (dateStr: string, variants: string[]) => {
     try {
-      const day = parseISO(dateStr).getDate();
+      // Use date string to get a consistent index
+      const day = parseInt(dateStr.split('-')[2] || '1');
       return variants[day % variants.length];
     } catch {
       return variants[0];
@@ -676,7 +678,8 @@ const ArchiveTextGenerator = {
       // Variant 5
       `<p><strong>${longDateHeader}</strong> | Nepal Rastra Bank has published the foreign exchange rates for today, providing the official valuation of the Nepali Rupee against a basket of 22 foreign currencies. The <strong>U.S. Dollar</strong>, a critical measure for the economy, is posted at a buy rate of <strong>Rs. ${usdBuy}</strong> and a sell rate of <strong>Rs. ${usdSell}</strong>. These rates are effective for transactions conducted by authorized dealers. In today's market, the ${gainerName} has shown significant strength, while the ${loserName} has weakened. This detailed analysis covers the day's summary, value rankings, and a multi-period historical performance review to give you a complete picture of the forex market.</p>`
     ];
-    return this._getVariant(longDateHeader, variants);
+    // --- FIX: Call ArchiveTextGenerator._getVariant ---
+    return ArchiveTextGenerator._getVariant(longDateHeader, variants);
   },
 
   /**
@@ -718,7 +721,8 @@ const ArchiveTextGenerator = {
       `<p>Understanding the per-unit value provides a clear picture of currency hierarchy. On ${date}, the most valuable currencies (per single unit) are dominated by Gulf state dinars, reflecting their strong economic standing. Conversely, currencies like the Japanese Yen and South Korean Won appear "least expensive" because their denominations are much smaller; they are officially traded in units of 10 and 100, respectively. This ranking strips away the unit multiplier to show the raw 1-to-1 value against the NPR. For converting actual amounts, refer to the official table or our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter tool</a>. The Indian Rupee is also shown here on a 1-unit basis for a clear comparison, although it trades officially in units of 100.</p>`,
       `<p>How do these currencies stack up head-to-head? This section ranks all currencies based on their normalized per-unit selling rate. The "Most Expensive" list is often a stable ranking of high-value currencies, primarily from the Middle East. The "Least Expensive" list highlights currencies where the NPR has significantly more purchasing power on a 1-to-1 basis. It's important to differentiate this normalized ranking from the official trading units. For example, while the JPY is on the "Least Expensive" list per 1 unit, it is officially quoted in units of 10. Always use the main table or the <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter</a> for practical transactions.</p>`
     ];
-    return this._getVariant(date, variants);
+    // --- FIX: Call ArchiveTextGenerator._getVariant ---
+    return ArchiveTextGenerator._getVariant(date, variants);
   },
 
   /**
@@ -729,8 +733,9 @@ const ArchiveTextGenerator = {
     const date = allRates[0].date;
     const gainersToday = allRates.filter(r => r.dailyChangePercent > 0.01 && r.currency.iso3 !== 'INR').length;
     const losersToday = allRates.filter(r => r.dailyChangePercent < -0.01 && r.currency.iso3 !== 'INR').length;
-    
-    let dailyTrend = 'a day of relative stability';
+    const stableToday = allRates.filter(r => Math.abs(r.dailyChangePercent) <= 0.01 && r.currency.iso3 !== 'INR').length;
+
+    let dailyTrend = 'a balanced market';
     if (gainersToday > losersToday * 1.5) dailyTrend = 'a strengthening trend for foreign currencies';
     else if (losersToday > gainersToday * 1.5) dailyTrend = 'a weakening trend for foreign currencies';
 
@@ -741,28 +746,32 @@ const ArchiveTextGenerator = {
     const topWeekly = historicalAnalysis?.data[0];
     const topMonthly = historicalAnalysis?.data.find(r => r.percent > 0);
     const bottomWeekly = historicalAnalysis?.data[historicalAnalysis.data.length - 1];
+    
+    // --- FIX: Ensure loserName is defined ---
+    const loserName = topLoser ? topLoser.currency : { name: 'N/A', iso3: 'N/A' };
+
 
     const variants = [
       // Variant 1
-      `<p><strong>Market Summary:</strong> Today's forex market shows ${dailyTrend}, with <strong>${gainersToday}</strong> currencies gaining value against the NPR, while <strong>${losersToday}</strong> lost ground. This indicates a shift in market sentiment compared to yesterday's close. The day's biggest mover was the <strong>${topGainer.currency.name}</strong>, which surged by <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. On the flip side, the <strong>${loserName.currency.name}</strong> saw the sharpest decline, dropping <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong>.</p>
+      `<p><strong>Market Summary:</strong> Today's forex market shows ${dailyTrend}, with <strong>${gainersToday}</strong> currencies gaining value against the NPR, while <strong>${losersToday}</strong> lost ground. This indicates a shift in market sentiment compared to yesterday's close. The day's biggest mover was the <strong>${topGainer.currency.name}</strong>, which surged by <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. On the flip side, the <strong>${loserName.name}</strong> saw the sharpest decline, dropping <strong>${topLoser.dailyChangePercent.toFixed(2)}%</strong>.</p>
        <p>Key currencies, crucial for remittances and trade, showed mixed results. The <a href="/#/historical-data/USD" class="text-blue-600 hover:underline font-medium">U.S. Dollar</a> ${usd && Math.abs(usd.dailyChangePercent) > 0.01 ? (usd.dailyChange > 0 ? 'gained' : 'lost') : 'remained stable'}, moving by <strong>${usd?.dailyChangePercent.toFixed(2)}%</strong>. The <a href="/#/historical-data/EUR" class="text-blue-600 hover:underline font-medium">European Euro</a> ${eur && Math.abs(eur.dailyChangePercent) > 0.01 ? (eur.dailyChange > 0 ? 'climbed' : 'fell') : 'held steady'}, posting a change of <strong>${eur?.dailyChangePercent.toFixed(2)}%</strong>. For remittance from the Gulf, the <a href="/#/historical-data/SAR" class="text-blue-600 hover:underline font-medium">Saudi Riyal</a> saw a change of <strong>${sar?.dailyChangePercent.toFixed(2)}%</strong>.</p>
        ${topWeekly ? `<p>Zooming out to the weekly trend, the <strong>${topWeekly.name}</strong> has been the strongest performer over the last 7 days, appreciating by <strong>${topWeekly.percent.toFixed(2)}%</strong> against the NPR. Conversely, the <strong>${bottomWeekly?.name}</strong> has been the weakest, depreciating by <strong>${bottomWeekly?.percent.toFixed(2)}%</strong> in the same period. This broader view helps to contextualize today's minor fluctuations.</p>` : ''}`,
       
       // Variant 2
-      `<p><strong>Market Analysis:</strong> Analyzing the daily movements, <strong>${gainersToday}</strong> currencies appreciated against the NPR, while <strong>${losersToday}</strong> depreciated. This points to ${dailyTrend} in the short term. The most dramatic shift came from the <strong>${topGainer.currency.name}</strong>, which jumped <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. The <strong>${loserName.currency.name}</strong> faced the strongest headwind, falling <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong>.</p>
+      `<p><strong>Market Analysis:</strong> Analyzing the daily movements, <strong>${gainersToday}</strong> currencies appreciated against the NPR, while <strong>${losersToday}</strong> depreciated. This points to ${dailyTrend} in the short term. The most dramatic shift came from the <strong>${topGainer.currency.name}</strong>, which jumped <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. The <strong>${loserName.name}</strong> faced the strongest headwind, falling <strong>${topLoser.dailyChangePercent.toFixed(2)}%</strong>.</p>
        <p>The <a href="/#/historical-data/USD" class="text-blue-600 hover:underline font-medium">U.S. Dollar</a>, the primary currency for Nepal's international trade, ${usd && Math.abs(usd.dailyChange) > 0.01 ? `registered a change of <strong>Rs. ${usd.dailyChange.toFixed(3)}</strong> per unit` : 'showed minimal movement'}. This impacts everything from fuel costs to import duties. Other major currencies, such as the <a href="/#/historical-data/GBP" class="text-blue-600 hover:underline font-medium">Pound Sterling</a> and <a href="/#/historical-data/AUD" class="text-blue-600 hover:underline font-medium">Australian Dollar</a>, also reflected this mixed sentiment.</p>
        ${topMonthly ? `<p>Looking at the 30-day trend, the market has favored certain currencies. The <strong>${topMonthly.name}</strong>, for instance, has gained <strong>${topMonthly.percent.toFixed(2)}%</strong> over the past month, indicating sustained demand or strength. This contrasts with today's volatility and highlights the importance of viewing both short-term and long-term data for a complete financial picture.</p>` : ''}`,
        
        // Variant 3
-      `<p><strong>Today's Trend:</strong> The currency market on ${date} saw <strong>${gainersToday}</strong> currencies rise and <strong>${losersToday}</strong> fall against the NPR. The most significant gainer was the <strong>${topGainer.currency.name}</strong>, posting an impressive <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong> increase. The heaviest loss was recorded by the <strong>${loserName.currency.name}</strong>, with a <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong> drop.</p>
+      `<p><strong>Today's Trend:</strong> The currency market on ${date} saw <strong>${gainersToday}</strong> currencies rise and <strong>${losersToday}</strong> fall against the NPR. The most significant gainer was the <strong>${topGainer.currency.name}</strong>, posting an impressive <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong> increase. The heaviest loss was recorded by the <strong>${loserName.name}</strong>, with a <strong>${topLoser.dailyChangePercent.toFixed(2)}%</strong> drop.</p>
        <p>Major currencies pivotal for Nepali remittance and trade, such as the <a href="/#/historical-data/QAR" class="text-blue-600 hover:underline font-medium">Qatari Riyal</a> and <a href="/#/historical-data/AED" class="text-blue-600 hover:underline font-medium">UAE Dirham</a>, showed ${sar && Math.abs(sar.dailyChange) < 0.01 ? 'high stability' : 'some movement'}. The <a href="/#/historical-data/JPY" class="text-blue-600 hover:underline font-medium">Japanese Yen</a> (per 10 units) and <a href="/#/historical-data/KRW" class="text-blue-600 hover:underline font-medium">South Korean Won</a> (per 100 units) also saw shifts that are important for students and workers connected to those countries.</p>
        ${topWeekly && bottomWeekly ? `<p>The 7-day overview reveals a clearer trend for some. The <strong>${topWeekly.name}</strong> has been the 7-day champion with a <strong>${topWeekly.percent.toFixed(2)}%</strong> gain, while the <strong>${bottomWeekly.name}</strong> has struggled, losing <strong>${bottomWeekly.percent.toFixed(2)}%</strong>. This shows that today's ${dailyTrend} is part of a broader, more complex weekly pattern.</p>` : ''}`
     ];
     
-    return this._getVariant(date, variants);
+    // --- FIX: Call ArchiveTextGenerator._getVariant ---
+    return ArchiveTextGenerator._getVariant(date, variants);
   }
 };
-
 
 // === THE DYNAMIC ARTICLE COMPONENT ===
 
@@ -798,10 +807,13 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   const introText = ArchiveTextGenerator.getNewsIntro(longDateHeader, allRates, topGainer, topLoser);
   const todaysDetailText = ArchiveTextGenerator.getTodaysForexDetail(allRates);
   const marketSummaryText = ArchiveTextGenerator.getMarketTrendSummary(analysisData, historicalAnalysis);
+  // --- FIX: Call the correct text generator function ---
+  const rankingsText = ArchiveTextGenerator.getCurrencyRankingsText(shortDate, allRates);
+
 
   return (
     <>
-      <h1 className="!mb-2">Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
+      <h1>Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
       
       <p 
         className="text-lg lead text-muted-foreground"
@@ -817,6 +829,7 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
         <div dangerouslySetInnerHTML={{ __html: marketSummaryText }} />
       </section>
 
+      {/* --- FIX: Pass the generated text to the component --- */}
       <CurrencyRankings topHigh={top10High} topLow={top12Low} date={shortDate} allRates={allRates} />
 
       <HistoricalAnalysisTabs 
