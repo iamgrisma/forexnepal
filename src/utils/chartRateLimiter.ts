@@ -1,12 +1,14 @@
+// src/utils/chartRateLimiter.ts
+
 // Chart Rate Limiter
-// Max 30 charts per hour for short ranges
-// Max 1 chart per 180 seconds for 5Y+ ranges
+// Max 60 charts per hour for short ranges
+// Max 1 chart per 69 seconds for 3Y+ ranges
 
 const CHART_LIMITS = {
-  SHORT_RANGE_MAX: 30,
-  SHORT_RANGE_WINDOW: 60 * 60 * 1000, // 1 hour
-  LONG_RANGE_COOLDOWN: 180 * 1000, // 180 seconds
-  LONG_RANGE_THRESHOLD_DAYS: 365 * 5, // 5 years
+  SHORT_RANGE_MAX: 60, // UPDATED from 30 to 60
+  SHORT_RANGE_WINDOW: 60 * 60 * 1000, // 1 hour (unchanged)
+  LONG_RANGE_COOLDOWN: 69 * 1000, // UPDATED from 180 to 69 seconds
+  LONG_RANGE_THRESHOLD_DAYS: 365 * 3, // UPDATED from 5 years to 3 years
 };
 
 interface ChartRequest {
@@ -60,14 +62,14 @@ export const canMakeChartRequest = (rangeInDays: number): { allowed: boolean; re
         const cooldownSeconds = Math.ceil((CHART_LIMITS.LONG_RANGE_COOLDOWN - timeSinceLastRequest) / 1000);
         return {
           allowed: false,
-          reason: `Please wait ${cooldownSeconds} seconds before requesting another 5Y+ chart`,
+          reason: `Please wait ${cooldownSeconds} seconds before requesting another 3Y+ chart`,
           cooldownSeconds,
         };
       }
     }
   }
   
-  // Check short range limit (30 per hour)
+  // Check short range limit (60 per hour)
   const shortRangeRequests = history.filter(req => req.rangeInDays < CHART_LIMITS.LONG_RANGE_THRESHOLD_DAYS);
   if (shortRangeRequests.length >= CHART_LIMITS.SHORT_RANGE_MAX) {
     const oldestRequest = shortRangeRequests.sort((a, b) => a.timestamp - b.timestamp)[0];
