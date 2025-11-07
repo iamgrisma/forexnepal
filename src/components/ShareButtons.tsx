@@ -4,15 +4,16 @@ import { Facebook, Twitter, Share2, Link as LinkIcon } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 
 interface ShareButtonsProps {
-  url: string;
+  // url: string; // <-- REMOVED
   title: string;
   className?: string;
 }
 
-const ShareButtons: React.FC<ShareButtonsProps> = ({ url, title, className = '' }) => {
+const ShareButtons: React.FC<ShareButtonsProps> = ({ title, className = '' }) => { // <-- REMOVED url
   const { toast } = useToast();
 
-  const shareUrl = `${window.location.origin}${url}`;
+  // --- FIX: Use window.location.href to get the exact URL from the bar ---
+  const shareUrl = window.location.href; 
   const encodedUrl = encodeURIComponent(shareUrl);
   const encodedTitle = encodeURIComponent(title);
 
