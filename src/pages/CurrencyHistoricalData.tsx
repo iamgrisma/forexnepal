@@ -59,6 +59,72 @@ const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
   'custom': { days: 0, label: 'Custom' },
 };
 
+// Use a long cache time for chart data as requested
+const CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30; // 30 days cache
+
+// Cache key for chart data
+const getChartCacheKey = (currency: string, range: string, from: string, to: string, daily: boolean) => `chart_cache_${currency}_${range}_${from}_${to}_${daily}`;
+
+// Save/load chart data to/from localStorage
+const saveChartCache = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    // If cache is full, try to remove old chart data
+    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
+      console.warn('Cache quota exceeded. Clearing old chart cache...');
+      let keysToRemove: { key: string, timestamp: number }[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('chart_cache_')) {
+          const item = localStorage.getItem(key);
+          if (item) {
+            try {
+              const { timestamp } = JSON.parse(item);
+              keysToRemove.push({ key, timestamp: timestamp || 0 });
+            } catch (e) { /* ignore broken cache item */ }
+          }
+        }
+      }
+      // Sort by oldest and remove 5 items
+      keysToRemove.sort((a, b) => a.timestamp - b.timestamp).slice(0, 5).forEach(item => {
+        console.log(`Removing old cache: ${item.key}`);
+        localStorage.removeItem(item.key);
+      });
+      
+      // Try saving again
+      try {
+        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+      } catch (e2) {
+        console.error('Failed to cache chart data even after clearing:', e2);
+      }
+    } else {
+      console.error('Failed to cache chart data:', e);
+    }
+  }
+};
+
+const loadChartCache = (key: string, maxAge: number = CACHE_MAX_AGE): any | null => {
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+    const { data, timestamp } = JSON.parse(cached);
+    // --- FIX: Check if cached data is empty ---
+    if (!data || !data.data || data.data.length === 0) {
+      console.warn('Found empty or invalid cache. Ignoring.');
+      localStorage.removeItem(key);
+      return null;
+    }
+    if (Date.now() - timestamp > maxAge) {
+      localStorage.removeItem(key); // Remove stale cache
+      return null;
+    }
+    return data; // Returns the { data, samplingUsed } object
+  } catch (e) {
+    return null;
+  }
+};
+
 // Helper to fetch data with timeout
 const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
   const controller = new AbortController();
@@ -369,7 +435,13 @@ const CurrencyHistoricalData: React.FC = () => {
         };
       }
 
-      // 2. NO LOCALSTORAGE CACHE
+      // 2. Check local cache
+      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
+      const cached = loadChartCache(cacheKey);
+      if (cached) {
+        console.log('Loaded from cache');
+        return cached; // This is { data, samplingUsed }
+      }
 
       let data: ChartDataPoint[];
       let samplingUsed = 'daily';
@@ -413,8 +485,13 @@ const CurrencyHistoricalData: React.FC = () => {
         samplingUsed = sUsed;
       }
 
-      // 5. Return
+      // 5. Cache and return
       const result = { data, samplingUsed };
+      
+      // --- FIX: ONLY CACHE IF DATA IS NOT EMPTY ---
+      if (data && data.length > 0) {
+        saveChartCache(cacheKey, result);
+      }
       return result;
     },
     // --- FIX: This query should be enabled *after* the INR check is done (if INR), or immediately if not INR ---
@@ -530,7 +607,7 @@ const CurrencyHistoricalData: React.FC = () => {
               <div className="overflow-x-auto scrollbar-hide border-b">
                 <TabsList className="w-max">
                   {Object.entries(DATE_RANGES).map(([key, { label }]) => (
-                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0 || isINRFixed}>
+                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0 || (isINRFixed && key !== 'custom' && key !== 'week') /* Allow changing tabs for INR, but data will be same */}>
                       {label}
                     </TabsTrigger>
                   ))}
