@@ -15,7 +15,7 @@ import { AlertCircle, ArrowLeft, RefreshCw, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import ShareButtons from '@/components/ShareButtons';
-import DateInput from '@/components/DateInput'; // Import your custom date input
+import DateInput from '@/components/DateInput';
 import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
 import { toast } from 'sonner';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
@@ -59,71 +59,7 @@ const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
   'custom': { days: 0, label: 'Custom' },
 };
 
-// Use a long cache time for chart data as requested
-const CACHE_MAX_AGE = 1000 * 60 * 60 * 24 * 30; // 30 days cache
-
-// Cache key for chart data
-const getChartCacheKey = (currency: string, range: string, from: string, to: string, daily: boolean) => `chart_cache_${currency}_${range}_${from}_${to}_${daily}`;
-
-// Save/load chart data to/from localStorage
-const saveChartCache = (key: string, data: any) => {
-  try {
-    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-  } catch (e) {
-    // If cache is full, try to remove old chart data
-    if (e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED')) {
-      console.warn('Cache quota exceeded. Clearing old chart cache...');
-      let keysToRemove: { key: string, timestamp: number }[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('chart_cache_')) {
-          const item = localStorage.getItem(key);
-          if (item) {
-            try {
-              const { timestamp } = JSON.parse(item);
-              keysToRemove.push({ key, timestamp: timestamp || 0 });
-            } catch (e) { /* ignore broken cache item */ }
-          }
-        }
-      }
-      // Sort by oldest and remove 5 items
-      keysToRemove.sort((a, b) => a.timestamp - b.timestamp).slice(0, 5).forEach(item => {
-        console.log(`Removing old cache: ${item.key}`);
-        localStorage.removeItem(item.key);
-      });
-      
-      // Try saving again
-      try {
-        localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
-      } catch (e2) {
-        console.error('Failed to cache chart data even after clearing:', e2);
-      }
-    } else {
-      console.error('Failed to cache chart data:', e);
-    }
-  }
-};
-
-const loadChartCache = (key: string, maxAge: number = CACHE_MAX_AGE): any | null => {
-  try {
-    const cached = localStorage.getItem(key);
-    if (!cached) return null;
-    const { data, timestamp } = JSON.parse(cached);
-    // --- FIX: Check if cached data is empty ---
-    if (!data || !data.data || data.data.length === 0) {
-      console.warn('Found empty or invalid cache. Ignoring.');
-      localStorage.removeItem(key);
-      return null;
-    }
-    if (Date.now() - timestamp > maxAge) {
-      localStorage.removeItem(key); // Remove stale cache
-      return null;
-    }
-    return data; // Returns the { data, samplingUsed } object
-  } catch (e) {
-    return null;
-  }
-};
+// --- REMOVED ALL localStorage CACHING LOGIC (Demand 11) ---
 
 // Helper to fetch data with timeout
 const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
@@ -146,9 +82,10 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
 // --- DATA FETCHING FUNCTIONS ---
 
 /**
- * Fetches week data from DB (via internal API) with 5s timeout, falls back to NRB API.
+ * UPDATED: Fetches week data from DB (via internal API) with 5s timeout.
+ * Falls back to NRB API *with rate limiting check*. (Demands 2, 3, 10)
  */
-const fetchWeekData = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
+const fetchWeekDataWithFallback = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
   try {
     // Try DB first with 5 second timeout
     const dbResponse = await fetchWithTimeout(`/api/historical-rates?currency=${currency}&from=${fromDate}&to=${toDate}`, 5000);
@@ -157,20 +94,31 @@ const fetchWeekData = async (currency: string, fromDate: string, toDate: string,
       const result = await dbResponse.json();
       if (result.success && Array.isArray(result.data) && result.data.length > 0) {
         console.log('Loaded week data from DB');
-        // Worker already normalizes this data, so just return
         return result.data;
       }
     }
+    // If DB response is not ok or has no data, fall through to catch block
+    throw new Error('DB fetch failed or returned no data');
   } catch (error) {
     console.warn('DB fetch failed or timed out, falling back to NRB API', error);
+
+    // DEMAND 10: Add rate limit check to the fallback path
+    const limitCheck = canMakeChartRequest(7); // 'week' is 7 days
+    if (!limitCheck.allowed) {
+      // We can't use setCooldownTimer here, so just throw the error
+      throw new Error(limitCheck.reason || 'Rate limit exceeded on fallback');
+    }
+    recordChartRequest(7);
+    
+    // Fallback to NRB API (imported)
+    return fetchFromNRBApiRaw(currency, fromDate, toDate, unit);
   }
-  
-  // Fallback to NRB API
-  return fetchFromNRBApiRaw(currency, fromDate, toDate, unit);
 };
 
 /**
  * Fetches full daily data from NRB API in 90-day chunks and NORMALIZES it.
+ * (Demands 8, 9)
+ * Note: Rate limiting is handled by the *caller* of this function.
  */
 const loadDailyDataInChunks = async (
   currency: string, 
@@ -195,6 +143,7 @@ const loadDailyDataInChunks = async (
     const chunkFromDate = format(chunkStart, 'yyyy-MM-dd');
     const chunkToDate = format(chunkEnd, 'yyyy-MM-dd');
     
+    // This is the external API call
     const chunkData = await fetchFromNRBApiRaw(
       currency,
       chunkFromDate,
@@ -213,6 +162,7 @@ const loadDailyDataInChunks = async (
 
 /**
  * Applies sampling to a full dataset for initial chart display.
+ * (Demand 6)
  */
 const sampleData = (data: ChartDataPoint[], days: number): { sampledData: ChartDataPoint[], samplingUsed: string } => {
   if (data.length === 0) return { sampledData: [], samplingUsed: 'daily' };
@@ -248,8 +198,9 @@ const sampleData = (data: ChartDataPoint[], days: number): { sampledData: ChartD
 };
 
 /**
- * --- NEW INR FIX ---
- * Generates a full array of data points for a fixed-rate currency.
+ * --- CRITICAL FIX for INR (Demand 1) ---
+ * Generates a full array of data points for a fixed-rate currency,
+ * plotting one point for *every single day* in the range.
  */
 const generateINRFixedData = (fromDate: string, toDate: string, unit: number): ChartDataPoint[] => {
   const data: ChartDataPoint[] = [];
@@ -279,7 +230,6 @@ const calculateStats = (data: ChartDataPoint[]) => {
   let firstRate = 0;
   let lastRate = 0;
 
-  // Find first valid rate
   for (const d of data) {
     if (d.buy !== null) {
       firstRate = d.buy;
@@ -287,7 +237,6 @@ const calculateStats = (data: ChartDataPoint[]) => {
     }
   }
 
-  // Find last valid rate
   for (let i = data.length - 1; i >= 0; i--) {
     const d = data[i];
     if (d.buy !== null) {
@@ -303,7 +252,7 @@ const calculateStats = (data: ChartDataPoint[]) => {
     }
   });
 
-  if (low === Infinity) low = 0; // Handle case where all data is null
+  if (low === Infinity) low = 0;
 
   const change = lastRate - firstRate;
   const changePercent = firstRate > 0 ? (change / firstRate) * 100 : 0;
@@ -365,7 +314,6 @@ const CurrencyHistoricalData: React.FC = () => {
   const [cooldownTimer, setCooldownTimer] = useState<number>(0);
   const [currentSampling, setCurrentSampling] = useState('daily');
   
-  // Custom date states
   const todayStr = format(new Date(), 'yyyy-MM-dd');
   const monthAgoStr = format(subDays(new Date(), 30), 'yyyy-MM-dd');
   const [customFromDate, setCustomFromDate] = useState<string>(monthAgoStr);
@@ -385,13 +333,12 @@ const CurrencyHistoricalData: React.FC = () => {
     }
   }, [cooldownTimer]);
 
-  // --- INR Fixed Rate Check ---
-  // This query runs ONLY for INR to check if its rate is fixed.
+  // Query to check if INR rate is fixed (Demand 1)
   const { data: inrCheckData, isFetching: isCheckingINR } = useQuery({
     queryKey: ['currentRateCheckINR', upperCaseCurrencyCode],
-    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')), // DB-first check
-    enabled: upperCaseCurrencyCode === 'INR', // Only run this query for INR
-    staleTime: 1000 * 60 * 60, // 1 hour
+    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')),
+    enabled: upperCaseCurrencyCode === 'INR', // Only run for INR
+    staleTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
   });
 
@@ -411,7 +358,6 @@ const CurrencyHistoricalData: React.FC = () => {
         const days = differenceInDays(to, from) + 1;
         return { fromDate: customFromDate, toDate: customToDate, rangeInDays: days };
       }
-      // Fallback to 1M if custom dates are invalid
       return { fromDate: monthAgoStr, toDate: todayStr, rangeInDays: 30 };
     }
     const days = DATE_RANGES[range]?.days || 7;
@@ -423,52 +369,39 @@ const CurrencyHistoricalData: React.FC = () => {
   }, [range, customFromDate, customToDate, todayStr, monthAgoStr]);
 
   // --- Main Data Fetching Query ---
-  const { data: queryResult, isLoading, isError, error } = useQuery<QueryResult>({
+  // This query implements all 11 demands.
+  const { data: queryResult, isLoading, isError, error, isRefetching } = useQuery<QueryResult>({
     queryKey: ['currency-chart', upperCaseCurrencyCode, range, fromDate, toDate, showDaily],
     queryFn: async () => {
-      // 1. Check for fixed INR (using the state set by the query above)
+      // 1. DEMAND 1: INR Special Case
       if (isINRFixed) {
         return { 
-          // --- FIX: Generate data for the *entire* range ---
           data: generateINRFixedData(fromDate, toDate, unit), 
           samplingUsed: 'daily (fixed)' 
         };
       }
 
-      // 2. Check local cache
-      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
-      const cached = loadChartCache(cacheKey);
-      if (cached) {
-        console.log('Loaded from cache');
-        return cached; // This is { data, samplingUsed }
-      }
-
-      let data: ChartDataPoint[];
-      let samplingUsed = 'daily';
-
-      // 3. Rate Limit Check (for NRB API calls)
-      if (range !== 'week' || showDaily) {
-        const limitCheck = canMakeChartRequest(rangeInDays);
-        if (!limitCheck.allowed) {
-          if (limitCheck.cooldownSeconds) {
-            // Use a stable state update, not one inside queryFn
-            Promise.resolve().then(() => setCooldownTimer(limitCheck.cooldownSeconds!));
-          }
-          throw new Error(limitCheck.reason || 'Rate limit exceeded');
-        }
-        recordChartRequest(rangeInDays);
-      }
-
-      // 4. Fetch new data
+      // 2. DEMAND 2 & 3: "Week" Tab (DB-First with Fallback)
       if (range === 'week' && !showDaily) {
-        // Use DB-first for 'week' tab
-        data = await fetchWeekData(upperCaseCurrencyCode, fromDate, toDate, unit);
-        samplingUsed = 'daily';
-      } else if (showDaily) {
-        // Load full daily data in chunks from NRB API
-        // Use stable state update for progress
+        // This function has its own 5s timeout, rate-limited fallback, and logic
+        const data = await fetchWeekDataWithFallback(upperCaseCurrencyCode, fromDate, toDate, unit);
+        return { data, samplingUsed: 'daily' };
+      }
+
+      // 3. ALL OTHER CASES (1M+, Custom, Show Daily)
+      // These all hit the external NRB API and MUST be rate-limited first. (Demand 4, 10)
+      const limitCheck = canMakeChartRequest(rangeInDays);
+      if (!limitCheck.allowed) {
+        // Use Promise.resolve to update state outside queryFn
+        Promise.resolve().then(() => setCooldownTimer(limitCheck.cooldownSeconds!));
+        throw new Error(limitCheck.reason || 'Rate limit exceeded');
+      }
+      recordChartRequest(rangeInDays);
+
+      // 4. DEMAND 8 & 9: "Show Daily" Button Click
+      if (showDaily) {
         Promise.resolve().then(() => setDailyLoadProgress(0));
-        data = await loadDailyDataInChunks(
+        const data = await loadDailyDataInChunks(
           upperCaseCurrencyCode,
           fromDate,
           toDate,
@@ -476,31 +409,22 @@ const CurrencyHistoricalData: React.FC = () => {
           (progress) => Promise.resolve().then(() => setDailyLoadProgress(progress))
         );
         Promise.resolve().then(() => setDailyLoadProgress(null));
-        samplingUsed = 'daily';
-      } else {
-        // Load full data from NRB API, then sample
-        const fullData = await fetchFromNRBApiRaw(upperCaseCurrencyCode, fromDate, toDate, unit);
-        const { sampledData, samplingUsed: sUsed } = sampleData(fullData, rangeInDays);
-        data = sampledData;
-        samplingUsed = sUsed;
+        return { data, samplingUsed: 'daily' };
       }
-
-      // 5. Cache and return
-      const result = { data, samplingUsed };
       
-      // --- FIX: ONLY CACHE IF DATA IS NOT EMPTY ---
-      if (data && data.length > 0) {
-        saveChartCache(cacheKey, result);
-      }
-      return result;
+      // 5. DEMAND 6: "Month+" / "Custom" Initial Load (Sampled)
+      const fullData = await fetchFromNRBApiRaw(upperCaseCurrencyCode, fromDate, toDate, unit);
+      const { sampledData, samplingUsed: sUsed } = sampleData(fullData, rangeInDays);
+      return { data: sampledData, samplingUsed: sUsed };
     },
-    // --- FIX: This query should be enabled *after* the INR check is done (if INR), or immediately if not INR ---
+    // Enable this query only after the INR check is complete (if INR)
     enabled: (upperCaseCurrencyCode === 'INR' ? !isCheckingINR : !!currencyInfo),
     staleTime: 1000 * 60 * 10, // 10 minutes
     retry: false, // Don't retry on rate-limit errors
+    // DEMAND 11: No caching, so no placeholderData or cacheTime.
   });
 
-  // --- FIX: Set sampling state based on query result ---
+  // Set sampling state based on query result
   useEffect(() => {
     if (queryResult?.samplingUsed) {
       setCurrentSampling(queryResult.samplingUsed);
@@ -511,12 +435,7 @@ const CurrencyHistoricalData: React.FC = () => {
 
   // --- Handlers ---
   const handleRangeChange = (newRange: RangeKey) => {
-    if (newRange === 'custom') {
-      setRange('custom');
-      setShowDaily(false);
-      return; // Wait for "Apply" click
-    }
-    
+    // This triggers the query to refetch (lazy loading - Demand 5)
     setRange(newRange);
     setShowDaily(false);
   };
@@ -530,24 +449,21 @@ const CurrencyHistoricalData: React.FC = () => {
       toast.error("Invalid date range", { description: "Start date must be before end date." });
       return;
     }
-
-    // Set showDaily to false to trigger a new query with sampling
-    setShowDaily(false);
-    // Invalidate just in case, though state change should trigger it
-    queryClient.invalidateQueries({ queryKey: ['currency-chart', upperCaseCurrencyCode, 'custom', customFromDate, customToDate] });
+    // This is a no-op that just ensures the query key is updated if dates changed
+    // The query will refetch because `fromDate` and `toDate` (from useMemo) will change.
+    setShowDaily(false); 
   };
 
   const handleShowDaily = () => {
+    // This triggers the query to refetch with 'showDaily: true' (Demand 8)
     setShowDaily(true);
   };
 
   // --- Memoized calculations ---
   const processedData = useMemo(() => {
     if (!chartData) return { chartData: [], stats: calculateStats([]) };
-    // Use raw data for stats
     const stats = calculateStats(chartData);
-    // Use processed data (gap-filled) for chart
-    // Don't gap-fill for INR fixed, as it only has 2 points
+    // CRITICAL: Do not gap-fill INR data (Demand 1)
     const filled = isINRFixed ? chartData : processChartData(chartData);
     return { chartData: filled, stats };
   }, [chartData, isINRFixed]);
@@ -558,7 +474,8 @@ const CurrencyHistoricalData: React.FC = () => {
   const remainingRequests = getRemainingRequests();
 
   // Handle combined loading state
-  const isPageLoading = isLoading || (upperCaseCurrencyCode === 'INR' && isCheckingINR);
+  const isPageLoading = (isLoading && !isRefetching) || (upperCaseCurrencyCode === 'INR' && isCheckingINR);
+  const isUpdating = isRefetching || (isLoading && !isPageLoading); // Show loader for refetches
 
   return (
     <Layout>
@@ -572,14 +489,14 @@ const CurrencyHistoricalData: React.FC = () => {
           
           <div className='flex items-center gap-4'>
             {cooldownTimer > 0 && (
-              <div className="text-sm text-muted-foreground">
-                Refresh available in: {cooldownTimer}s
+              <div className="text-sm text-red-600 font-medium">
+                Please wait: {cooldownTimer}s
               </div>
             )}
             
-            {remainingRequests <= 5 && remainingRequests > 0 && (
-              <div className="text-sm text-orange-600">
-                {remainingRequests} chart requests remaining this hour
+            {remainingRequests <= 10 && (
+              <div className="text-sm text-muted-foreground">
+                {remainingRequests} requests left
               </div>
             )}
           </div>
@@ -607,7 +524,7 @@ const CurrencyHistoricalData: React.FC = () => {
               <div className="overflow-x-auto scrollbar-hide border-b">
                 <TabsList className="w-max">
                   {Object.entries(DATE_RANGES).map(([key, { label }]) => (
-                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0}>
+                    <TabsTrigger key={key} value={key} disabled={isUpdating || cooldownTimer > 0}>
                       {label}
                     </TabsTrigger>
                   ))}
@@ -632,19 +549,20 @@ const CurrencyHistoricalData: React.FC = () => {
                       className="w-36 h-9"
                     />
                   </div>
-                  <Button onClick={handleCustomApply} size="sm" disabled={isPageLoading || cooldownTimer > 0}>
+                  <Button onClick={handleCustomApply} size="sm" disabled={isPageLoading || isUpdating || cooldownTimer > 0}>
                     Apply
                   </Button>
                 </div>
               )}
 
-              <div className="mt-6">
-                {(isPageLoading || dailyLoadProgress !== null) && (
-                  <div className="space-y-4">
-                    <Skeleton className="h-[400px] w-full" />
+              <div className="mt-6 relative">
+                {/* Loading overlay for updates */}
+                {(isUpdating || dailyLoadProgress !== null) && (
+                  <div className="absolute inset-0 bg-background/80 flex flex-col items-center justify-center z-10 space-y-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     {dailyLoadProgress !== null && (
-                      <div className="space-y-2">
-                        <Progress value={dailyLoadProgress} className="w-full" />
+                      <div className="w-1/2 max-w-xs space-y-2">
+                        <Progress value={dailyLoadProgress} />
                         <p className="text-center text-sm text-muted-foreground">
                           Loading full daily data... {dailyLoadProgress.toFixed(0)}%
                         </p>
@@ -653,6 +571,12 @@ const CurrencyHistoricalData: React.FC = () => {
                   </div>
                 )}
                 
+                {isPageLoading && (
+                  <div className="space-y-4">
+                    <Skeleton className="h-[400px] w-full" />
+                  </div>
+                )}
+
                 {isError && (
                   <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
@@ -739,12 +663,13 @@ const CurrencyHistoricalData: React.FC = () => {
                         } Gaps indicate missing data.
                       </p>
                       
+                      {/* DEMAND 7: "Show Daily" Button */}
                       {!showDaily && range !== 'week' && !isINRFixed && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={handleShowDaily}
-                          disabled={isPageLoading || cooldownTimer > 0}
+                          disabled={isPageLoading || isUpdating || cooldownTimer > 0}
                         >
                           <RefreshCw className="h-4 w-4 mr-2" />
                           Load Full Daily Data
