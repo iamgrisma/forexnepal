@@ -87,6 +87,8 @@ export type ArticleTemplateProps = {
   formattedDate: string;
   shortDate: string;
   rates: Rate[];
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 };
 
 // This function now only fetches the START and END dates for the range,
@@ -180,47 +182,58 @@ const ArchiveDetail = () => {
     staleTime: 1000 * 60 * 60, // 1 hour
   });
 
-  // --- Historical Data Queries (DB-Only, with Sampling) ---
+  // --- State for lazy loading tabs ---
+  const [activeTab, setActiveTab] = React.useState<string>('7day');
+
+  // --- Historical Data Queries (Lazy Loading) ---
   const fetchRange = (days: number, sampling: string) => {
     const from = format(subDays(targetDate, days - 1), 'yyyy-MM-dd');
     const to = shortDate;
     return fetchHistoricalRatesFromWorker(from, to, sampling);
   }
 
+  // Week data loads by default
   const { data: weekData, isLoading: weekLoading } = useQuery({
     queryKey: ['historical-7-day', targetDateStr],
     queryFn: () => fetchRange(7, 'daily'),
-    enabled: isValidDate, staleTime: Infinity,
+    enabled: isValidDate,
+    staleTime: Infinity,
   });
 
+  // Other ranges load only when their tab is active
   const { data: monthData, isLoading: monthLoading } = useQuery({
     queryKey: ['historical-30-day', targetDateStr],
     queryFn: () => fetchRange(30, 'daily'),
-    enabled: isValidDate, staleTime: Infinity,
+    enabled: isValidDate && activeTab === '30day',
+    staleTime: Infinity,
   });
   
   const { data: quarterlyData, isLoading: quarterlyLoading } = useQuery({
     queryKey: ['historical-90-day', targetDateStr],
     queryFn: () => fetchRange(90, 'daily'),
-    enabled: isValidDate, staleTime: Infinity,
+    enabled: isValidDate && activeTab === '90day',
+    staleTime: Infinity,
   });
 
   const { data: yearData, isLoading: yearLoading } = useQuery({
     queryKey: ['historical-365-day', targetDateStr],
-    queryFn: () => fetchRange(365, 'weekly'), // SAMPLING
-    enabled: isValidDate, staleTime: Infinity,
+    queryFn: () => fetchRange(365, 'weekly'),
+    enabled: isValidDate && activeTab === '365day',
+    staleTime: Infinity,
   });
   
   const { data: fiveYearData, isLoading: fiveYearLoading } = useQuery({
     queryKey: ['historical-5-year', targetDateStr],
-    queryFn: () => fetchRange(365 * 5, 'monthly'), // SAMPLING
-    enabled: isValidDate, staleTime: Infinity,
+    queryFn: () => fetchRange(365 * 5, 'monthly'),
+    enabled: isValidDate && activeTab === '5year',
+    staleTime: Infinity,
   });
 
   const { data: longTermData, isLoading: longTermLoading } = useQuery({
     queryKey: ['historical-long-term', targetDateStr],
     queryFn: () => fetchHistoricalRatesFromWorker('2000-01-01', shortDate, 'monthly'),
-    enabled: isValidDate, staleTime: Infinity,
+    enabled: isValidDate && activeTab === 'longterm',
+    staleTime: Infinity,
   });
   
   // --- Data Analysis (Memoized) ---
@@ -360,7 +373,11 @@ const ArchiveDetail = () => {
     <Layout>
       <div className="container mx-auto px-4 pt-8">
         <div className="max-w-7xl mx-auto">
-          <ForexTicker rates={currentDayData?.rates || []} isLoading={currentDayLoading} />
+          <ForexTicker 
+            rates={currentDayData?.rates || []} 
+            previousDayRates={prevDayData?.rates || []}
+            isLoading={currentDayLoading || prevDayLoading} 
+          />
         </div>
       </div>
       
@@ -425,6 +442,8 @@ const ArchiveDetail = () => {
                   formattedDate={formattedDate}
                   shortDate={shortDate}
                   rates={currentDayData.rates}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
                 />
               </Suspense>
             )}
@@ -579,35 +598,39 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
 );
 
 /**
- * Renders the Historical Performance Tabs
+ * Renders the Historical Performance Tabs with lazy loading
  */
-const HistoricalAnalysisTabs: React.FC<{ analysis: ArticleTemplateProps['historicalAnalysis'] }> = ({ analysis }) => (
+const HistoricalAnalysisTabs: React.FC<{ 
+  analysis: ArticleTemplateProps['historicalAnalysis']; 
+  activeTab: string; 
+  onTabChange: (tab: string) => void 
+}> = ({ analysis, activeTab, onTabChange }) => (
   <section>
     <h2>Historical Performance Analysis (vs. NPR)</h2>
     <p>
-      Today's daily change is only part of the story. The following tabs show the performance of various currencies against the Nepali Rupee over extended timeframes, all ending on this report's date. This data, pulled from our historical database, is essential for identifying long-term trends, seasonal patterns, and overall market direction.
+      Today's daily change is only part of the story. The following tabs show the performance of various currencies against the Nepali Rupee over extended timeframes, all ending on this report's date. Data is calculated on-demand when you select a tab.
     </p>
     <p>
       The analysis compares the normalized 'Buy' rate from the start of the period to the rate on this date. For a more detailed visual breakdown, please visit our interactive <Link to='/historical-charts' className='text-blue-600 hover:underline font-medium'>historical charts page</Link>.
     </p>
     <div className="not-prose">
-      <Tabs defaultValue="7day">
+      <Tabs value={activeTab} onValueChange={onTabChange}>
         <div className="overflow-x-auto scrollbar-hide border-b">
           <TabsList className="w-max">
             <TabsTrigger value="7day">7 Days</TabsTrigger>
             <TabsTrigger value="30day">30 Days</TabsTrigger>
             <TabsTrigger value="90day">Quarterly</TabsTrigger>
-            <TabsTrigger value="1year">1 Year</TabsTrigger>
+            <TabsTrigger value="365day">1 Year</TabsTrigger>
             <TabsTrigger value="5year">5 Years</TabsTrigger>
-            <TabsTrigger value="alltime">Since 2000</TabsTrigger>
+            <TabsTrigger value="longterm">Since 2000</TabsTrigger>
           </TabsList>
         </div>
         <HistoricalTabContent data={analysis.weekly.data} isLoading={analysis.weekly.isLoading} value="7day" />
         <HistoricalTabContent data={analysis.monthly.data} isLoading={analysis.monthly.isLoading} value="30day" />
         <HistoricalTabContent data={analysis.quarterly.data} isLoading={analysis.quarterly.isLoading} value="90day" />
-        <HistoricalTabContent data={analysis.yearly.data} isLoading={analysis.yearly.isLoading} value="1year" />
+        <HistoricalTabContent data={analysis.yearly.data} isLoading={analysis.yearly.isLoading} value="365day" />
         <HistoricalTabContent data={analysis.fiveYear.data} isLoading={analysis.fiveYear.isLoading} value="5year" />
-        <HistoricalTabContent data={analysis.longTerm.data} isLoading={analysis.longTerm.isLoading} value="alltime" />
+        <HistoricalTabContent data={analysis.longTerm.data} isLoading={analysis.longTerm.isLoading} value="longterm" />
       </Tabs>
     </div>
   </section>
@@ -747,6 +770,8 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
     historicalAnalysis,
     formattedDate,
     shortDate,
+    activeTab,
+    onTabChange,
   } = props;
 
   if (!analysisData || analysisData.allRates.length === 0) {
@@ -783,7 +808,11 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
 
       <CurrencyRankings topHigh={top10High} topLow={top12Low} />
 
-      <HistoricalAnalysisTabs analysis={historicalAnalysis} />
+      <HistoricalAnalysisTabs 
+        analysis={historicalAnalysis} 
+        activeTab={activeTab} 
+        onTabChange={onTabChange} 
+      />
 
       <section>
         <h2>Market Trend Summary</h2>

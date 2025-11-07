@@ -1,8 +1,21 @@
-import { Rate, RatesData, HistoricalRates } from '../types/forex';
+import { Rate, RatesData, HistoricalRates, ForexResponse } from '../types/forex';
 import { fetchForexRatesByDate, fetchHistoricalRates as fetchRatesFromApi } from './forexService';
 import { format, subDays } from 'date-fns';
 
-const API_URL = '/api'; // Using the worker proxy
+const API_URL = '/api';
+
+export interface FetchProgress {
+  current: number;
+  total: number;
+  date?: string;
+  message?: string;
+  chunkInfo?: {
+    current: number;
+    total: number;
+    fromDate?: string;
+    toDate?: string;
+  };
+}
 
 // --- Cache Management ---
 const CACHE_NAME = 'forex-rates-cache-v1';
@@ -39,64 +52,59 @@ async function getCachedRates(date: string): Promise<RatesData | null> {
  * This is the primary function for getting daily rates.
  */
 export async function fetchRatesForDateWithCache(date: string, bypassCache: boolean = false): Promise<RatesData> {
-  // 1. Try to get from cache (unless bypassed)
-  if (!bypassCache) {
-    const cachedData = await getCachedRates(date);
-    if (cachedData) {
-      // console.log(`[Cache] HIT for ${date}`);
-      return cachedData;
-    }
-  }
+  let retries = 0;
+  const MAX_RETRIES = 3;
 
-  // console.log(`[Cache] MISS for ${date}. Fetching from worker...`);
-
-  // 2. Try to get from worker (which will check DB)
-  try {
-    const response = await fetch(`${API_URL}/rates/date/${date}`);
-    if (!response.ok) {
-      throw new Error(`Worker API error: ${response.statusText}`);
-    }
-    
-    const data: RatesData = await response.json();
-
-    // 3. If worker returns empty (e.g., DB miss), try fetching from NRB API
-    if (!data || !data.rates || data.rates.length === 0) {
-      // console.log(`[DB] MISS for ${date}. Fetching from NRB API...`);
-      const apiData = await fetchForexRatesByDate(date);
-      if (apiData && apiData.rates.length > 0) {
-        // console.log(`[API] HIT for ${date}. Caching...`);
-        // Don't await caching, let it happen in the background
-        cacheRates(date, apiData);
-        // We don't need to send this to the worker to save,
-        // the worker will do that on its next scheduled run.
-        return apiData;
+  while (retries < MAX_RETRIES) {
+    // 1. Try cache first (unless bypassed)
+    if (!bypassCache && retries === 0) {
+      const cachedData = await getCachedRates(date);
+      if (cachedData) {
+        return cachedData;
       }
-      // console.log(`[API] MISS for ${date}. Returning empty.`);
-      return { date: date, rates: [] }; // Return empty if API also fails
     }
 
-    // 4. If worker returns data, cache it and return
-    // console.log(`[DB] HIT for ${date}. Caching...`);
-    // Don't await caching
-    cacheRates(date, data);
-    return data;
-
-  } catch (error) {
-    console.error(`Failed to fetch rates for ${date} from worker.`, error);
-    // Fallback directly to NRB API if worker fails
+    // 2. Try DB via worker
     try {
-      // console.log(`[Worker FAIL] Fetching from NRB API for ${date}...`);
-      const apiData = await fetchForexRatesByDate(date);
-      if (apiData && apiData.rates.length > 0) {
-        cacheRates(date, apiData);
-        return apiData;
+      const response = await fetch(`${API_URL}/rates/date/${date}`);
+      if (response.ok) {
+        const data: RatesData = await response.json();
+        
+        // 3. If DB has data, cache and return
+        if (data && data.rates && data.rates.length > 0) {
+          cacheRates(date, data);
+          return data;
+        }
+      }
+    } catch (dbError) {
+      console.warn(`DB fetch attempt ${retries + 1} failed for ${date}:`, dbError);
+    }
+
+    // 4. Fallback to NRB API
+    try {
+      const apiResponse: ForexResponse = await fetchForexRatesByDate(date);
+      if (apiResponse && apiResponse.data && apiResponse.data.payload.length > 0) {
+        const ratesData = apiResponse.data.payload[0];
+        cacheRates(date, ratesData);
+        return ratesData;
       }
     } catch (apiError) {
-      console.error(`Failed to fetch rates from NRB API as fallback for ${date}.`, apiError);
+      console.warn(`API fetch attempt ${retries + 1} failed for ${date}:`, apiError);
     }
 
-    return { date: date, rates: [] }; // Final fallback
+    retries++;
+    if (retries < MAX_RETRIES) {
+      await new Promise(resolve => setTimeout(resolve, 500 * retries)); // Exponential backoff
+    }
   }
+
+  // Final fallback
+  return { 
+    date, 
+    rates: [],
+    published_on: date,
+    modified_on: date
+  };
 }
 
 /**

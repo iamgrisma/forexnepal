@@ -449,7 +449,7 @@ const Index = () => {
 
 
           {/* Ticker component */}
-          <ForexTicker/>
+          <ForexTicker rates={rates} previousDayRates={previousDayRates} isLoading={isLoading || isLoadingPrevDay} />
 
           <Tabs defaultValue="all" className="mb-12">
             {/* Scrollable TabsList */}
@@ -533,7 +533,7 @@ const Index = () => {
              </p>
            </div>
 
-           <AdSense />
+           <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
 
         </div>
       </div>

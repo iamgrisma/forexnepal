@@ -211,58 +211,47 @@ async function copyPreviousDayData(prevDayRow: any, todayDateStr: string, env: E
 }
 
 
-// --- REVISED CRON JOB FUNCTION ---
+// --- UPDATED CRON JOB FUNCTION FOR 3 SCHEDULES ---
 async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
-    console.log(`[cron ${event.cron}] Triggered...`);
+    console.log(`[cron ${event.cron}] Triggered at ${new Date().toISOString()}`);
     
-    // Get the current date in NPT (UTC+5:45)
-    // We get UTC time, add 5.75 hours in milliseconds
+    // Get current time in NPT (UTC+5:45)
     const nowUtc = new Date();
     const nptOffsetMs = (5 * 60 + 45) * 60 * 1000;
     const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
-    
-    // Use the NPT date string (e.g., 2025-11-07)
     const todayNptStr = formatDate(nowNpt);
 
-    // 1. Check if data for today (NPT) already exists
     try {
+        // 1. Check if data already exists
         const existingData = await env.FOREX_DB.prepare(
             `SELECT date FROM forex_rates WHERE date = ?`
         ).bind(todayNptStr).first();
         
         if (existingData) {
-            console.log(`[cron ${event.cron}] Data for ${todayNptStr} already exists. Skipping fetch.`);
-            return; // Data already exists, stop.
+            console.log(`[cron ${event.cron}] Data for ${todayNptStr} already exists. Skipping.`);
+            return;
         }
 
-        // 2. Data doesn't exist. Try fetching from NRB.
+        // 2. Attempt to fetch from NRB API
         console.log(`[cron ${event.cron}] No data for ${todayNptStr}. Fetching from NRB...`);
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1&from=${todayNptStr}&to=${todayNptStr}`;
         const response = await fetch(apiUrl);
 
         if (response.ok) {
-            // 3. Data found on NRB! Store it.
             const data = await response.json();
             const processedDates = await processAndStoreApiData(data, env);
-            console.log(`[cron ${event.cron}] Successfully fetched and stored ${processedDates} new record(s) for ${todayNptStr}.`);
+            console.log(`[cron ${event.cron}] Successfully stored ${processedDates} record(s) for ${todayNptStr}.`);
             return;
         }
 
         if (response.status === 404) {
-            // 4. Data not yet published (404 Not Found)
-            console.log(`[cron ${event.cron}] NRB data for ${todayNptStr} is not yet published (404).`);
-
-            // Check if this is the "final attempt" cron (6:00 AM NPT)
-            // Note: The cron "15 0 * * *" (00:15 UTC) is the one that runs AT 6:00 AM NPT.
-            // When it runs, it's fetching for the day that *just ended* in NPT.
-            // Let's adjust the logic slightly: the "final" cron should be the 6:00 AM NPT one.
+            console.log(`[cron ${event.cron}] NRB data not published yet (404).`);
             
-            // The 6:00 AM NPT (00:15 UTC) cron is the last one.
-            const isFinalAttempt = event.cron === "15 0 * * *";
-
+            // On the 5:00 AM schedule (final attempt), copy previous day's data
+            const isFinalAttempt = event.cron === "15 23 * * *"; // 23:15 UTC = 5:00 AM NPT
+            
             if (isFinalAttempt) {
-                console.log(`[cron ${event.cron}] This is the final attempt for ${todayNptStr}. Copying previous day's data...`);
-                
+                console.log(`[cron ${event.cron}] Final attempt. Copying previous day's data...`);
                 const yesterdayNpt = new Date(nowNpt);
                 yesterdayNpt.setDate(yesterdayNpt.getDate() - 1);
                 const yesterdayNptStr = formatDate(yesterdayNpt);
@@ -274,19 +263,18 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
                 if (prevDayRow) {
                     await copyPreviousDayData(prevDayRow, todayNptStr, env);
                 } else {
-                    console.error(`[cron ${event.cron}] FATAL: Could not copy data. Previous day ${yesterdayNptStr} not found in DB.`);
+                    console.error(`[cron ${event.cron}] FATAL: Previous day ${yesterdayNptStr} not found.`);
                 }
             } else {
-                console.log(`[cron ${event.cron}] Not the final attempt. Will retry later.`);
+                console.log(`[cron ${event.cron}] Not final attempt. Will retry later.`);
             }
             return;
         }
 
-        // 5. Some other API error
         console.error(`[cron ${event.cron}] NRB API error: ${response.status} ${response.statusText}`);
         
     } catch (error: any) {
-        console.error(`[cron ${event.cron}] FATAL Error during scheduled update:`, error.message, error.cause);
+        console.error(`[cron ${event.cron}] Error:`, error.message);
     }
 }
 
@@ -366,10 +354,9 @@ async function handleRatesByDate(request: Request, env: Env): Promise<Response> 
             // Only add if data exists for that currency on that day
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
-                    // @ts-ignore
                     currency: { ...CURRENCY_MAP[code], iso3: code },
-                    buy: buyRate ?? 0, // Default to 0 if null
-                    sell: sellRate ?? 0, // Default to 0 if null
+                    buy: buyRate ?? 0,
+                    sell: sellRate ?? 0,
                 });
             }
         });
@@ -472,10 +459,9 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                     const sellRate = row[`${code}_sell`];
                     if (typeof buyRate === 'number' && typeof sellRate === 'number') {
                         rates.push({
-                            // @ts-ignore
                             currency: { ...CURRENCY_MAP[code], iso3: code },
-                            buy: buyRate, sell: sellRate,
-                            date: row.date
+                            buy: buyRate,
+                            sell: sellRate,
                         });
                     }
                 });

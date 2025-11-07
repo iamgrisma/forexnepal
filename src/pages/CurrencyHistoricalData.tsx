@@ -1,21 +1,20 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { fetchHistoricalRates, getFlagEmoji } from '@/services/forexService';
-import { Rate, ChartDataPoint } from '@/types/forex';
-import { format, subDays, parseISO } from 'date-fns';
+import { ChartDataPoint } from '@/types/forex';
+import { format, subDays, parseISO, addDays } from 'date-fns';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import Layout from '@/components/Layout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle, ArrowLeft, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import ShareButtons from '@/components/ShareButtons'; // Added ShareButtons
-import {
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
+import ShareButtons from '@/components/ShareButtons';
+import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
+import { toast } from 'sonner';
 
 // --- Currency Info Map ---
 const CURRENCY_MAP: { [key: string]: { name: string, unit: number, country: string } } = {
@@ -44,94 +43,156 @@ const CURRENCY_MAP: { [key: string]: { name: string, unit: number, country: stri
 };
 
 // --- Date Range Definitions ---
-type RangeKey = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'MAX';
+type RangeKey = 'week' | '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y';
 const DATE_RANGES: Record<RangeKey, { days: number, label: string }> = {
+  'week': { days: 7, label: 'Week' },
   '1M': { days: 30, label: '1 Month' },
   '3M': { days: 90, label: '3 Months' },
   '6M': { days: 180, label: '6 Months' },
   '1Y': { days: 365, label: '1 Year' },
   '3Y': { days: 365 * 3, label: '3 Years' },
   '5Y': { days: 365 * 5, label: '5 Years' },
-  'MAX': { days: 365 * 25, label: 'Max' }, // Fetch up to 25 years
 };
 
-// --- Helper Functions ---
+// Cache key for chart data
+const getChartCacheKey = (currency: string, range: string) => `chart_cache_${currency}_${range}`;
 
-/**
- * Calculates the start date based on the selected range.
- */
-const getStartDate = (range: RangeKey): string => {
-  const { days } = DATE_RANGES[range];
-  if (range === 'MAX') {
-    return '2000-01-01'; // Max start date
+// Save/load chart data to/from localStorage
+const saveChartCache = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify({ data, timestamp: Date.now() }));
+  } catch (e) {
+    console.error('Failed to cache chart data');
   }
-  return format(subDays(new Date(), days), 'yyyy-MM-dd');
 };
 
-/**
- * Processes API data into a clean format for the chart.
- * This is where the data logic is fixed.
- */
-const processChartData = (data: Rate[], unit: number): { chartData: ChartDataPoint[], stats: ReturnType<typeof calculateStats> } => {
-  if (!data || data.length === 0) {
-    return { chartData: [], stats: calculateStats([], unit) };
+const loadChartCache = (key: string, maxAge: number = 3600000): any | null => {
+  try {
+    const cached = localStorage.getItem(key);
+    if (!cached) return null;
+    const { data, timestamp } = JSON.parse(cached);
+    if (Date.now() - timestamp > maxAge) return null;
+    return data;
+  } catch (e) {
+    return null;
   }
+};
 
-  const validData: ChartDataPoint[] = data
-    .map(rate => {
-      const buy = Number(rate.buy);
-      const sell = Number(rate.sell);
-      
-      // Normalize rates per 1 unit
-      const normalizedBuy = buy / unit;
-      const normalizedSell = sell / unit;
-
-      // Filter out invalid data points
-      if (
-        !rate.date || 
-        isNaN(normalizedBuy) || isNaN(normalizedSell) ||
-        normalizedBuy <= 0.001 || normalizedSell <= 0.001 || // Remove 0 or near-0 values
-        normalizedBuy > 1000 || normalizedSell > 1000 // Remove absurdly high values (like 375 for USD)
-      ) {
-        return null;
-      }
-      
-      return {
-        date: format(parseISO(rate.date), 'yyyy-MM-dd'),
-        buy: normalizedBuy,
-        sell: normalizedSell,
-      };
-    })
-    .filter((item): item is ChartDataPoint => item !== null)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Ensure sorted by date
-
-  // Create a gap-filled dataset
-  const filledData: ChartDataPoint[] = [];
-  if (validData.length > 0) {
-    let currentDate = parseISO(validData[0].date);
-    const endDate = parseISO(validData[validData.length - 1].date);
-    let dataIndex = 0;
-
-    while (currentDate <= endDate) {
-      const dateStr = format(currentDate, 'yyyy-MM-dd');
-      if (dataIndex < validData.length && validData[dataIndex].date === dateStr) {
-        filledData.push(validData[dataIndex]);
-        dataIndex++;
-      } else {
-        // This creates a gap (null value) for Recharts to render a broken line
-        filledData.push({ date: dateStr, buy: null, sell: null });
-      }
-      currentDate = addDays(currentDate, 1); // Move to the next day
+// Helper to fetch data with timeout
+const fetchWithTimeout = async (url: string, timeout: number): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Request timeout');
     }
+    throw error;
   }
-
-  const stats = calculateStats(validData, unit);
-  return { chartData: filledData, stats };
 };
 
-/**
- * Calculates high/low/change statistics from the *valid* data.
- */
+// Fetch week data from DB with fallback to NRB API
+const fetchWeekData = async (currency: string, fromDate: string, toDate: string): Promise<ChartDataPoint[]> => {
+  try {
+    // Try DB first with 5 second timeout
+    const dbResponse = await fetchWithTimeout(`/api/historical-rates?from=${fromDate}&to=${toDate}`, 5000);
+    
+    if (dbResponse.ok) {
+      const result = await dbResponse.json();
+      if (result.data && Array.isArray(result.data) && result.data.length > 0) {
+        // Convert wide format to chart data
+        const chartData: ChartDataPoint[] = [];
+        result.data.forEach((day: any) => {
+          const buy = day[`${currency}_buy`];
+          const sell = day[`${currency}_sell`];
+          if (buy && sell) {
+            chartData.push({
+              date: day.date,
+              buy: Number(buy),
+              sell: Number(sell),
+            });
+          }
+        });
+        
+        if (chartData.length > 0) {
+          console.log('Loaded week data from DB');
+          return chartData;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('DB fetch failed or timed out, falling back to NRB API');
+  }
+  
+  // Fallback to NRB API
+  return fetchFromNRBApi(currency, fromDate, toDate);
+};
+
+// Fetch from NRB API
+const fetchFromNRBApi = async (currency: string, fromDate: string, toDate: string): Promise<ChartDataPoint[]> => {
+  const result = await fetchHistoricalRates(fromDate, toDate);
+  
+  if (!result.payload || result.payload.length === 0) {
+    return [];
+  }
+  
+  const chartData: ChartDataPoint[] = [];
+  result.payload.forEach((day: any) => {
+    const rate = day.rates?.find((r: any) => r.currency?.iso3 === currency);
+    if (rate && rate.buy && rate.sell) {
+      chartData.push({
+        date: day.date,
+        buy: Number(rate.buy),
+        sell: Number(rate.sell),
+      });
+    }
+  });
+  
+  return chartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+};
+
+// Load daily data in 90-day chunks
+const loadDailyDataInChunks = async (
+  currency: string, 
+  fromDate: string, 
+  toDate: string,
+  onProgress?: (loaded: number, total: number) => void
+): Promise<ChartDataPoint[]> => {
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  const daysDiff = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+  const chunkSize = 90;
+  const chunks = Math.ceil(daysDiff / chunkSize);
+  
+  let allData: ChartDataPoint[] = [];
+  
+  for (let i = 0; i < chunks; i++) {
+    const chunkStart = new Date(from);
+    chunkStart.setDate(chunkStart.getDate() + (i * chunkSize));
+    
+    const chunkEnd = new Date(chunkStart);
+    chunkEnd.setDate(chunkEnd.getDate() + chunkSize - 1);
+    if (chunkEnd > to) chunkEnd.setTime(to.getTime());
+    
+    const chunkData = await fetchFromNRBApi(
+      currency,
+      format(chunkStart, 'yyyy-MM-dd'),
+      format(chunkEnd, 'yyyy-MM-dd')
+    );
+    
+    allData = [...allData, ...chunkData];
+    onProgress?.(i + 1, chunks);
+  }
+  
+  return allData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+};
+
+// Calculate statistics
 const calculateStats = (data: ChartDataPoint[], unit: number) => {
   if (data.length === 0) {
     return { high: 0, low: 0, change: 0, changePercent: 0, firstRate: 0, lastRate: 0, unit };
@@ -140,10 +201,8 @@ const calculateStats = (data: ChartDataPoint[], unit: number) => {
   let high = 0;
   let low = Infinity;
   data.forEach(d => {
-    if (d.buy) {
-      if (d.buy > high) high = d.buy;
-      if (d.buy < low) low = d.buy;
-    }
+    if (d.buy && d.buy > high) high = d.buy;
+    if (d.buy && d.buy < low) low = d.buy;
   });
 
   const firstRate = data[0]?.buy || 0;
@@ -154,12 +213,33 @@ const calculateStats = (data: ChartDataPoint[], unit: number) => {
   return { high, low, change, changePercent, firstRate, lastRate, unit };
 };
 
-// --- Custom Chart Components ---
-const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    if (data.buy === null) return null; // Don't show tooltip for gaps
+// Process chart data (gap-fill for line breaks)
+const processChartData = (data: ChartDataPoint[]): ChartDataPoint[] => {
+  if (data.length === 0) return [];
+  
+  const filledData: ChartDataPoint[] = [];
+  let currentDate = parseISO(data[0].date);
+  const endDate = parseISO(data[data.length - 1].date);
+  let dataIndex = 0;
 
+  while (currentDate <= endDate) {
+    const dateStr = format(currentDate, 'yyyy-MM-dd');
+    if (dataIndex < data.length && data[dataIndex].date === dateStr) {
+      filledData.push(data[dataIndex]);
+      dataIndex++;
+    } else {
+      filledData.push({ date: dateStr, buy: null, sell: null });
+    }
+    currentDate = addDays(currentDate, 1);
+  }
+
+  return filledData;
+};
+
+// Custom Tooltip
+const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
+  if (active && payload && payload.length && payload[0].payload.buy !== null) {
+    const data = payload[0].payload;
     return (
       <div className="bg-background border rounded-lg p-3 shadow-lg">
         <p className="font-bold text-sm">{format(parseISO(label), 'MMM d, yyyy')}</p>
@@ -171,59 +251,122 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
   return null;
 };
 
-const StatCard: React.FC<{ title: string, value: number, prefix?: string, suffix?: string, decimals?: number, colorClass?: string }> = ({
-  title,
-  value,
-  prefix = 'Rs. ',
-  suffix = '',
-  decimals = 2,
-  colorClass = 'text-foreground'
-}) => (
-  <div className="flex flex-col items-center justify-center p-4 bg-muted/50 rounded-lg">
-    <span className="text-xs text-muted-foreground uppercase">{title}</span>
-    <span className={`text-lg font-bold ${colorClass}`}>
-      {value > 0 && prefix === 'Rs. ' && '+'}
-      {prefix}{value.toFixed(decimals)}{suffix}
-    </span>
-  </div>
-);
-
-// --- Main Page Component ---
+// Main Component
 const CurrencyHistoricalData: React.FC = () => {
   const { currencyCode } = useParams<{ currencyCode: string }>();
-  const [range, setRange] = useState<RangeKey>('1Y');
+  const [range, setRange] = useState<RangeKey>('week');
+  const [showDaily, setShowDaily] = useState(false);
+  const [dailyLoadProgress, setDailyLoadProgress] = useState<{ loaded: number; total: number } | null>(null);
+  const [cooldownTimer, setCooldownTimer] = useState<number>(0);
 
-  const currencyInfo = CURRENCY_MAP[currencyCode?.toUpperCase() || ''] || { name: 'Unknown', unit: 1, country: 'Unknown' };
-  const { name, unit, country } = currencyInfo;
+  const currencyInfo = CURRENCY_MAP[currencyCode?.toUpperCase() || ''];
+  const { name = 'Unknown', unit = 1, country = 'Unknown' } = currencyInfo || {};
   const upperCaseCurrencyCode = currencyCode?.toUpperCase() || 'UNKNOWN';
 
-  const fromDate = getStartDate(range);
+  // Cooldown timer effect
+  useEffect(() => {
+    if (cooldownTimer > 0) {
+      const timer = setInterval(() => {
+        setCooldownTimer(prev => Math.max(0, prev - 1));
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [cooldownTimer]);
+
+  // Calculate date range
+  const rangeInDays = DATE_RANGES[range]?.days || 7;
+  const fromDate = format(subDays(new Date(), rangeInDays - 1), 'yyyy-MM-dd');
   const toDate = format(new Date(), 'yyyy-MM-dd');
 
-  const { data: apiData, isLoading, isError, error } = useQuery({
-    queryKey: ['historicalRates', upperCaseCurrencyCode, range],
-    queryFn: () => fetchHistoricalRates(upperCaseCurrencyCode!, fromDate, toDate),
+  // Check rate limit before fetching
+  const handleRangeChange = (newRange: RangeKey) => {
+    const newRangeInDays = DATE_RANGES[newRange]?.days || 7;
+    const limitCheck = canMakeChartRequest(newRangeInDays);
+    
+    if (!limitCheck.allowed) {
+      toast.error(limitCheck.reason || 'Rate limit exceeded');
+      if (limitCheck.cooldownSeconds) {
+        setCooldownTimer(limitCheck.cooldownSeconds);
+      }
+      return;
+    }
+    
+    setRange(newRange);
+    setShowDaily(false);
+    recordChartRequest(newRangeInDays);
+  };
+
+  // Fetch chart data
+  const { data: chartData, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['currency-chart', upperCaseCurrencyCode, range, showDaily],
+    queryFn: async () => {
+      // Check cache first
+      const cacheKey = getChartCacheKey(upperCaseCurrencyCode, `${range}_${showDaily}`);
+      const cached = loadChartCache(cacheKey);
+      if (cached) {
+        console.log('Loaded from cache');
+        return cached;
+      }
+
+      let data: ChartDataPoint[];
+      
+      if (showDaily) {
+        // Load daily data in chunks
+        data = await loadDailyDataInChunks(
+          upperCaseCurrencyCode,
+          fromDate,
+          toDate,
+          (loaded, total) => setDailyLoadProgress({ loaded, total })
+        );
+        setDailyLoadProgress(null);
+      } else if (range === 'week') {
+        // Use DB for week, fallback to API
+        data = await fetchWeekData(upperCaseCurrencyCode, fromDate, toDate);
+      } else {
+        // Use NRB API for longer ranges
+        data = await fetchFromNRBApi(upperCaseCurrencyCode, fromDate, toDate);
+      }
+
+      // Cache the data
+      saveChartCache(cacheKey, data);
+      return data;
+    },
     enabled: !!upperCaseCurrencyCode && upperCaseCurrencyCode !== 'UNKNOWN',
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 1000 * 60 * 10, // 10 minutes
   });
 
-  const { chartData, stats } = useMemo(() => {
-    return processChartData(apiData?.payload || [], unit);
-  }, [apiData, unit]);
+  const processedData = useMemo(() => {
+    if (!chartData) return { chartData: [], stats: calculateStats([], unit) };
+    const filled = processChartData(chartData);
+    return { chartData: filled, stats: calculateStats(chartData, unit) };
+  }, [chartData, unit]);
 
-  const changeColor = stats.change >= 0 ? 'text-green-600' : 'text-red-600';
+  const changeColor = processedData.stats.change >= 0 ? 'text-green-600' : 'text-red-600';
   const pageTitle = `Historical Data for ${name} (${upperCaseCurrencyCode})`;
   const pageUrl = `https://forexnepal.com/historical-data/${upperCaseCurrencyCode}`;
+  const remainingRequests = getRemainingRequests();
 
   return (
     <Layout>
       <div className="container mx-auto px-4 py-8 max-w-6xl">
-        <div className="mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <Button variant="outline" size="sm" asChild>
             <Link to="/historical-charts" className="flex items-center gap-2">
               <ArrowLeft className="h-4 w-4" /> Back to All Currencies
             </Link>
           </Button>
+          
+          {cooldownTimer > 0 && (
+            <div className="text-sm text-muted-foreground">
+              Refresh available in: {cooldownTimer}s
+            </div>
+          )}
+          
+          {remainingRequests <= 5 && remainingRequests > 0 && (
+            <div className="text-sm text-orange-600">
+              {remainingRequests} chart requests remaining this hour
+            </div>
+          )}
         </div>
         
         <Card>
@@ -231,33 +374,40 @@ const CurrencyHistoricalData: React.FC = () => {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                  {getFlagEmoji(upperCaseCurrencyCode!)}
+                  {getFlagEmoji(upperCaseCurrencyCode)}
                   {name} ({upperCaseCurrencyCode})
                 </CardTitle>
                 <CardDescription>
                   {country} | Official Unit: {unit}
                 </CardDescription>
               </div>
-              {/* Share Buttons Added Here */}
               <div className="w-full sm:w-auto">
                 <ShareButtons url={pageUrl} title={pageTitle} />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {/* Mobile Scroll Fixed: Added w-max */}
-            <Tabs value={range} onValueChange={(value) => setRange(value as RangeKey)}>
+            <Tabs value={range} onValueChange={handleRangeChange as any}>
               <div className="overflow-x-auto scrollbar-hide border-b">
-                <TabsList className="w-max"> 
+                <TabsList className="w-max">
                   {Object.entries(DATE_RANGES).map(([key, { label }]) => (
-                    <TabsTrigger key={key} value={key}>{label}</TabsTrigger>
+                    <TabsTrigger key={key} value={key} disabled={cooldownTimer > 0}>
+                      {label}
+                    </TabsTrigger>
                   ))}
                 </TabsList>
               </div>
 
               <div className="mt-6">
                 {isLoading && (
-                  <Skeleton className="h-[400px] w-full" />
+                  <div className="space-y-4">
+                    <Skeleton className="h-[400px] w-full" />
+                    {dailyLoadProgress && (
+                      <div className="text-center text-sm text-muted-foreground">
+                        Loading daily data: {dailyLoadProgress.loaded} / {dailyLoadProgress.total} chunks
+                      </div>
+                    )}
+                  </div>
                 )}
                 
                 {isError && (
@@ -265,12 +415,12 @@ const CurrencyHistoricalData: React.FC = () => {
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>Error Loading Chart</AlertTitle>
                     <AlertDescription>
-                      Could not fetch historical data: {error.message}
+                      {error instanceof Error ? error.message : 'Could not fetch historical data'}
                     </AlertDescription>
                   </Alert>
                 )}
 
-                {!isLoading && !isError && chartData.length === 0 && (
+                {!isLoading && !isError && processedData.chartData.length === 0 && (
                   <Alert>
                     <AlertCircle className="h-4 w-4" />
                     <AlertTitle>No Data Available</AlertTitle>
@@ -280,15 +430,15 @@ const CurrencyHistoricalData: React.FC = () => {
                   </Alert>
                 )}
 
-                {!isLoading && !isError && chartData.length > 0 && (
+                {!isLoading && !isError && processedData.chartData.length > 0 && (
                   <>
                     <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <StatCard title="Last Rate" value={stats.lastRate} decimals={4} />
-                      <StatCard title="Period High" value={stats.high} decimals={4} colorClass="text-green-600" />
-                      <StatCard title="Period Low" value={stats.low} decimals={4} colorClass="text-red-600" />
+                      <StatCard title="Last Rate" value={processedData.stats.lastRate} decimals={4} />
+                      <StatCard title="Period High" value={processedData.stats.high} decimals={4} colorClass="text-green-600" />
+                      <StatCard title="Period Low" value={processedData.stats.low} decimals={4} colorClass="text-red-600" />
                       <StatCard 
                         title="Period Change" 
-                        value={stats.changePercent} 
+                        value={processedData.stats.changePercent} 
                         prefix=""
                         suffix="%" 
                         decimals={2} 
@@ -298,7 +448,7 @@ const CurrencyHistoricalData: React.FC = () => {
                   
                     <div className="h-[400px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartData}>
+                        <LineChart data={processedData.chartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
                           <XAxis 
                             dataKey="date" 
@@ -314,21 +464,47 @@ const CurrencyHistoricalData: React.FC = () => {
                             stroke="hsl(var(--muted-foreground))"
                             fontSize={12}
                           />
-                          <ChartTooltip content={<CustomTooltip />} />
+                          <Tooltip content={<CustomTooltip />} />
                           <Line 
                             type="monotone" 
                             dataKey="buy" 
                             stroke="hsl(var(--primary))" 
                             strokeWidth={2} 
                             dot={false}
-                            connectNulls={false} // This creates the gaps
+                            connectNulls={false}
                           />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
-                    <p className="text-xs text-muted-foreground text-center mt-2">
-                      Showing per-unit normalized "Buy" rate. Gaps in the line indicate weekends or public holidays.
-                    </p>
+                    
+                    <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <p className="text-xs text-muted-foreground text-center sm:text-left">
+                        {showDaily ? 'Showing daily data' : 'Showing per-unit normalized "Buy" rate'}. Gaps indicate missing data.
+                      </p>
+                      
+                      {!showDaily && range !== 'week' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const limitCheck = canMakeChartRequest(rangeInDays);
+                            if (!limitCheck.allowed) {
+                              toast.error(limitCheck.reason || 'Rate limit exceeded');
+                              if (limitCheck.cooldownSeconds) {
+                                setCooldownTimer(limitCheck.cooldownSeconds);
+                              }
+                              return;
+                            }
+                            setShowDaily(true);
+                            recordChartRequest(rangeInDays);
+                          }}
+                          disabled={isLoading || cooldownTimer > 0}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Load Full Daily Data
+                        </Button>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -339,5 +515,30 @@ const CurrencyHistoricalData: React.FC = () => {
     </Layout>
   );
 };
+
+// Stat Card Component
+const StatCard: React.FC<{ 
+  title: string; 
+  value: number; 
+  prefix?: string; 
+  suffix?: string; 
+  decimals?: number; 
+  colorClass?: string 
+}> = ({
+  title,
+  value,
+  prefix = 'Rs. ',
+  suffix = '',
+  decimals = 2,
+  colorClass = 'text-foreground'
+}) => (
+  <div className="flex flex-col items-center justify-center p-4 bg-muted/50 rounded-lg">
+    <span className="text-xs text-muted-foreground uppercase">{title}</span>
+    <span className={`text-lg font-bold ${colorClass}`}>
+      {value > 0 && prefix === 'Rs. ' && '+'}
+      {prefix}{value.toFixed(decimals)}{suffix}
+    </span>
+  </div>
+);
 
 export default CurrencyHistoricalData;

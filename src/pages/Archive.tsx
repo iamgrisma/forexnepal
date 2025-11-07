@@ -7,7 +7,7 @@ import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, subMonths, isBefore, isAfter } from 'date-fns';
 import Layout from '@/components/Layout';
 
-const ITEMS_PER_PAGE = 60; // 2 months worth of days
+const ITEMS_PER_PAGE = 61; // Approximately 2 months
 
 const Archive = () => {
   // --- UPDATED to read splat route ---
@@ -20,7 +20,7 @@ const Archive = () => {
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1;
 
-  const [selectedYear, setSelectedYear] = useState<string>(currentYear.toString());
+  const [selectedYear, setSelectedYear] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('all');
 
   // Generate year options (from 2000 to current year)

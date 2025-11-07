@@ -440,7 +440,7 @@ const NotFound = () => {
 
 
           {/* Ticker component */}
-          <ForexTicker/>
+          <ForexTicker rates={rates} previousDayRates={previousDayRates} isLoading={isLoading || isLoadingPrevDay} />
 
           <Tabs defaultValue="all" className="mb-12">
             {/* Scrollable TabsList */}
@@ -524,7 +524,7 @@ const NotFound = () => {
              </p>
            </div>
 
-           <AdSense />
+           <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
 
         </div>
       </div>

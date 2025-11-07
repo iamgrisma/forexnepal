@@ -178,8 +178,8 @@ const Converter = () => {
             <p className="text-muted-foreground">Convert currencies using rates from {selectedDate}</p>
           </div>
 
-          {/* Ticker - Pass rates array */}
-          <ForexTicker/>
+          {/* Ticker */}
+          <ForexTicker rates={rates} previousDayRates={[]} isLoading={isLoading} />
 
           {/* Main Card */}
           <Card className="w-full max-w-3xl mx-auto">
@@ -363,7 +363,7 @@ const Converter = () => {
 
           {/* AdSense */}
           <div className="mt-8">
-            <AdSense />
+            <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
           </div>
         </div>
       </div>

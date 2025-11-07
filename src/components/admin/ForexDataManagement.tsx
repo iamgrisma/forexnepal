@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, AlertCircle, Edit, Save, RefreshCw, Info } from 'lucide-react';
-import DateInput from '@/components/DateInput'; // Assuming you have this component
-import { formatDate } from '@/services/forexService'; // Import formatDate
+import DateInput from '@/components/DateInput';
+import { formatDate } from '@/services/forexService';
+import DataUpdateControl from './DataUpdateControl';
 
 // Define a simplified structure for the form/display
 interface ForexRateData {
@@ -162,10 +163,13 @@ const ForexDataManagement = () => {
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Manage Forex Data</CardTitle>
-        <CardDescription>View recent entries or select a date to add/edit rates.</CardDescription>
+    <div className="space-y-6">
+      <DataUpdateControl />
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Manage Forex Data</CardTitle>
+          <CardDescription>View recent entries or select a date to add/edit rates.</CardDescription>
         <div className="flex items-end gap-2 pt-4">
            <div className="flex-grow max-w-xs">
               <label htmlFor="forex-date" className="block text-sm font-medium mb-1">Select Date (YYYY-MM-DD)</label>
@@ -293,6 +297,7 @@ const ForexDataManagement = () => {
         )}
       </CardContent>
     </Card>
+    </div>
   );
 };
 

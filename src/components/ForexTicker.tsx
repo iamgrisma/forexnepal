@@ -82,33 +82,14 @@ const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate
   );
 });
 
-// Component takes no props, it's completely self-contained.
-const ForexTicker: React.FC = () => {
-  const { ticker_enabled } = useSiteSettings(); // Get the setting
+interface ForexTickerProps {
+  rates: Rate[];
+  previousDayRates: Rate[];
+  isLoading: boolean;
+}
 
-  // --- COMPONENT-LEVEL DATA FETCHING ---
-  // Always fetch for the current date, regardless of the page
-  const todayString = format(new Date(), 'yyyy-MM-dd');
-  const previousDateString = format(subDays(new Date(), 1), 'yyyy-MM-dd');
-
-  const { data: forexData, isLoading: isLoadingToday } = useQuery({
-    queryKey: ['tickerForexRates', todayString], // Use a unique key
-    queryFn: () => fetchRatesForDateWithCache(todayString, null),
-    refetchOnWindowFocus: false,
-    staleTime: Infinity, // Cache "forever" for the session
-  });
-
-  const { data: prevDayData, isLoading: isLoadingPrev } = useQuery({
-    queryKey: ['tickerPreviousDayRates', todayString], // Use a unique key
-    queryFn: () => fetchRatesForDateWithCache(previousDateString, null),
-    refetchOnWindowFocus: false,
-    staleTime: Infinity, // Cache "forever" for the session
-  });
-
-  const isLoading = isLoadingToday || isLoadingPrev;
-  const rates = forexData?.rates || [];
-  const previousDayRates = prevDayData?.rates || [];
-  // --- END OF DATA FETCHING ---
+const ForexTicker: React.FC<ForexTickerProps> = ({ rates, previousDayRates, isLoading }) => {
+  const { ticker_enabled } = useSiteSettings();
 
 
   // Create maps for today's and previous day's rates for fast lookups
@@ -132,7 +113,7 @@ const ForexTicker: React.FC = () => {
         if (!rate) return null;
         return { rate, prevRate };
       })
-      .filter((item): item is { rate: Rate, prevRate?: Rate } => !!item);
+      .filter((item): item is { rate: Rate, prevRate: Rate | undefined } => !!item);
   }, [rateMap, prevRateMap, tickerCurrencies]);
 
 

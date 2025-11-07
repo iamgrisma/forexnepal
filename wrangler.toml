@@ -1,0 +1,31 @@
+# Cloudflare Workers configuration for forexnepal.com
+name = "forexnepal"
+main = "src/worker.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "FOREX_DB"
+database_name = "forex_rates"
+database_id = "YOUR_D1_DATABASE_ID" # Replace with your actual D1 database ID
+
+# KV namespace for static assets
+[[kv_namespaces]]
+binding = "__STATIC_CONTENT"
+id = "YOUR_KV_NAMESPACE_ID" # Replace with your actual KV namespace ID
+
+# Multiple cron schedules for database updates (Nepal Time = UTC+5:45)
+# 12:00 AM NPT = 6:15 PM UTC (18:15 UTC)
+# 12:20 AM NPT = 6:35 PM UTC (18:35 UTC)
+# 5:00 AM NPT = 11:15 PM UTC (23:15 UTC)
+[triggers]
+crons = ["15 18 * * *", "35 18 * * *", "15 23 * * *"]
+
+[site]
+bucket = "./dist"
+
+[build]
+command = "npm run build"
+
+[build.upload]
+format = "service-worker"

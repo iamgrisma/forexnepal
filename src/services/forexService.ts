@@ -33,20 +33,18 @@ export const fetchForexRates = async (): Promise<ForexResponse> => {
   }
 };
 
-// New function to fetch rates for a specific date
-export const fetchForexRatesByDate = async (date: Date): Promise<ForexResponse> => {
+// New function to fetch rates for a specific date - accepts string OR Date
+export const fetchForexRatesByDate = async (date: Date | string): Promise<ForexResponse> => {
   try {
-    const formattedDate = formatDate(date); // Use your existing formatDate helper
+    const formattedDate = typeof date === 'string' ? date : formatDate(date);
 
     const response = await fetch(
       `${API_BASE_URL}/rates?from=${formattedDate}&to=${formattedDate}&per_page=100&page=1`
     );
 
     if (!response.ok) {
-       // Specifically handle 404 for dates with no data (e.g., holidays/weekends)
        if (response.status === 404) {
            console.warn(`No forex data found for date: ${formattedDate}. Returning empty payload.`);
-           // Return a structure consistent with a successful response but with empty data
            return {
                status: { code: 404, message: "Data not found for this date" },
                data: { payload: [], pagination: { page: 1, per_page: 100, total_page: 0, total_count: 0 } }
@@ -57,8 +55,7 @@ export const fetchForexRatesByDate = async (date: Date): Promise<ForexResponse> 
 
     return await response.json();
   } catch (error) {
-    console.error(`Failed to fetch forex rates for ${formatDate(date)}:`, error);
-    // Re-throw or return a specific error structure if needed
+    console.error(`Failed to fetch forex rates for ${typeof date === 'string' ? date : formatDate(date)}:`, error);
     throw error;
   }
 };

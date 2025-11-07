@@ -112,9 +112,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
           data = await fetchHistoricalRatesWithCache(
             currency.currency.iso3,
             fromDate,
-            toDate,
-            (progress) => { setProgress(progress); },
-            sampling // Pass sampling rate
+            toDate
           );
           // --- END TASK 2 ---
       }
