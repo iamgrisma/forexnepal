@@ -178,34 +178,120 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
     return processedDates;
 }
 
-// --- Cron Job ---
-async function updateForexData(env: Env): Promise<void> {
-    console.log("Starting scheduled forex data update...");
-    try {
-        const endDate = new Date();
-        const startDate = new Date();
-        // Fetch last 7 days to catch up any missed data or updates
-        startDate.setDate(endDate.getDate() - 7);
-        const fromDateStr = formatDate(startDate);
-        const toDateStr = formatDate(endDate);
+// --- NEW HELPER FUNCTION ---
+/**
+ * Copies the data from the previous day's row into a new row for the given date.
+ */
+async function copyPreviousDayData(prevDayRow: any, todayDateStr: string, env: Env): Promise<void> {
+    if (!prevDayRow) {
+        console.error(`Cannot copy data for ${todayDateStr}: Previous day's data is null.`);
+        return;
+    }
 
-        const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDateStr}&to=${toDateStr}`;
+    // Prepare columns and values, excluding 'date' and 'updated_at'
+    const columns: string[] = [];
+    const values: (string | number | null)[] = [];
+    
+    CURRENCIES.forEach(code => {
+        const buyCol = `"${code}_buy"`;
+        const sellCol = `"${code}_sell"`;
+        columns.push(buyCol, sellCol);
+        values.push(prevDayRow[`${code}_buy`] ?? null, prevDayRow[`${code}_sell`] ?? null);
+    });
+
+    const placeholders = columns.map(() => '?').join(',');
+
+    const query = `
+        INSERT OR REPLACE INTO forex_rates (date, updated_at, ${columns.join(',')}) 
+        VALUES (?, datetime('now'), ${placeholders})
+    `;
+    
+    await env.FOREX_DB.prepare(query).bind(todayDateStr, ...values).run();
+    console.log(`Successfully copied previous day's data to ${todayDateStr}.`);
+}
+
+
+// --- REVISED CRON JOB FUNCTION ---
+async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
+    console.log(`[cron ${event.cron}] Triggered...`);
+    
+    // Get the current date in NPT (UTC+5:45)
+    // We get UTC time, add 5.75 hours in milliseconds
+    const nowUtc = new Date();
+    const nptOffsetMs = (5 * 60 + 45) * 60 * 1000;
+    const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
+    
+    // Use the NPT date string (e.g., 2025-11-07)
+    const todayNptStr = formatDate(nowNpt);
+
+    // 1. Check if data for today (NPT) already exists
+    try {
+        const existingData = await env.FOREX_DB.prepare(
+            `SELECT date FROM forex_rates WHERE date = ?`
+        ).bind(todayNptStr).first();
+        
+        if (existingData) {
+            console.log(`[cron ${event.cron}] Data for ${todayNptStr} already exists. Skipping fetch.`);
+            return; // Data already exists, stop.
+        }
+
+        // 2. Data doesn't exist. Try fetching from NRB.
+        console.log(`[cron ${event.cron}] No data for ${todayNptStr}. Fetching from NRB...`);
+        const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1&from=${todayNptStr}&to=${todayNptStr}`;
         const response = await fetch(apiUrl);
 
-        if (!response.ok) throw new Error(`NRB API error: ${response.status}`);
+        if (response.ok) {
+            // 3. Data found on NRB! Store it.
+            const data = await response.json();
+            const processedDates = await processAndStoreApiData(data, env);
+            console.log(`[cron ${event.cron}] Successfully fetched and stored ${processedDates} new record(s) for ${todayNptStr}.`);
+            return;
+        }
 
-        const data = await response.json();
-        await processAndStoreApiData(data, env);
+        if (response.status === 404) {
+            // 4. Data not yet published (404 Not Found)
+            console.log(`[cron ${event.cron}] NRB data for ${todayNptStr} is not yet published (404).`);
 
+            // Check if this is the "final attempt" cron (6:00 AM NPT)
+            // Note: The cron "15 0 * * *" (00:15 UTC) is the one that runs AT 6:00 AM NPT.
+            // When it runs, it's fetching for the day that *just ended* in NPT.
+            // Let's adjust the logic slightly: the "final" cron should be the 6:00 AM NPT one.
+            
+            // The 6:00 AM NPT (00:15 UTC) cron is the last one.
+            const isFinalAttempt = event.cron === "15 0 * * *";
+
+            if (isFinalAttempt) {
+                console.log(`[cron ${event.cron}] This is the final attempt for ${todayNptStr}. Copying previous day's data...`);
+                
+                const yesterdayNpt = new Date(nowNpt);
+                yesterdayNpt.setDate(yesterdayNpt.getDate() - 1);
+                const yesterdayNptStr = formatDate(yesterdayNpt);
+
+                const prevDayRow = await env.FOREX_DB.prepare(
+                    `SELECT * FROM forex_rates WHERE date = ?`
+                ).bind(yesterdayNptStr).first();
+
+                if (prevDayRow) {
+                    await copyPreviousDayData(prevDayRow, todayNptStr, env);
+                } else {
+                    console.error(`[cron ${event.cron}] FATAL: Could not copy data. Previous day ${yesterdayNptStr} not found in DB.`);
+                }
+            } else {
+                console.log(`[cron ${event.cron}] Not the final attempt. Will retry later.`);
+            }
+            return;
+        }
+
+        // 5. Some other API error
+        console.error(`[cron ${event.cron}] NRB API error: ${response.status} ${response.statusText}`);
+        
     } catch (error: any) {
-        console.error('FATAL Error during scheduled update:', error.message, error.cause);
+        console.error(`[cron ${event.cron}] FATAL Error during scheduled update:`, error.message, error.cause);
     }
 }
 
 
 // --- API Handlers (Updated) ---
-
-// --- Removed handleCheckData as it was complex and long-table dependent. Using handleHistoricalRates for single date check is easier. ---
 
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     // This function is now the manual run equivalent of the cron job (for admin use)
@@ -1024,9 +1110,9 @@ export default {
         }
     },
 
-    // --- Scheduled Task ---
+    // --- REVISED Scheduled Task ---
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-        console.log(`[cron ${event.cron}] Triggered...`);
-        ctx.waitUntil(updateForexData(env));
+        // We wrap the new logic in waitUntil
+        ctx.waitUntil(handleScheduled(event, env));
     }
 };
