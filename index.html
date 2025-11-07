@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -9,7 +8,20 @@
     <meta name="author" content="Grisma" />
     <meta property="og:image" content="https://grisma.com.np/wp-content/uploads/2025/10/forex-rates-2025-10-16-1-scaled.png" />
 
-    <!-- PWA Meta Tags -->
+    <script type="text/javascript">
+      (function() {
+        var hash = window.location.hash;
+        // Check if the hash looks like a route (e.g., #/posts)
+        if (hash && hash.startsWith('#/')) {
+          // Get the path part, e.g., "/posts"
+          var path = hash.substring(1); 
+          // Rebuild the URL without the hash
+          var newUrl = window.location.origin + path + window.location.search;
+          // Replace the history state so the user doesn't get stuck
+          window.location.replace(newUrl);
+        }
+      })();
+    </script>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#1e40af" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -23,16 +35,13 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/pwa-icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/pwa-icon-512.png" />
 
-    <!-- Google AdSense -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5410507143596599"
      crossorigin="anonymous"></script>
-    <!-- Country Flag Icons CDN -->
     <link href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@6.6.6/css/flag-icons.min.css" rel="stylesheet">
   </head>
 
   <body>
     <div id="root"></div>
-    <!-- IMPORTANT: DO NOT REMOVE THIS SCRIPT TAG OR THIS VERY COMMENT! -->
     <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
