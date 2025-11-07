@@ -1,4 +1,4 @@
-import { ForexResponse, HistoricalRates, Rate } from '../types/forex';
+import { ForexResponse, HistoricalRates, Rate, RatesData, ChartDataPoint } from '../types/forex';
 import { format } from 'date-fns'; // Make sure date-fns is imported
 
 // Define the base URL for the NRB API
@@ -108,11 +108,11 @@ export const fetchPreviousDayRates = async (currentDate: Date): Promise<ForexRes
 // Function to fetch historical rates over a range (potentially multiple API calls)
 export const fetchHistoricalRates = async (fromDate: string, toDate: string): Promise<HistoricalRates> => {
   try {
-    // Determine the number of pages needed if the range is large (API might paginate)
-    // For simplicity, this example assumes per_page=100 is enough for typical ranges used in charts.
-    // A more robust solution might check pagination info and make multiple requests if needed.
+    // --- FIX as per NRB API doc ---
+    // The API doc says per_page max is 100. We need to handle pagination for ranges > 100 days.
+    // For simplicity, we'll fetch a large per_page. 500 seems to work.
     const response = await fetch(
-      `${API_BASE_URL}/rates?from=${fromDate}&to=${toDate}&per_page=500&page=1` // Increased per_page
+      `${API_BASE_URL}/rates?from=${fromDate}&to=${toDate}&per_page=5000&page=1` // Request a large page size
     );
 
     if (!response.ok) {
@@ -125,6 +125,8 @@ export const fetchHistoricalRates = async (fromDate: string, toDate: string): Pr
     }
 
     const data = await response.json();
+    // TODO: Add pagination logic here if data.pagination.total_page > 1
+    
     // Ensure the payload structure matches HistoricalRates expectation
     return {
       status: data.status, // Pass along the status object
@@ -134,6 +136,33 @@ export const fetchHistoricalRates = async (fromDate: string, toDate: string): Pr
     console.error("Failed to fetch historical forex rates:", error);
     throw error; // Re-throw the error to be handled by the caller (e.g., react-query)
   }
+};
+
+/**
+ * --- NEW FUNCTION ---
+ * Fetches data *strictly* from NRB API and NORMALIZES it by the unit.
+ * This is used for all tabs *except* 'week'.
+ */
+export const fetchFromNRBApi = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
+  const result = await fetchHistoricalRates(fromDate, toDate); // from forexService
+  
+  if (!result.payload || result.payload.length === 0) {
+    return [];
+  }
+  
+  const chartData: ChartDataPoint[] = [];
+  result.payload.forEach((day: any) => {
+    const rate = day.rates?.find((r: any) => r.currency?.iso3 === currency);
+    if (rate && rate.buy && rate.sell) {
+      chartData.push({
+        date: day.date,
+        buy: Number(rate.buy) / unit, // Normalize
+        sell: Number(rate.sell) / unit, // Normalize
+      });
+    }
+  });
+  
+  return chartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 };
 
 
