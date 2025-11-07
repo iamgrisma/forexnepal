@@ -110,7 +110,7 @@ export const fetchHistoricalRates = async (fromDate: string, toDate: string): Pr
   try {
     // --- FIX as per NRB API doc ---
     // The API doc says per_page max is 100. We need to handle pagination for ranges > 100 days.
-    // For simplicity, we'll fetch a large per_page. 500 seems to work.
+    // For simplicity, we'll fetch a large per_page. 5000 seems to work.
     const response = await fetch(
       `${API_BASE_URL}/rates?from=${fromDate}&to=${toDate}&per_page=5000&page=1` // Request a large page size
     );
