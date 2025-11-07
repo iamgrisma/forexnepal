@@ -351,11 +351,8 @@ const CurrencyHistoricalData: React.FC = () => {
         };
       }
 
-      // 2. NO LOCALSTORAGE CACHE
-      // const cacheKey = ...
-      // const cached = loadChartCache(cacheKey);
-      // if (cached) return cached;
-
+      // 2. NO LOCALSTORAGE CACHE - As requested by user
+      
       let data: ChartDataPoint[];
       let samplingUsed = 'daily';
 
@@ -398,15 +395,8 @@ const CurrencyHistoricalData: React.FC = () => {
         samplingUsed = sUsed;
       }
 
-      // 5. Cache and return
+      // 5. Return
       const result = { data, samplingUsed };
-      
-      // --- FIX: ONLY CACHE IF DATA IS NOT EMPTY ---
-      if (data && data.length > 0) {
-        // Re-enabled caching as per your request, but only for non-empty data
-        const cacheKey = getChartCacheKey(upperCaseCurrencyCode, range, fromDate, toDate, showDaily);
-        saveChartCache(cacheKey, result);
-      }
       return result;
     },
     // --- FIX: This query should be enabled *after* the INR check is done (if INR), or immediately if not INR ---
