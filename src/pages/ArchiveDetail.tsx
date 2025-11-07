@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, Suspense } from 'react';
+import React, { useEffect, useMemo, Suspense, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // Import useQueryClient
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -9,14 +9,15 @@ import { ArrowLeft, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Minus }
 import { fetchForexRatesByDate, formatDateLong, getFlagEmoji } from '../services/forexService';
 import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // Import types
-import { Rate, RatesData, HistoricalRates, ChartDataPoint } from '../types/forex';
-import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore, differenceInDays } from 'date-fns';
+import { Rate, RatesData } from '../types/forex';
+import { format, parseISO, addDays, subDays, isValid, startOfDay, isBefore, differenceInDays, subMonths, subYears } from 'date-fns';
 import Layout from '@/components/Layout';
 import ForexTicker from '@/components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from '@/lib/utils';
+import { Loader2 } from 'lucide-react'; // Import Loader
 
 // --- CURRENCY MAP (Needed for stats) ---
 const CURRENCY_MAP: { [key: string]: { name: string, unit: number } } = {
@@ -64,10 +65,12 @@ export type HistoricalChange = {
   newRate: number;
 };
 
+// --- UPDATED: This type now holds a single set of data, not one for each tab ---
 export type HistoricalAnalysisData = {
   data: HistoricalChange[];
-  isLoading: boolean;
 };
+
+// Main props for the article component
 export type ArticleTemplateProps = {
   analysisData: {
     allRates: AnalyzedRate[];
@@ -75,71 +78,16 @@ export type ArticleTemplateProps = {
     top12Low: AnalyzedRate[];
     topGainer: AnalyzedRate;
     topLoser: AnalyzedRate;
+    majorRates: AnalyzedRate[];
   };
-  historicalAnalysis: {
-    weekly: HistoricalAnalysisData;
-    monthly: HistoricalAnalysisData;
-    quarterly: HistoricalAnalysisData;
-    yearly: HistoricalAnalysisData;
-    fiveYear: HistoricalAnalysisData;
-    longTerm: HistoricalAnalysisData;
-  };
+  historicalAnalysis: HistoricalAnalysisData | null; // This will be loaded lazily
+  isHistoricalLoading: boolean; // Loading state for the lazy-loaded data
   formattedDate: string;
+  longDateHeader: string; // The new "news dateline"
   shortDate: string;
   rates: Rate[];
   activeTab: string;
   onTabChange: (tab: string) => void;
-};
-
-// This function now only fetches the START and END dates for the range,
-// as that is all the Historical Performance tabs need.
-const fetchHistoricalRatesFromWorker = async (
-    fromDate: string, 
-    toDate: string, 
-    sampling: string = 'daily' // Sampling param is now ignored, but kept for compatibility
-): Promise<HistoricalRates> => {
-  try {
-    // We only need two dates: the start and the end.
-    // We fetch them in parallel from the API endpoint.
-    // This will hit the /api/historical-rates endpoint which is optimized
-    // for single-day "wide" table lookups. This will be 2 row reads.
-    const [fromResponse, toResponse] = await Promise.all([
-      fetch(`/api/historical-rates?from=${fromDate}&to=${fromDate}`),
-      fetch(`/api/historical-rates?from=${toDate}&to=${toDate}`)
-    ]);
-
-    if (!fromResponse.ok || !toResponse.ok) {
-        console.warn(`Could not fetch boundary dates: ${fromDate}, ${toDate}`);
-        return { status: { code: 404, message: "No data found" }, payload: [] };
-    }
-
-    const fromData: RatesData | null = await fromResponse.json(); // This is a RatesData object
-    const toData: RatesData | null = await toResponse.json();   // This is a RatesData object
-
-    const payload: RatesData[] = [];
-    // Ensure data is valid and has rates before pushing
-    if (fromData && fromData.rates && fromData.rates.length > 0) {
-      payload.push(fromData);
-    }
-    // Only add the 'toData' if it's different from 'fromData' and is valid
-    if (toData && toData.rates && toData.rates.length > 0 && fromDate !== toDate) {
-      payload.push(toData);
-    }
-
-    if (payload.length === 0) {
-       return { status: { code: 404, message: "No data found for boundaries" }, payload: [] };
-    }
-    
-    // Return the two rows (or one) in the same format as the old API
-    return {
-      status: { code: 200, message: "OK" },
-      payload: payload,
-    };
-
-  } catch (error) {
-    console.error("Failed to fetch historical boundary rates:", error);
-    throw error; // Let react-query handle the error
-  }
 };
 
 // --- MAIN PAGE COMPONENT ---
@@ -147,6 +95,7 @@ const ArchiveDetail = () => {
   const params = useParams();
   const date = params["*"];
   const targetDateStr = date ?? null;
+  const queryClient = useQueryClient(); // Get query client
   
   // --- Date Validation ---
   let targetDate = new Date();
@@ -161,8 +110,10 @@ const ArchiveDetail = () => {
     } catch (e) { console.error('Error parsing date:', e); }
   }
   
-  const formattedDate = formatDateLong(targetDate);
-  const shortDate = format(targetDate, 'yyyy-MM-dd');
+  // --- NEW: Create all date formats ---
+  const formattedDate = formatDateLong(targetDate); // "Sunday, October 19, 2025"
+  const longDateHeader = `${format(targetDate, 'EEEE, dd MMMM, yyyy')}, Kathmandu Nepal`; // "Friday, 07 November, 2025, Kathmandu Nepal"
+  const shortDate = format(targetDate, 'yyyy-MM-dd'); // "2025-10-19"
 
   // --- Data Fetching ---
   
@@ -184,57 +135,61 @@ const ArchiveDetail = () => {
 
   // --- State for lazy loading tabs ---
   const [activeTab, setActiveTab] = React.useState<string>('7day');
+  // --- NEW: State for the comparison date string ---
+  const [comparisonDateStr, setComparisonDateStr] = useState<string | null>(null);
 
-  // --- Historical Data Queries (Lazy Loading) ---
-  const fetchRange = (days: number, sampling: string) => {
-    const from = format(subDays(targetDate, days - 1), 'yyyy-MM-dd');
-    const to = shortDate;
-    return fetchHistoricalRatesFromWorker(from, to, sampling);
-  }
-
-  // Week data loads by default
-  const { data: weekData, isLoading: weekLoading } = useQuery({
-    queryKey: ['historical-7-day', targetDateStr],
-    queryFn: () => fetchRange(7, 'daily'),
-    enabled: isValidDate,
-    staleTime: Infinity,
-  });
-
-  // Other ranges load only when their tab is active
-  const { data: monthData, isLoading: monthLoading } = useQuery({
-    queryKey: ['historical-30-day', targetDateStr],
-    queryFn: () => fetchRange(30, 'daily'),
-    enabled: isValidDate && activeTab === '30day',
-    staleTime: Infinity,
-  });
-  
-  const { data: quarterlyData, isLoading: quarterlyLoading } = useQuery({
-    queryKey: ['historical-90-day', targetDateStr],
-    queryFn: () => fetchRange(90, 'daily'),
-    enabled: isValidDate && activeTab === '90day',
-    staleTime: Infinity,
+  // --- NEW: Lazy-loading query for the *single* comparison date ---
+  const { data: comparisonDateData, isLoading: isComparisonLoading } = useQuery({
+      queryKey: ['forex-archive-comparison', comparisonDateStr],
+      queryFn: () => {
+        if (!comparisonDateStr) return null;
+        return fetchRatesForDateWithCache(comparisonDateStr, null);
+      },
+      enabled: !!comparisonDateStr, // Only run when a comparison date is set
+      staleTime: 1000 * 60 * 60 * 24, // Cache for 24 hours
+      keepPreviousData: true,
   });
 
-  const { data: yearData, isLoading: yearLoading } = useQuery({
-    queryKey: ['historical-365-day', targetDateStr],
-    queryFn: () => fetchRange(365, 'weekly'),
-    enabled: isValidDate && activeTab === '365day',
-    staleTime: Infinity,
-  });
-  
-  const { data: fiveYearData, isLoading: fiveYearLoading } = useQuery({
-    queryKey: ['historical-5-year', targetDateStr],
-    queryFn: () => fetchRange(365 * 5, 'monthly'),
-    enabled: isValidDate && activeTab === '5year',
-    staleTime: Infinity,
-  });
+  // --- NEW: Effect to trigger lazy-loading when tab changes ---
+  useEffect(() => {
+    if (!isValidDate) return;
 
-  const { data: longTermData, isLoading: longTermLoading } = useQuery({
-    queryKey: ['historical-long-term', targetDateStr],
-    queryFn: () => fetchHistoricalRatesFromWorker('2000-01-01', shortDate, 'monthly'),
-    enabled: isValidDate && activeTab === 'longterm',
-    staleTime: Infinity,
-  });
+    let compareDate: Date;
+    switch (activeTab) {
+      case '7day':
+        compareDate = subDays(targetDate, 7);
+        break;
+      case '30day':
+        compareDate = subMonths(targetDate, 1);
+        break;
+      case '90day':
+        compareDate = subMonths(targetDate, 3);
+        break;
+      case '365day':
+        compareDate = subYears(targetDate, 1);
+        break;
+      case '5year':
+        compareDate = subYears(targetDate, 5);
+        break;
+      case 'longterm':
+        compareDate = parseISO('2002-03-04'); // Earliest reliable data start
+        break;
+      default:
+        return;
+    }
+    
+    const newCompareDateStr = format(compareDate, 'yyyy-MM-dd');
+
+    // Prefetch the data for the new date
+    queryClient.prefetchQuery({
+      queryKey: ['forex-archive-comparison', newCompareDateStr],
+      queryFn: () => fetchRatesForDateWithCache(newCompareDateStr, null),
+    });
+    
+    // Set the state to trigger the useQuery
+    setComparisonDateStr(newCompareDateStr);
+
+  }, [activeTab, targetDate, queryClient, isValidDate]);
   
   // --- Data Analysis (Memoized) ---
   const analysisData = useMemo(() => {
@@ -243,21 +198,36 @@ const ArchiveDetail = () => {
     const currentRates = currentDayData.rates;
     const prevDayRates = prevDayData?.rates || [];
 
-    const analyzedRates: AnalyzedRate[] = currentRates.map(rate => {
+    const analyzedRates: AnalyzedRate[] = ALL_CURRENCY_CODES.map(code => {
+      const rate = currentRates.find(r => r.currency.iso3 === code);
+      const prevRate = prevDayRates.find(pr => pr.currency.iso3 === code);
+      
+      // Get currency info from map, default to rate data if missing
+      const info = CURRENCY_MAP[code] || rate?.currency;
+      
+      // If rate doesn't exist for today, create a placeholder
+      if (!rate || !info) {
+        return null; 
+      }
+
       const buy = Number(rate.buy);
       const sell = Number(rate.sell);
-      const unit = rate.currency.unit || 1;
+      const unit = info.unit || 1;
       const normalizedBuy = buy / unit;
       const normalizedSell = sell / unit;
 
-      const prevRate = prevDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3);
       const prevBuy = prevRate ? (Number(prevRate.buy) / (prevRate.currency.unit || 1)) : 0;
       
       const dailyChange = prevRate ? (normalizedBuy - prevBuy) : 0;
       const dailyChangePercent = (prevRate && prevBuy > 0) ? (dailyChange / prevBuy) * 100 : 0;
 
       return {
-        ...rate,
+        ...rate, // Spread the original rate
+        currency: { // Ensure currency info is complete
+            iso3: code,
+            name: info.name,
+            unit: info.unit
+        },
         buy,
         sell,
         normalizedBuy,
@@ -265,7 +235,7 @@ const ArchiveDetail = () => {
         dailyChange,
         dailyChangePercent,
       };
-    });
+    }).filter((r): r is AnalyzedRate => r !== null); // Filter out nulls
     
     const filteredRates = analyzedRates.filter(r => r.currency.iso3 !== 'INR');
     const safeFilteredRates = filteredRates.length > 0 ? filteredRates : analyzedRates;
@@ -279,34 +249,41 @@ const ArchiveDetail = () => {
     const topGainer = [...safeFilteredRates].sort((a, b) => b.dailyChangePercent - a.dailyChangePercent)[0] || analyzedRates[0];
     const topLoser = [...safeFilteredRates].sort((a, b) => a.dailyChangePercent - b.dailyChangePercent)[0] || analyzedRates[0];
 
+    const majorRates = MAJOR_CURRENCY_CODES.map(code => 
+      analyzedRates.find(r => r.currency.iso3 === code)
+    ).filter((r): r is AnalyzedRate => r !== null);
+
     return {
       allRates: analyzedRates,
       top10High,
       top12Low,
       topGainer,
       topLoser,
+      majorRates
     };
   }, [currentDayData, prevDayData]);
 
-  // Helper to process historical data
-  const processHistoricalData = (data: HistoricalRates | undefined, allCurrentRates: AnalyzedRate[]): HistoricalChange[] => {
-    if (!data?.payload || data.payload.length < 1 || !allCurrentRates) return [];
+  // --- NEW: Helper to process historical data ---
+  const processHistoricalData = (
+    allCurrentRates: AnalyzedRate[] | undefined,
+    comparisonRatesData: RatesData | null | undefined
+  ): HistoricalAnalysisData | null => {
     
-    const oldestDay = data.payload[0];
-    const latestDay = data.payload[data.payload.length - 1];
-
-    if (!oldestDay || !latestDay) return [];
-
-    return allCurrentRates
+    if (!allCurrentRates || !comparisonRatesData || !comparisonRatesData.rates || comparisonRatesData.rates.length === 0) {
+      return null;
+    }
+    
+    const oldestDayRates = comparisonRatesData.rates;
+    
+    const data = allCurrentRates
       .filter(r => r.currency.iso3 !== 'INR')
       .map(currentRate => {
-        const oldRateData = oldestDay.rates.find(r => r.currency.iso3 === currentRate.currency.iso3);
-        const latestRateData = latestDay.rates.find(r => r.currency.iso3 === currentRate.currency.iso3);
+        const oldRateData = oldestDayRates.find(r => r.currency.iso3 === currentRate.currency.iso3);
 
-        if (!oldRateData || !latestRateData) return null;
+        if (!oldRateData) return null;
 
         const oldRate = Number(oldRateData.buy) / (oldRateData.currency.unit || 1);
-        const newRate = Number(latestRateData.buy) / (latestRateData.currency.unit || 1);
+        const newRate = currentRate.normalizedBuy; // Already normalized
 
         if (oldRate === 0) return null;
         const change = newRate - oldRate;
@@ -320,29 +297,16 @@ const ArchiveDetail = () => {
         };
       })
       .filter((r): r is HistoricalChange => r !== null) 
-      .sort((a, b) => b.percent - a.percent); 
+      .sort((a, b) => b.percent - a.percent);
+      
+    return { data };
   };
   
   // --- Memoized Historical Data ---
   const historicalAnalysis = useMemo(() => {
-    const defaultData = { data: [], isLoading: true };
-    if (!analysisData) return {
-      weekly: defaultData, monthly: defaultData, quarterly: defaultData,
-      yearly: defaultData, fiveYear: defaultData, longTerm: defaultData,
-    };
-    return {
-      weekly: { data: processHistoricalData(weekData, analysisData.allRates), isLoading: weekLoading },
-      monthly: { data: processHistoricalData(monthData, analysisData.allRates), isLoading: monthLoading },
-      quarterly: { data: processHistoricalData(quarterlyData, analysisData.allRates), isLoading: quarterlyLoading },
-      yearly: { data: processHistoricalData(yearData, analysisData.allRates), isLoading: yearLoading },
-      fiveYear: { data: processHistoricalData(fiveYearData, analysisData.allRates), isLoading: fiveYearLoading },
-      longTerm: { data: processHistoricalData(longTermData, analysisData.allRates), isLoading: longTermLoading },
-    };
-  }, [
-    analysisData, 
-    weekData, monthData, quarterlyData, yearData, fiveYearData, longTermData,
-    weekLoading, monthLoading, quarterlyLoading, yearLoading, fiveYearLoading, longTermLoading
-  ]);
+    return processHistoricalData(analysisData?.allRates, comparisonDateData);
+  }, [analysisData, comparisonDateData]);
+
 
   // --- Render Logic ---
   const isLoading = currentDayLoading; // Only block on the main content
@@ -438,8 +402,10 @@ const ArchiveDetail = () => {
               <Suspense fallback={<PageSkeleton />}>
                 <GeneratedArchiveArticle 
                   analysisData={analysisData}
-                  historicalAnalysis={historicalAnalysis}
+                  historicalAnalysis={historicalAnalysis} // Pass the lazy-loaded data
+                  isHistoricalLoading={isComparisonLoading} // Pass the loading state
                   formattedDate={formattedDate}
+                  longDateHeader={longDateHeader}
                   shortDate={shortDate}
                   rates={currentDayData.rates}
                   activeTab={activeTab}
@@ -502,7 +468,7 @@ const ChangeIndicator: React.FC<{ value: number, decimals?: number, unit?: 'Rs.'
 };
 
 /**
- * Renders the new SIMPLIFIED data table (as requested)
+ * Renders the new SIMPLIFIED data table
  */
 const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = ({ rates, date }) => (
   <section>
@@ -545,73 +511,72 @@ const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = (
 );
 
 /**
- * Renders the Top 10 High / Top 12 Low Ranking Grids (as requested)
+ * Renders the Top 10 High / Top 12 Low Ranking Grids (with expanded text)
  */
-const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate[] }> = ({ topHigh, topLow }) => (
-  <section>
-    <h2>Currency Value Rankings (Per 1 Unit)</h2>
-    <p>
-      This ranking provides insight into the relative strength of foreign currencies against the Nepali Rupee. The "Most Expensive" list shows currencies where 1 unit commands the highest NPR value, often led by strong Middle Eastern dinars. The "Least Expensive" list shows currencies where 1 unit has the lowest NPR value, such as the Japanese Yen or Korean Won, which are typically traded in larger units.
-    </p>
-    <p>
-      This per-unit comparison is useful for understanding relative value, but for practical conversions, always check the official units in the table above or use our <Link to='/converter' className='text-blue-600 hover:underline font-medium'>currency converter</Link>. Note: The pegged <Link to="/historical-data/INR" className="text-blue-600 hover:underline font-medium">Indian Rupee (INR)</Link> is included in the "Least Expensive" ranking where 100 INR equals approximately 160 NPR.
-    </p>
-    <div className="not-prose grid grid-cols-1 md:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Todays Top 10 Most Expensive Currencies</CardTitle>
-          <CardDescription>Ranked by per-unit sell rate.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal list-inside space-y-2">
-            {topHigh.map((rate) => (
-              <li key={rate.currency.iso3} className="text-sm">
-                <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
-                  {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
-                </Link>
-                <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(2)}</span>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xl">Today's Top 12 Least Expensive Currencies</CardTitle>
-          <CardDescription>Ranked by per-unit sell rate.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal list-inside space-y-2">
-            {topLow.map((rate) => (
-              <li key={rate.currency.iso3} className="text-sm">
-                <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
-                  {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
-                </Link>
-                <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(4)}</span>
-              </li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
-    </div>
-  </section>
-);
+const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate[], date: string, allRates: AnalyzedRate[] }> = ({ topHigh, topLow, date, allRates }) => {
+  const text = ArchiveTextGenerator.getCurrencyRankingsText(date, allRates);
+  return (
+    <section>
+      <h2>Currency Value Rankings (Per 1 Unit)</h2>
+      <div dangerouslySetInnerHTML={{ __html: text }} />
+      <div className="not-prose grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Today's Top 10 Most Expensive Currencies</CardTitle>
+            <CardDescription>Ranked by per-unit sell rate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ol className="list-decimal list-inside space-y-2">
+              {topHigh.map((rate) => (
+                <li key={rate.currency.iso3} className="text-sm">
+                  <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
+                    {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
+                  </Link>
+                  <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(2)}</span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl">Today's Top 12 Least Expensive Currencies</CardTitle>
+            <CardDescription>Ranked by per-unit sell rate.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ol className="list-decimal list-inside space-y-2">
+              {topLow.map((rate) => (
+                <li key={rate.currency.iso3} className="text-sm">
+                  <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
+                    {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
+                  </Link>
+                  <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(4)}</span>
+                </li>
+              ))}
+            </ol>
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
+};
 
 /**
  * Renders the Historical Performance Tabs with lazy loading
  */
 const HistoricalAnalysisTabs: React.FC<{ 
-  analysis: ArticleTemplateProps['historicalAnalysis']; 
+  analysis: HistoricalAnalysisData | null;
+  isLoading: boolean;
   activeTab: string; 
   onTabChange: (tab: string) => void 
-}> = ({ analysis, activeTab, onTabChange }) => (
+}> = ({ analysis, isLoading, activeTab, onTabChange }) => (
   <section>
     <h2>Historical Performance Analysis (vs. NPR)</h2>
     <p>
-      Today's daily change is only part of the story. The following tabs show the performance of various currencies against the Nepali Rupee over extended timeframes, all ending on this report's date. Data is calculated on-demand when you select a tab.
+      Today's daily change is only part of the story. The following tabs show the performance of various currencies against the Nepali Rupee over extended timeframes, all ending on this report's date. The analysis compares the normalized 'Buy' rate from the start of the period to the rate on this date.
     </p>
     <p>
-      The analysis compares the normalized 'Buy' rate from the start of the period to the rate on this date. For a more detailed visual breakdown, please visit our interactive <Link to='/historical-charts' className='text-blue-600 hover:underline font-medium'>historical charts page</Link>.
+      Data is loaded on-demand when you click a tab. This comparison helps identify long-term trends and currency strength relative to the NPR. For a more detailed visual breakdown, please visit our interactive <Link to='/historical-charts' className='text-blue-600 hover:underline font-medium'>historical charts page</Link>.
     </p>
     <div className="not-prose">
       <Tabs value={activeTab} onValueChange={onTabChange}>
@@ -622,15 +587,12 @@ const HistoricalAnalysisTabs: React.FC<{
             <TabsTrigger value="90day">Quarterly</TabsTrigger>
             <TabsTrigger value="365day">1 Year</TabsTrigger>
             <TabsTrigger value="5year">5 Years</TabsTrigger>
-            <TabsTrigger value="longterm">Since 2000</TabsTrigger>
+            <TabsTrigger value="longterm">Since 2002</TabsTrigger>
           </TabsList>
         </div>
-        <HistoricalTabContent data={analysis.weekly.data} isLoading={analysis.weekly.isLoading} value="7day" />
-        <HistoricalTabContent data={analysis.monthly.data} isLoading={analysis.monthly.isLoading} value="30day" />
-        <HistoricalTabContent data={analysis.quarterly.data} isLoading={analysis.quarterly.isLoading} value="90day" />
-        <HistoricalTabContent data={analysis.yearly.data} isLoading={analysis.yearly.isLoading} value="365day" />
-        <HistoricalTabContent data={analysis.fiveYear.data} isLoading={analysis.fiveYear.isLoading} value="5year" />
-        <HistoricalTabContent data={analysis.longTerm.data} isLoading={analysis.longTerm.isLoading} value="longterm" />
+        <TabsContent value={activeTab} className="mt-4">
+          <HistoricalTabContent data={analysis?.data || []} isLoading={isLoading} />
+        </TabsContent>
       </Tabs>
     </div>
   </section>
@@ -639,128 +601,168 @@ const HistoricalAnalysisTabs: React.FC<{
 /**
  * Renders a single tab's content
  */
-const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: boolean; value: string }> = ({ data, isLoading, value }) => {
+const HistoricalTabContent: React.FC<{ data: HistoricalChange[]; isLoading: boolean; }> = ({ data, isLoading }) => {
   if (isLoading) {
     return (
-      <TabsContent value={value} className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 min-h-[200px]">
         {Array(22).fill(0).map((_, i) => (
           <div key={i} className="flex justify-between py-3 border-b">
-            <div className="h-5 w-32 bg-gray-200 rounded animate-pulse" />
-            <div className="h-5 w-24 bg-gray-200 rounded animate-pulse" />
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-5 w-24" />
           </div>
         ))}
-      </TabsContent>
+      </div>
     )
   }
   if (!data || data.length === 0) {
     return (
-      <TabsContent value={value}>
-        <p className="text-muted-foreground py-4">No historical data available for this period.</p>
-      </TabsContent>
+      <div className="min-h-[200px] flex items-center justify-center">
+        <p className="text-muted-foreground py-4">No historical comparison data found for this period.</p>
+      </div>
     )
   }
   return (
-    <TabsContent value={value}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-        {data.map((item) => (
-          <div key={item.iso3} className="flex items-center justify-between py-3 border-b border-gray-200">
-            <Link to={`/historical-data/${item.iso3}`} className="font-medium text-sm text-blue-600 hover:underline">
-              {getFlagEmoji(item.iso3)} {item.name}
-            </Link>
-            <div className="flex flex-col items-end">
-              <ChangeIndicator value={item.change} decimals={4} />
-              <ChangeIndicator value={item.percent} decimals={2} unit="%" />
-            </div>
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+      {data.map((item) => (
+        <div key={item.iso3} className="flex items-center justify-between py-3 border-b border-gray-200">
+          <Link to={`/historical-data/${item.iso3}`} className="font-medium text-sm text-blue-600 hover:underline">
+            {getFlagEmoji(item.iso3)} {item.name}
+          </Link>
+          <div className="flex flex-col items-end">
+            <ChangeIndicator value={item.change} decimals={4} />
+            <ChangeIndicator value={item.percent} decimals={2} unit="%" />
           </div>
-        ))}
-      </div>
-    </TabsContent>
+        </div>
+      ))}
+    </div>
   );
 };
 
-// --- DYNAMIC CONTENT HELPERS ---
 
-const getDynamicIntro = (date: string, gainer: AnalyzedRate, loser: AnalyzedRate) => {
-  const gainerLink = `<a href="/#/historical-data/${gainer.currency.iso3}" class="font-bold text-green-700 hover:underline">${gainer.currency.name} (${gainer.currency.iso3})</a>`;
-  const loserLink = `<a href="/#/historical-data/${loser.currency.iso3}" class="font-bold text-red-700 hover:underline">${loser.currency.name} (${loser.currency.iso3})</a>`;
-  
-  const intros = [
-    `Nepal Rastra Bank (NRB) has officially released the foreign currency exchange rates for <strong>${date}</strong>. This detailed report provides a comprehensive analysis of today's currency values, highlighting significant daily fluctuations and placing them within the context of broader historical trends. As Nepal's economy remains closely tied to global markets, these figures are vital for businesses, remitters, and individuals alike.`,
-    `Here is the definitive breakdown of Nepal's foreign exchange market for <strong>${date}</strong>, based on the reference rates published by Nepal Rastra Bank. Today's market bulletin reveals a day of mixed movements across the board. The ${gainerLink} emerged as the day's standout performer, while the ${loserLink} faced a notable decline. This report analyzes these changes and explores the long-term performance of major currencies against the Nepali Rupee.`,
-    `On <strong>${date}</strong>, the Nepali Rupee (NPR) demonstrated varied performance against major international currencies according to the latest data from Nepal Rastra Bank. This daily analysis from ForexNepal details the official NRB rates, tracks the day's most significant movers, and provides crucial historical context for importers, exporters, and families receiving remittances.`,
-    `Welcome to the official daily forex bulletin for <strong>${date}</strong>. Today's reference rates from Nepal Rastra Bank are now available, and this report dives deep into the numbers. We present a simplified rate table, analyze market rankings, and offer a comprehensive historical analysis to help you understand today's rates in the grander scheme of market movements.`,
-  ];
-  return intros[new Date(date).getDate() % intros.length]; // Use day of month for variety
+// === DYNAMIC CONTENT GENERATORS (NEW & EXPANDED) ===
+
+const ArchiveTextGenerator = {
+  // Helper to pick a random item based on date
+  _getVariant: (dateStr: string, variants: string[]) => {
+    try {
+      const day = parseISO(dateStr).getDate();
+      return variants[day % variants.length];
+    } catch {
+      return variants[0];
+    }
+  },
+
+  /**
+   * Generates the "News Dateline" introduction
+   */
+  getNewsIntro: (longDateHeader: string, allRates: AnalyzedRate[], gainer: AnalyzedRate, loser: AnalyzedRate) => {
+    const usd = allRates.find(r => r.currency.iso3 === 'USD');
+    const usdBuy = usd ? usd.buy.toFixed(2) : 'N/A';
+    const usdSell = usd ? usd.sell.toFixed(2) : 'N/A';
+    const gainerName = gainer.currency.name;
+    const gainerChange = (gainer.dailyChange * gainer.currency.unit).toFixed(3);
+    const loserName = loser.currency.name;
+    const loserChange = (loser.dailyChange * loser.currency.unit).toFixed(3);
+
+    const variants = [
+      // Variant 1
+      `<p><strong>${longDateHeader}</strong> | Nepal Rastra Bank (NRB), the central monetary authority of Nepal, has published the official foreign exchange rates for today. These rates serve as the benchmark for all banks and financial institutions (BFIs) across the country for currency transactions. Today's market bulletin indicates a day of mixed movements, with the <strong>U.S. Dollar</strong> settling at a buying rate of <strong>Rs. ${usdBuy}</strong> and a selling rate of <strong>Rs. ${usdSell}</strong>. This rate is a critical indicator for Nepal's import-heavy economy and the remittance inflows that form its backbone. Among other major currencies, the ${gainerName} saw a notable appreciation of Rs. ${gainerChange} per unit, while the ${loserName} registered a decline of Rs. ${loserChange}. This report provides a detailed breakdown of all currency values, market trends, and historical performance analysis.</p>`,
+      // Variant 2
+      `<p><strong>${longDateHeader}</strong> | The Central Bank of Nepal, Nepal Rastra Bank (NRB), has released its daily 'Foreign Exchange Rates' bulletin, setting the reference values for the Nepali Rupee (NPR) against various international currencies. For today, the <strong>U.S. Dollar</strong>, a key currency for international trade, is fixed at a buying rate of <strong>Rs. ${usdBuy}</strong> and a selling rate of <strong>Rs. ${usdSell}</strong>. These official rates are mandatory for 'A' class commercial banks, 'B' class development banks, and 'C' class finance companies for their currency exchange operations. Today's data highlights the ${gainerName} as the top performer, gaining Rs. ${gainerChange}, while the ${loserName} saw the most significant drop at Rs. ${loserChange}. Below, you will find a comprehensive analysis of today's rates, long-term trends, and market summaries.</p>`,
+      // Variant 3
+      `<p><strong>${longDateHeader}</strong> | Today's foreign exchange market in Nepal is guided by the latest reference rates issued by Nepal Rastra Bank. The value of the <strong>U.S. Dollar</strong>, which heavily influences the nation's import-export balance, has been set at <strong>Rs. ${usdBuy}</strong> for buying and <strong>Rs. ${usdSell}</strong> for selling. This bulletin from ForexNepal provides a complete overview of the official rates for all listed currencies, including major players like the Euro, Pound Sterling, and various Gulf currencies. We will delve into the day's significant movers, with the ${gainerName} appreciating and the ${loserName} depreciating, and provide a detailed analysis of both short-term and long-term market trends.</p>`,
+      // Variant 4
+      `<p><strong>${longDateHeader}</strong> | The NRB has announced the official exchange rates for the Nepali Rupee (NPR) today. This daily publication is crucial for businesses and individuals engaged in foreign transactions. The benchmark <strong>U.S. Dollar</strong> is trading at <strong>Rs. ${usdBuy}</strong> (Buy) and <strong>Rs. ${usdSell}</strong> (Sell). This report offers an in-depth look at these figures, including a detailed table of all currencies, an analysis of the day's top gainer, the ${gainerName} (+Rs. ${gainerChange}), and the top loser, the ${loserName} (${loserChange}). Furthermore, we analyze the historical performance of these currencies over various periods to provide a clearer market perspective.</p>`,
+      // Variant 5
+      `<p><strong>${longDateHeader}</strong> | Nepal Rastra Bank has published the foreign exchange rates for today, providing the official valuation of the Nepali Rupee against a basket of 22 foreign currencies. The <strong>U.S. Dollar</strong>, a critical measure for the economy, is posted at a buy rate of <strong>Rs. ${usdBuy}</strong> and a sell rate of <strong>Rs. ${usdSell}</strong>. These rates are effective for transactions conducted by authorized dealers. In today's market, the ${gainerName} has shown significant strength, while the ${loserName} has weakened. This detailed analysis covers the day's summary, value rankings, and a multi-period historical performance review to give you a complete picture of the forex market.</p>`
+    ];
+    return this._getVariant(longDateHeader, variants);
+  },
+
+  /**
+   * Generates the new "Today's Forex Detail" section
+   */
+  getTodaysForexDetail: (allRates: AnalyzedRate[]) => {
+    let html = `<h2>Today's Forex Detail:</h2><p>`;
+    const sentenceTemplates = [
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> is listed for a unit of ${r.currency.unit}, with a buying rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a selling rate of <strong>Rs. ${r.sell.toFixed(2)}</strong>.`,
+      (r: AnalyzedRate) => `For the ${getFlagEmoji(r.currency.iso3)} <strong>${r.currency.iso3}</strong>, the central bank has set the buying value at <strong>Rs. ${r.buy.toFixed(2)}</strong> and the selling value at <strong>Rs. ${r.sell.toFixed(2)}</strong> for every ${r.currency.unit} unit(s).`,
+      (r: AnalyzedRate) => `Meanwhile, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name}</a> is trading at <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) and <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) per ${r.currency.unit} unit(s).`,
+      (r: AnalyzedRate) => `Today's rate for the <strong>${r.currency.name} (${r.currency.iso3})</strong> shows a buy value of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a sell value of <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit}.`,
+      (r: AnalyzedRate) => `As for the ${getFlagEmoji(r.currency.iso3)} <strong>${r.currency.name}</strong>, financial institutions will buy ${r.currency.unit} unit(s) for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sell for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`,
+      (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.iso3}</a> exchange rate is fixed at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) for ${r.currency.unit} unit(s).`,
+      (r: AnalyzedRate) => `Another key currency, the <strong>${r.currency.name}</strong>, is purchasable at <strong>Rs. ${r.sell.toFixed(2)}</strong> and can be sold at <strong>Rs. ${r.buy.toFixed(2)}</strong> per ${r.currency.unit} unit(s).`
+    ];
+
+    const inr = allRates.find(r => r.currency.iso3 === 'INR');
+    if (inr) {
+      html += `The <strong>Indian Rupee (INR)</strong>, to which the NPR is pegged, maintains its fixed rate. Today's official rate for 100 INR is <strong>Rs. ${inr.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${inr.sell.toFixed(2)}</strong> (Sell). `;
+    }
+
+    let sentenceIndex = 0;
+    allRates.filter(r => r.currency.iso3 !== 'INR').forEach(rate => {
+      html += sentenceTemplates[sentenceIndex](rate) + " ";
+      sentenceIndex = (sentenceIndex + 1) % sentenceTemplates.length;
+    });
+
+    html += `</p>`;
+    return html;
+  },
+
+  /**
+   * Generates the expanded "Currency Rankings" text
+   */
+  getCurrencyRankingsText: (date: string, allRates: AnalyzedRate[]) => {
+    const variants = [
+      `<p>This ranking provides insight into the relative strength of foreign currencies against the Nepali Rupee. The "Most Expensive" list shows currencies where 1 unit commands the highest NPR value, often led by strong Middle Eastern dinars from countries like Kuwait and Bahrain. The "Least Expensive" list shows currencies where 1 unit has the lowest NPR value, such as the Japanese Yen or Korean Won, which are typically traded in larger units. This per-unit comparison is useful for understanding relative value, but for practical conversions, always check the official units in the table above or use our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">currency converter</a>. Note: The pegged <a href="/#/historical-data/INR" class="text-blue-600 hover:underline font-medium">Indian Rupee (INR)</a> is included in the "Least Expensive" ranking where 100 INR equals approximately 160 NPR.</p>`,
+      `<p>Understanding the per-unit value provides a clear picture of currency hierarchy. On ${date}, the most valuable currencies (per single unit) are dominated by Gulf state dinars, reflecting their strong economic standing. Conversely, currencies like the Japanese Yen and South Korean Won appear "least expensive" because their denominations are much smaller; they are officially traded in units of 10 and 100, respectively. This ranking strips away the unit multiplier to show the raw 1-to-1 value against the NPR. For converting actual amounts, refer to the official table or our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter tool</a>. The Indian Rupee is also shown here on a 1-unit basis for a clear comparison, although it trades officially in units of 100.</p>`,
+      `<p>How do these currencies stack up head-to-head? This section ranks all currencies based on their normalized per-unit selling rate. The "Most Expensive" list is often a stable ranking of high-value currencies, primarily from the Middle East. The "Least Expensive" list highlights currencies where the NPR has significantly more purchasing power on a 1-to-1 basis. It's important to differentiate this normalized ranking from the official trading units. For example, while the JPY is on the "Least Expensive" list per 1 unit, it is officially quoted in units of 10. Always use the main table or the <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter</a> for practical transactions.</p>`
+    ];
+    return this._getVariant(date, variants);
+  },
+
+  /**
+   * Generates the expanded "Market Trend Summary" text
+   */
+  getMarketTrendSummary: (analysisData: ArticleTemplateProps['analysisData'], historicalAnalysis: HistoricalAnalysisData | null) => {
+    const { allRates, majorRates, topGainer, topLoser } = analysisData;
+    const date = allRates[0].date;
+    const gainersToday = allRates.filter(r => r.dailyChangePercent > 0.01 && r.currency.iso3 !== 'INR').length;
+    const losersToday = allRates.filter(r => r.dailyChangePercent < -0.01 && r.currency.iso3 !== 'INR').length;
+    
+    let dailyTrend = 'a day of relative stability';
+    if (gainersToday > losersToday * 1.5) dailyTrend = 'a strengthening trend for foreign currencies';
+    else if (losersToday > gainersToday * 1.5) dailyTrend = 'a weakening trend for foreign currencies';
+
+    const usd = majorRates.find(r => r.currency.iso3 === 'USD');
+    const eur = majorRates.find(r => r.currency.iso3 === 'EUR');
+    const sar = majorRates.find(r => r.currency.iso3 === 'SAR');
+
+    const topWeekly = historicalAnalysis?.data[0];
+    const topMonthly = historicalAnalysis?.data.find(r => r.percent > 0);
+    const bottomWeekly = historicalAnalysis?.data[historicalAnalysis.data.length - 1];
+
+    const variants = [
+      // Variant 1
+      `<p><strong>Market Summary:</strong> Today's forex market shows ${dailyTrend}, with <strong>${gainersToday}</strong> currencies gaining value against the NPR, while <strong>${losersToday}</strong> lost ground. This indicates a shift in market sentiment compared to yesterday's close. The day's biggest mover was the <strong>${topGainer.currency.name}</strong>, which surged by <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. On the flip side, the <strong>${loserName.currency.name}</strong> saw the sharpest decline, dropping <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong>.</p>
+       <p>Key currencies, crucial for remittances and trade, showed mixed results. The <a href="/#/historical-data/USD" class="text-blue-600 hover:underline font-medium">U.S. Dollar</a> ${usd && Math.abs(usd.dailyChangePercent) > 0.01 ? (usd.dailyChange > 0 ? 'gained' : 'lost') : 'remained stable'}, moving by <strong>${usd?.dailyChangePercent.toFixed(2)}%</strong>. The <a href="/#/historical-data/EUR" class="text-blue-600 hover:underline font-medium">European Euro</a> ${eur && Math.abs(eur.dailyChangePercent) > 0.01 ? (eur.dailyChange > 0 ? 'climbed' : 'fell') : 'held steady'}, posting a change of <strong>${eur?.dailyChangePercent.toFixed(2)}%</strong>. For remittance from the Gulf, the <a href="/#/historical-data/SAR" class="text-blue-600 hover:underline font-medium">Saudi Riyal</a> saw a change of <strong>${sar?.dailyChangePercent.toFixed(2)}%</strong>.</p>
+       ${topWeekly ? `<p>Zooming out to the weekly trend, the <strong>${topWeekly.name}</strong> has been the strongest performer over the last 7 days, appreciating by <strong>${topWeekly.percent.toFixed(2)}%</strong> against the NPR. Conversely, the <strong>${bottomWeekly?.name}</strong> has been the weakest, depreciating by <strong>${bottomWeekly?.percent.toFixed(2)}%</strong> in the same period. This broader view helps to contextualize today's minor fluctuations.</p>` : ''}`,
+      
+      // Variant 2
+      `<p><strong>Market Analysis:</strong> Analyzing the daily movements, <strong>${gainersToday}</strong> currencies appreciated against the NPR, while <strong>${losersToday}</strong> depreciated. This points to ${dailyTrend} in the short term. The most dramatic shift came from the <strong>${topGainer.currency.name}</strong>, which jumped <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong>. The <strong>${loserName.currency.name}</strong> faced the strongest headwind, falling <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong>.</p>
+       <p>The <a href="/#/historical-data/USD" class="text-blue-600 hover:underline font-medium">U.S. Dollar</a>, the primary currency for Nepal's international trade, ${usd && Math.abs(usd.dailyChange) > 0.01 ? `registered a change of <strong>Rs. ${usd.dailyChange.toFixed(3)}</strong> per unit` : 'showed minimal movement'}. This impacts everything from fuel costs to import duties. Other major currencies, such as the <a href="/#/historical-data/GBP" class="text-blue-600 hover:underline font-medium">Pound Sterling</a> and <a href="/#/historical-data/AUD" class="text-blue-600 hover:underline font-medium">Australian Dollar</a>, also reflected this mixed sentiment.</p>
+       ${topMonthly ? `<p>Looking at the 30-day trend, the market has favored certain currencies. The <strong>${topMonthly.name}</strong>, for instance, has gained <strong>${topMonthly.percent.toFixed(2)}%</strong> over the past month, indicating sustained demand or strength. This contrasts with today's volatility and highlights the importance of viewing both short-term and long-term data for a complete financial picture.</p>` : ''}`,
+       
+       // Variant 3
+      `<p><strong>Today's Trend:</strong> The currency market on ${date} saw <strong>${gainersToday}</strong> currencies rise and <strong>${losersToday}</strong> fall against the NPR. The most significant gainer was the <strong>${topGainer.currency.name}</strong>, posting an impressive <strong>${topGainer.dailyChangePercent.toFixed(2)}%</strong> increase. The heaviest loss was recorded by the <strong>${loserName.currency.name}</strong>, with a <strong>${loserName.dailyChangePercent.toFixed(2)}%</strong> drop.</p>
+       <p>Major currencies pivotal for Nepali remittance and trade, such as the <a href="/#/historical-data/QAR" class="text-blue-600 hover:underline font-medium">Qatari Riyal</a> and <a href="/#/historical-data/AED" class="text-blue-600 hover:underline font-medium">UAE Dirham</a>, showed ${sar && Math.abs(sar.dailyChange) < 0.01 ? 'high stability' : 'some movement'}. The <a href="/#/historical-data/JPY" class="text-blue-600 hover:underline font-medium">Japanese Yen</a> (per 10 units) and <a href="/#/historical-data/KRW" class="text-blue-600 hover:underline font-medium">South Korean Won</a> (per 100 units) also saw shifts that are important for students and workers connected to those countries.</p>
+       ${topWeekly && bottomWeekly ? `<p>The 7-day overview reveals a clearer trend for some. The <strong>${topWeekly.name}</strong> has been the 7-day champion with a <strong>${topWeekly.percent.toFixed(2)}%</strong> gain, while the <strong>${bottomWeekly.name}</strong> has struggled, losing <strong>${bottomWeekly.percent.toFixed(2)}%</strong>. This shows that today's ${dailyTrend} is part of a broader, more complex weekly pattern.</p>` : ''}`
+    ];
+    
+    return this._getVariant(date, variants);
+  }
 };
 
-const getDynamicCommentary = (gainer: AnalyzedRate, loser: AnalyzedRate, usd: AnalyzedRate) => {
-  const gainerColor = "text-green-700 font-bold";
-  const loserColor = "text-red-700 font-bold";
-  const usdColor = getChangeColorStrong(usd.dailyChange);
-  
-  const gainerLink = `<a href="/#/historical-data/${gainer.currency.iso3}" class="${gainerColor} hover:underline">${gainer.currency.name} (${gainer.currency.iso3})</a>`;
-  const loserLink = `<a href="/#/historical-data/${loser.currency.iso3}" class="${loserColor} hover:underline">${loser.currency.name} (${loser.currency.iso3})</a>`;
-  const usdLink = `<a href="/#/historical-data/USD" class="${usdColor} hover:underline">U.S. Dollar (USD)</a>`;
-  const gainerPercent = `(<span class="${gainerColor}">${gainer.dailyChangePercent > 0 ? '+' : ''}${gainer.dailyChangePercent.toFixed(2)}%</span>)`;
-  const loserPercent = `(<span class="${loserColor}">${loser.dailyChangePercent.toFixed(2)}%</span>)`;
-
-  const sentences = [
-    `The primary benchmark for Nepal's economy, the ${usdLink}, saw a ${usd.dailyChange > 0.001 ? 'notable gain' : usd.dailyChange < -0.001 ? 'slight depreciation' : 'period of stability'}, moving by <span class="${usdColor}">${usd.dailyChange.toFixed(3)} NPR</span> per unit. Today, the dollar is trading with a buy rate of <strong>Rs. ${usd.buy.toFixed(2)}</strong> and a sell rate of <strong>Rs. ${usd.sell.toFixed(2)}</strong>. This movement is critical for tracking import costs and remittance values.`,
-    `In today's trading, the standout performer was the ${gainerLink}, which appreciated significantly ${gainerPercent} against the NPR. This surge makes it the day's top gainer among major currencies.`,
-    `Conversely, the ${loserLink} experienced the most significant decline, depreciating by ${loserPercent}. This makes it the day's biggest loser, impacting its value relative to the Rupee.`,
-    `These daily fluctuations highlight the dynamic nature of the forex market. For those planning transactions, these changes are crucial. You can model potential conversions using our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">currency converter</a>, which uses these official rates.`,
-    `The ${usdLink} showed a ${usd.dailyChange >= 0 ? "gain" : "loss"} of <strong>Rs. ${Math.abs(usd.dailyChange).toFixed(3)}</strong> per unit, a key metric for Nepal's trade balance. Elsewhere, the ${gainerLink} led the pack ${gainerPercent}, while the ${loserLink} lagged behind ${loserPercent}.`,
-  ];
-  
-  const day = new Date().getDate();
-  const para1 = sentences[day % 2]; // 0 or 1
-  const para2 = sentences[2 + (day % 2)]; // 2 or 3
-  const para3 = sentences[4];
-
-  return `
-    <p>${para1}</p>
-    <p>${para2}</p>
-    <p>${para3}</p>
-  `;
-};
-
-const getTrendSummary = (analysisData: ArticleTemplateProps['analysisData'], historicalAnalysis: ArticleTemplateProps['historicalAnalysis']) => {
-  const { allRates } = analysisData;
-  const gainersToday = allRates.filter(r => r.dailyChangePercent > 0.01 && r.currency.iso3 !== 'INR').length;
-  const losersToday = allRates.filter(r => r.dailyChangePercent < -0.01 && r.currency.iso3 !== 'INR').length;
-  const stableToday = allRates.filter(r => Math.abs(r.dailyChangePercent) <= 0.01 && r.currency.iso3 !== 'INR').length;
-
-  let dailyTrend = 'a balanced market';
-  if (gainersToday > losersToday * 1.5) dailyTrend = 'a strengthening trend';
-  else if (losersToday > gainersToday * 1.5) dailyTrend = 'a weakening trend';
-
-  const weeklyGainers = historicalAnalysis.weekly.data.filter(r => r.percent > 0).length;
-  const weeklyLosers = historicalAnalysis.weekly.data.filter(r => r.percent < 0).length;
-  let weeklyTrend = 'mixed signals';
-  if (weeklyGainers > weeklyLosers * 1.3) weeklyTrend = 'broad strengthening';
-  else if (weeklyLosers > weeklyGainers * 1.3) weeklyTrend = 'broad weakening';
-
-  const monthlyGainers = historicalAnalysis.monthly.data.filter(r => r.percent > 0).length;
-  const monthlyLosers = historicalAnalysis.monthly.data.filter(r => r.percent < 0).length;
-  let monthlyTrend = 'general stability';
-  if (monthlyGainers > monthlyLosers * 1.3) monthlyTrend = 'a clear appreciation pattern';
-  else if (monthlyLosers > monthlyLosers * 1.3) monthlyTrend = 'a clear depreciation pattern';
-
-  const topWeekly = historicalAnalysis.weekly.data[0];
-  const topMonthly = historicalAnalysis.monthly.data[0];
-
-  return `
-    <p>
-      <strong>Market Summary:</strong> Today's forex market shows ${dailyTrend}, with <strong>${gainersToday}</strong> currencies gaining value against the NPR, while <strong>${losersToday}</strong> lost ground and <strong>${stableToday}</strong> remained stable. This indicates a shift in market sentiment compared to yesterday.
-    </p>
-    <p>
-      Looking at the weekly perspective, currencies have shown <strong>${weeklyTrend}</strong> against the NPR. The <strong class="text-green-600">${topWeekly?.name || 'N/A'}</strong> led this short-term trend with a <strong>+${topWeekly?.percent.toFixed(2) || '0.00'}%</strong> gain. On a 30-day basis, the market indicates <strong>${monthlyTrend}</strong>, with the <strong class="text-green-600">${topMonthly?.name || 'N/A'}</strong> posting the strongest performance at <strong>+${topMonthly?.percent.toFixed(2) || '0.00'}%</strong>.
-    </p>
-    <p>
-      Key currencies such as the <a href="/#/historical-data/USD" class="text-blue-600 hover:underline font-medium">U.S. Dollar</a>, <a href="/#/historical-data/EUR" class="text-blue-600 hover:underline font-medium">Euro</a>, and <a href="/#/historical-data/SAR" class="text-blue-600 hover:underline font-medium">Saudi Riyal</a> showed ${Math.abs(analysisData.allRates.find(r => r.currency.iso3 === 'USD')?.dailyChangePercent || 0) < 0.1 ? 'minimal volatility' : 'notable movement'} today, which is particularly relevant for remittances and international trade.
-    </p>
-  `;
-};
 
 // === THE DYNAMIC ARTICLE COMPONENT ===
 
@@ -768,7 +770,9 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   const {
     analysisData,
     historicalAnalysis,
+    isHistoricalLoading,
     formattedDate,
+    longDateHeader,
     shortDate,
     activeTab,
     onTabChange,
@@ -789,35 +793,38 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
       </Card>
     );
   }
+  
+  // Get the generated text
+  const introText = ArchiveTextGenerator.getNewsIntro(longDateHeader, allRates, topGainer, topLoser);
+  const todaysDetailText = ArchiveTextGenerator.getTodaysForexDetail(allRates);
+  const marketSummaryText = ArchiveTextGenerator.getMarketTrendSummary(analysisData, historicalAnalysis);
 
   return (
     <>
-      <h1>Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
+      <h1 className="!mb-2">Nepal Rastra Bank Forex Rates: {formattedDate}</h1>
       
       <p 
         className="text-lg lead text-muted-foreground"
-        dangerouslySetInnerHTML={{ __html: getDynamicIntro(formattedDate, topGainer, topLoser) }}
+        dangerouslySetInnerHTML={{ __html: introText }}
       />
+      
+      <div dangerouslySetInnerHTML={{ __html: todaysDetailText }} />
 
       <SimplifiedRateTable rates={allRates} date={shortDate} />
 
       <section>
-        <h2>Daily Market Commentary</h2>
-        <div dangerouslySetInnerHTML={{ __html: getDynamicCommentary(topGainer, topLoser, usdRate) }} />
+        <h2>Daily Market Commentary & Summary</h2>
+        <div dangerouslySetInnerHTML={{ __html: marketSummaryText }} />
       </section>
 
-      <CurrencyRankings topHigh={top10High} topLow={top12Low} />
+      <CurrencyRankings topHigh={top10High} topLow={top12Low} date={shortDate} allRates={allRates} />
 
       <HistoricalAnalysisTabs 
         analysis={historicalAnalysis} 
+        isLoading={isHistoricalLoading}
         activeTab={activeTab} 
         onTabChange={onTabChange} 
       />
-
-      <section>
-        <h2>Market Trend Summary</h2>
-        <div dangerouslySetInnerHTML={{ __html: getTrendSummary(analysisData, historicalAnalysis) }} />
-      </section>
     </>
   );
 };
