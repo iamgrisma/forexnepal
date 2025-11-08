@@ -125,8 +125,8 @@ async function getAllSettings(db: D1Database): Promise<SiteSettings> {
 }
 
 // --- *** DATA INGESTION LOGIC *** ---
-// Only populates forex_rates table (wide format) - CLEANED UP
-async function processAndStoreApiData(data: any, env: Env): Promise<number> {
+// MODIFIED to handle 'update' vs 'replace'
+async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'replace'): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
         return 0;
@@ -164,15 +164,44 @@ async function processAndStoreApiData(data: any, env: Env): Promise<number> {
         }
 
         if (hasRatesForDate) {
-            const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            statements.push(env.FOREX_DB.prepare(wideQuery).bind(...wideValues));
+            let query: string;
+            if (action === 'replace') {
+                // --- REPLACE LOGIC ---
+                // This overwrites the entire row.
+                query = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
+            
+            } else {
+                // --- UPDATE (EMPTY) LOGIC ---
+                // This inserts a new row OR updates an existing one,
+                // but only fills in fields that are currently NULL.
+                const updateSetters: string[] = [];
+                // Build the SET clause for the ON CONFLICT
+                CURRENCIES.forEach(code => {
+                    const buyCol = `"${code}_buy"`;
+                    const sellCol = `"${code}_sell"`;
+                    // COALESCE(existing_value, new_value)
+                    // If existing_value is NOT NULL, it's used.
+                    // If existing_value IS NULL, the new_value (from 'excluded') is used.
+                    updateSetters.push(`${buyCol} = COALESCE(forex_rates.${buyCol}, excluded.${buyCol})`);
+                    updateSetters.push(`${sellCol} = COALESCE(forex_rates.${sellCol}, excluded.${sellCol})`);
+                });
+                updateSetters.push("updated_at = datetime('now')"); // Always update the timestamp
+
+                query = `
+                    INSERT INTO forex_rates (${wideColumns.join(', ')}) 
+                    VALUES (${widePlaceholders.join(', ')}) 
+                    ON CONFLICT(date) DO UPDATE SET
+                    ${updateSetters.join(', \n')}`;
+            }
+
+            statements.push(env.FOREX_DB.prepare(query).bind(...wideValues));
             processedDates++;
         }
     }
 
     if (statements.length > 0) {
         await env.FOREX_DB.batch(statements);
-        console.log(`D1 Batch finished. ${processedDates} dates processed.`);
+        console.log(`D1 Batch finished. ${processedDates} dates processed (action: ${action}).`);
     }
 
     return processedDates;
@@ -239,7 +268,9 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
         if (response.ok) {
             const data = await response.json();
-            const processedDates = await processAndStoreApiData(data, env);
+            // --- CRON Job should always use 'replace' to ensure it gets the new data ---
+            // 'update' is for admins to fill gaps. Cron should be the source of truth.
+            const processedDates = await processAndStoreApiData(data, env, 'replace');
             console.log(`[cron ${event.cron}] Successfully stored ${processedDates} record(s) for ${todayNptStr}.`);
             return;
         }
@@ -281,6 +312,7 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
 
 // --- API Handlers (Updated) ---
 
+// --- MODIFIED: handleFetchAndStore ---
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     // This function is now the manual run equivalent of the cron job (for admin use)
     const authHeader = request.headers.get('Authorization');
@@ -292,11 +324,19 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
     const toDate = url.searchParams.get('to');
+    
     if (!fromDate || !toDate) {
            return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
     }
 
     try {
+        // --- Read the action from the body ---
+        const { action } = await request.json() as { action: 'update' | 'replace' };
+        if (action !== 'update' && action !== 'replace') {
+            return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: corsHeaders });
+        }
+        // --- End reading action ---
+
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDate}&to=${toDate}`;
         const response = await fetch(apiUrl);
 
@@ -308,7 +348,8 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         }
 
         const data = await response.json();
-        const processedDates = await processAndStoreApiData(data, env);
+        // --- Pass the action to the processing function ---
+        const processedDates = await processAndStoreApiData(data, env, action);
 
         return new Response(JSON.stringify({ success: true, stored: processedDates, fromDate, toDate }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -316,6 +357,7 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: corsHeaders });
     }
 }
+// --- END MODIFICATION ---
 
 // --- *** NEW: Handler for /api/rates/date/:date *** ---
 /**
