@@ -111,10 +111,9 @@ async function getAllSettings(db: D1Database): Promise<SiteSettings> {
     // FIX: Use setting_key and setting_value from migration 003
     const { results } = await db.prepare("SELECT setting_key, setting_value FROM site_settings").all();
     
-    // Add defaults from migration 008, as 003 doesn't include them
     const settings: any = {
-        ticker_enabled: true, // default: ON
-        adsense_enabled: false // default: OFF
+        ticker_enabled: true, // default
+        adsense_enabled: false // default
     };
     
     if (results) {
@@ -592,7 +591,7 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
 }
 
 
-// --- NEW FUNCTION: handleCheckUser ---
+// --- NEW FUNCTION: handleCheckUser (FIXED) ---
 async function handleCheckUser(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -604,8 +603,9 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
         }
 
         // Rate limit checks for 'check' type
+        // FIX: Removed 'type' column from query
         const { results: attemptsResults } = await env.FOREX_DB.prepare(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'check' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).all<{ count: number }>();
         const failedAttempts = attemptsResults[0]?.count || 0;
 
@@ -626,8 +626,9 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
         const userExists = !!user;
 
         // Log this 'check' attempt
+        // FIX: Removed 'type' column from insert
         await env.FOREX_DB.prepare(
-            `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'check')`
+            `INSERT INTO login_attempts (ip_address, session_id, username, success) VALUES (?, ?, ?, ?)`
         ).bind(ipAddress, sessionId, username, userExists ? 1 : 0).run();
 
         if (!userExists) {
@@ -642,9 +643,10 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error during user check' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-// --- END NEW FUNCTION ---
+// --- END NEW FUNCTION (FIXED) ---
 
 
+// --- handleAdminLogin (FIXED) ---
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -655,9 +657,9 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
              return new Response(JSON.stringify({ success: false, error: 'Missing credentials/identifiers' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // --- MODIFIED: Check for 'login' type attempts ---
+        // --- MODIFIED: Check for 'login' type attempts (removed 'type' column) ---
         const { results: attemptsResults } = await env.FOREX_DB.prepare(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).all<{ count: number }>();
         const failedAttempts = attemptsResults[0]?.count || 0;
 
@@ -675,25 +677,29 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         let mustChangePassword = false;
 
         if (user) {
-            if (user.plaintext_password && user.password_hash) {
-                if (password === user.plaintext_password || await simpleHashCompare(password, user.password_hash)) {
-                    isValid = true;
-                    mustChangePassword = true;
-                }
-            } else if (user.plaintext_password && !user.password_hash) {
+            // Check if user_recovery table is empty for this user
+            const recoveryState = await env.FOREX_DB.prepare(
+                `SELECT * FROM user_recovery WHERE recovery_token = ?`
+            ).bind(user.username).first();
+
+            if (!recoveryState) {
+                // No recovery token = password is the default plaintext
                 if (password === user.plaintext_password) {
                     isValid = true;
-                    mustChangePassword = true;
+                    mustChangePassword = true; // Force change
                 }
-            } else if (!user.plaintext_password && user.password_hash) {
-                isValid = await simpleHashCompare(password, user.password_hash);
-                mustChangePassword = false;
+            } else {
+                // Recovery token exists = password is the hash
+                if (user.password_hash) {
+                    isValid = await simpleHashCompare(password, user.password_hash);
+                    mustChangePassword = false; // Already changed
+                }
             }
         }
 
-        // --- MODIFIED: Insert with type 'login' ---
+        // --- MODIFIED: Insert withOUT type 'login' ---
         await env.FOREX_DB.prepare(
-            `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'login')`
+            `INSERT INTO login_attempts (ip_address, session_id, username, success) VALUES (?, ?, ?, ?)`
         ).bind(ipAddress, sessionId, username, isValid ? 1 : 0).run();
         // --- END MODIFICATION ---
 
@@ -714,7 +720,9 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error during login' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+// --- END FIX ---
 
+// --- handleCheckAttempts (FIXED) ---
 async function handleCheckAttempts(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const ipAddress = url.searchParams.get('ip');
@@ -723,9 +731,9 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ error: 'Missing IP or session' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
-        // --- MODIFIED: Check for 'login' type attempts ---
+        // --- MODIFIED: Check for 'login' type attempts (removed 'type') ---
         const result = await env.FOREX_DB.prepare(
-            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
+            `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).first<{ count: number }>();
         const attempts = result?.count || 0;
         return new Response(JSON.stringify({ attempts: attempts, remaining: Math.max(0, 7 - attempts) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -734,8 +742,9 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+// --- END FIX ---
 
-// --- FIXED: handleChangePassword ---
+// --- handleChangePassword (FIXED) ---
 async function handleChangePassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -778,7 +787,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
 
-        // --- FIX: Use 'recovery_token' instead of 'recovery_data' ---
+        // --- FIX: Use 'recovery_token' from migration 003 ---
         await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_token, created_at) VALUES (?, datetime('now'))`).bind(username).run();
         // --- END FIX ---
 
