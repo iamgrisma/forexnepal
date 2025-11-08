@@ -158,6 +158,7 @@ const Index = () => {
     }
   };
 
+  // --- MODIFIED FUNCTION ---
   const downloadContentAsImage = async () => {
     const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
     const targetElement = document.getElementById(targetElementId);
@@ -173,7 +174,7 @@ const Index = () => {
 
     // Create a temporary wrapper to include the title and footer for both views
     const wrapper = document.createElement('div');
-    wrapper.style.width = 'fit-content'; // Adjust width based on content
+    wrapper.style.width = '1200px'; // Set a fixed width for consistent rendering
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = 'white';
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
@@ -184,8 +185,8 @@ const Index = () => {
     // Title for the image
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '32px';
-    titleEl.style.fontWeight = 'bold';
+    titleEl.style.fontSize = '36px'; // Increased font size
+    titleEl.style.fontWeight = 'bolder'; // Increased font weight
     titleEl.style.marginBottom = '30px';
     titleEl.style.color = '#1f2937';
     titleEl.style.whiteSpace = 'pre-wrap'; // Allows line breaks
@@ -194,17 +195,25 @@ const Index = () => {
 
     // Clone the actual content (table or grid)
     const contentClone = targetElement.cloneNode(true) as HTMLElement;
-    contentClone.style.fontSize = '16px'; // Standardize font size for image
-    // Ensure grid layout works well for image by potentially adjusting column count if too wide
+    contentClone.style.fontSize = '20px'; // Increased font size
+    contentClone.style.width = '100%'; // Make content fill the wrapper
+    contentClone.style.padding = '24px'; // Added padding
+    
     if (viewMode === 'grid') {
         contentClone.style.display = 'grid';
-        contentClone.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))'; // Adjust as needed
-        contentClone.style.gap = '20px'; // Adjust gap
-        contentClone.style.width = '1200px'; // Fixed width for consistent image output
-        contentClone.style.padding = '20px';
+        // Adjust grid columns for better fit in the image
+        contentClone.style.gridTemplateColumns = 'repeat(3, 1fr)'; 
+        contentClone.style.gap = '24px'; // Increased gap
     } else {
-        contentClone.style.width = '1200px'; // Fixed width for table
-        contentClone.style.padding = '20px';
+        // Find the table and set auto width
+        const table = contentClone.querySelector('table');
+        if (table) {
+            table.style.width = '100%';
+            table.style.tableLayout = 'auto'; // Let table auto-fit
+            // Increase font size for table elements
+            table.querySelectorAll('th').forEach(th => th.style.fontSize = '18px');
+            table.querySelectorAll('td').forEach(td => td.style.fontSize = '20px');
+        }
     }
     wrapper.appendChild(contentClone);
 
@@ -212,36 +221,35 @@ const Index = () => {
     const footer = document.createElement('div');
     footer.style.marginTop = '30px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '14px';
+    footer.style.fontSize = '16px'; // Increased font size
     footer.style.color = '#6b7280';
-    footer.style.width = '100%'; // Ensure footer stretches if needed
+    footer.style.width = '100%'; 
 
     const source = document.createElement('p');
-    source.style.marginBottom = '10px';
-    source.style.fontWeight = '600';
+    source.style.marginBottom = '15px'; // Increased margin
+    source.style.fontWeight = 'bold'; // Increased font weight
     const lastUpdated = new Date().toLocaleString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
     });
-    source.textContent = `Source: Nepal Rastra Bank (NRB) | Last updated: ${lastUpdated}`;
+    source.textContent = `Source: Nepal Rastra Bank (NRB) | Generated: ${lastUpdated}`;
     footer.appendChild(source);
 
     const disclaimer = document.createElement('p');
     disclaimer.style.fontStyle = 'italic';
-    disclaimer.style.fontSize = '12px';
+    disclaimer.style.fontSize = '14px'; // Increased font size
     disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
     footer.appendChild(disclaimer);
 
     const designer = document.createElement('p');
     designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '12px';
+    designer.style.fontSize = '14px'; // Increased font size
     designer.style.marginTop = '10px';
     designer.style.color = '#4b5563';
-    designer.textContent = 'Data extraction and presentation designed by Grisma Bhandari';
+    designer.textContent = 'forex.grisma.com.np';
     footer.appendChild(designer);
 
     wrapper.appendChild(footer);
@@ -260,13 +268,14 @@ const Index = () => {
       });
 
       const link = document.createElement('a');
-      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.png`;
-      link.href = canvas.toDataURL('image/png');
+      // --- MODIFIED: Save as JPG ---
+      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.9); // 0.9 = 90% quality
       link.click();
 
       toast({
         title: "Success",
-        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as image.`,
+        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as JPG image.`,
       });
     } catch (error) {
       console.error('Error generating image:', error);
@@ -279,6 +288,7 @@ const Index = () => {
       document.body.removeChild(wrapper); // Clean up
     }
   };
+  // --- END MODIFIED FUNCTION ---
 
 
   // Helper function to render grid cards
