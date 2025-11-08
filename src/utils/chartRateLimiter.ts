@@ -7,7 +7,7 @@
 const CHART_LIMITS = {
   SHORT_RANGE_MAX: 60, // UPDATED from 30 to 60
   SHORT_RANGE_WINDOW: 60 * 60 * 1000, // 1 hour (unchanged)
-  LONG_RANGE_COOLDOWN: 69 * 1000, // UPDATED from 180 to 69 seconds
+  LONG_RANGE_COOLDOWN: 15 * 1000, // UPDATED from 180 to 69 seconds
   LONG_RANGE_THRESHOLD_DAYS: 365 * 3, // UPDATED from 5 years to 3 years
 };
 
