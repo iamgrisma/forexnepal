@@ -106,23 +106,29 @@ interface SiteSettings {
     adsense_enabled: boolean;
 }
 
-// Helper to safely get settings (NEW)
+// Helper to safely get settings (FIXED)
 async function getAllSettings(db: D1Database): Promise<SiteSettings> {
-    const { results } = await db.prepare("SELECT key, value FROM site_settings").all();
+    // FIX: Use setting_key and setting_value from migration 003
+    const { results } = await db.prepare("SELECT setting_key, setting_value FROM site_settings").all();
+    
+    // Add defaults from migration 008, as 003 doesn't include them
     const settings: any = {
         ticker_enabled: true, // default: ON
         adsense_enabled: false // default: OFF
     };
+    
     if (results) {
         results.forEach((row: any) => {
-            if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
-                settings[row.key] = row.value === 'true';
+            // FIX: Read from setting_key and setting_value
+            if (row.setting_key === 'ticker_enabled' || row.setting_key === 'adsense_enabled') {
+                settings[row.setting_key] = row.setting_value === 'true';
             }
-            // Ignore other settings keys for this specific return type
+            // other keys like 'header_tags' will be ignored by this function
         });
     }
     return settings;
 }
+
 
 // --- *** DATA INGESTION LOGIC *** ---
 // MODIFIED to handle 'update' vs 'replace'
@@ -545,7 +551,7 @@ async function handlePublicSettings(request: Request, env: Env): Promise<Respons
     }
 }
 
-// Admin endpoint for settings (UPDATED)
+// Admin endpoint for settings (FIXED)
 async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -566,10 +572,10 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
                  return new Response(JSON.stringify({ success: false, error: 'Missing settings keys' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
 
-            // Using batch to insert/replace the new settings keys
-            const stmt1 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('ticker_enabled', ?, datetime('now'))")
+            // FIX: Use setting_key and setting_value from migration 003
+            const stmt1 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (setting_key, setting_value, updated_at) VALUES ('ticker_enabled', ?, datetime('now'))")
                 .bind(settings.ticker_enabled ? 'true' : 'false');
-            const stmt2 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('adsense_enabled', ?, datetime('now'))")
+            const stmt2 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (setting_key, setting_value, updated_at) VALUES ('adsense_enabled', ?, datetime('now'))")
                 .bind(settings.adsense_enabled ? 'true' : 'false');
 
             await env.FOREX_DB.batch([stmt1, stmt2]);
@@ -584,6 +590,7 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+
 
 // --- NEW FUNCTION: handleCheckUser ---
 async function handleCheckUser(request: Request, env: Env): Promise<Response> {
@@ -728,6 +735,7 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
     }
 }
 
+// --- FIXED: handleChangePassword ---
 async function handleChangePassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -770,7 +778,9 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
 
-        await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_data, created_at) VALUES (?, datetime('now'))`).bind(username).run();
+        // --- FIX: Use 'recovery_token' instead of 'recovery_data' ---
+        await env.FOREX_DB.prepare(`INSERT OR REPLACE INTO user_recovery (recovery_token, created_at) VALUES (?, datetime('now'))`).bind(username).run();
+        // --- END FIX ---
 
 
         return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -779,6 +789,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+// --- END FIX ---
 
 async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
