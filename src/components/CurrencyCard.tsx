@@ -1,14 +1,14 @@
 import { Rate } from '../types/forex';
-import { getFlagEmoji } from '../services/forexService'; // Assuming getFlagIcon uses this or similar logic for flags
+import { getFlagEmoji } from '../services/forexService'; // UPDATED: Use getFlagEmoji
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown } from 'lucide-react'; // Import trend icons
-import { cn } from "@/lib/utils"; // Import cn utility
+import { TrendingUp, TrendingDown } from 'lucide-react'; 
+import { cn } from "@/lib/utils"; 
 import { memo } from 'react';
 
 interface CurrencyCardProps {
   rate: Rate;
   index: number;
-  previousDayRates?: Rate[]; // Add previousDayRates prop
+  previousDayRates?: Rate[]; 
 }
 
 // Function to get rate change from previous day (can be moved to utils if needed elsewhere)
@@ -49,8 +49,8 @@ const getRateChange = (currentRate: Rate, previousDayRates: Rate[] | undefined, 
 const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps) => {
   const navigate = useNavigate();
   const currency = rate.currency;
-  // Use a consistent flag method - assuming getFlagEmoji provides the class or emoji
-  const flagClass = `fi fi-${currency.iso3.toLowerCase() === 'eur' ? 'eu' : currency.iso3.substring(0, 2).toLowerCase()}`; // Example using flag-icons class
+  
+  // --- REMOVED: flagClass logic ---
 
   const animationDelay = `${index * 50}ms`;
 
@@ -70,8 +70,8 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
     >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          {/* Use span for flag icons */}
-          <span className={`text-3xl ${flagClass}`}></span>
+          {/* --- MODIFIED: Use getFlagEmoji --- */}
+          <span className="text-3xl">{getFlagEmoji(currency.iso3)}</span>
           <div>
             <div className="text-xs font-semibold text-blue-700 px-2 py-0.5 bg-blue-100 rounded-full mb-1 inline-block">
               {currency.iso3}
