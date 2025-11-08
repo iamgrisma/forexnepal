@@ -158,8 +158,9 @@ const Index = () => {
     }
   };
 
-  // --- MODIFIED FUNCTION ---
+  // --- REBUILT FUNCTION ---
   const downloadContentAsImage = async () => {
+    // 1. Find the element to clone (the *content* only)
     const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
     const targetElement = document.getElementById(targetElementId);
 
@@ -172,105 +173,109 @@ const Index = () => {
         return;
     }
 
-    // Create a temporary wrapper to include the title and footer for both views
+    // 2. Create a new, temporary wrapper for the image
     const wrapper = document.createElement('div');
-    wrapper.style.width = '1200px'; // Set a fixed width for consistent rendering
+    wrapper.style.width = '1200px'; // Fixed width for consistent image
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = 'white';
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     wrapper.style.display = 'flex';
     wrapper.style.flexDirection = 'column';
-    wrapper.style.alignItems = 'center'; // Center the content
+    wrapper.style.alignItems = 'center';
 
-    // Title for the image
+    // 3. Add a high-contrast title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '36px'; // Increased font size
-    titleEl.style.fontWeight = 'bolder'; // Increased font weight
+    titleEl.style.fontSize = '36px'; // Larger font
+    titleEl.style.fontWeight = '700'; // Bolder
     titleEl.style.marginBottom = '30px';
-    titleEl.style.color = '#1f2937';
-    titleEl.style.whiteSpace = 'pre-wrap'; // Allows line breaks
-    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(selectedDate)}`;
+    titleEl.style.color = '#111827'; // Dark gray
+    titleEl.style.whiteSpace = 'pre-wrap';
+    // Use displayData to get the correct date
+    const displayDate = displayData ? new Date(displayData.date) : selectedDate;
+    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(displayDate)}`;
     wrapper.appendChild(titleEl);
 
-    // Clone the actual content (table or grid)
+    // 4. Clone the content and style it for export
     const contentClone = targetElement.cloneNode(true) as HTMLElement;
-    contentClone.style.fontSize = '20px'; // Increased font size
-    contentClone.style.width = '100%'; // Make content fill the wrapper
-    contentClone.style.padding = '24px'; // Added padding
-    
+    contentClone.style.fontSize = '18px'; // Larger base font
+    contentClone.style.width = '100%';
+    contentClone.style.padding = '0';
+    // Remove search bar if it got cloned by accident (it shouldn't, but as a safeguard)
+    contentClone.querySelector('.relative.mb-6')?.remove(); 
+
     if (viewMode === 'grid') {
         contentClone.style.display = 'grid';
-        // Adjust grid columns for better fit in the image
+        // Force 3 columns for a clean 1200px image
         contentClone.style.gridTemplateColumns = 'repeat(3, 1fr)'; 
-        contentClone.style.gap = '24px'; // Increased gap
+        contentClone.style.gap = '24px'; // More gap
     } else {
-        // Find the table and set auto width
+        // Style the table for export
         const table = contentClone.querySelector('table');
         if (table) {
             table.style.width = '100%';
-            table.style.tableLayout = 'auto'; // Let table auto-fit
-            // Increase font size for table elements
-            table.querySelectorAll('th').forEach(th => th.style.fontSize = '18px');
-            table.querySelectorAll('td').forEach(td => td.style.fontSize = '20px');
+            table.style.tableLayout = 'auto';
+            // Increase font sizes
+            table.querySelectorAll('th').forEach(th => {
+                th.style.fontSize = '16px'; // Header font
+                th.style.color = '#374151'; // Darker gray
+                th.style.padding = '12px 16px';
+            });
+            table.querySelectorAll('td').forEach(td => {
+                td.style.fontSize = '18px'; // Data font
+                td.style.padding = '12px 16px';
+            });
+            // Ensure flag emojis are rendered large enough
+            table.querySelectorAll('td span.mr-2').forEach(span => {
+                (span as HTMLElement).style.fontSize = '24px';
+            });
         }
     }
     wrapper.appendChild(contentClone);
 
-    // Footer
+    // 5. Add a high-contrast footer
     const footer = document.createElement('div');
     footer.style.marginTop = '30px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '16px'; // Increased font size
-    footer.style.color = '#6b7280';
-    footer.style.width = '100%'; 
+    footer.style.fontSize = '16px'; // Larger font
+    footer.style.color = '#4B5563'; // Medium gray
+    footer.style.width = '100%';
 
     const source = document.createElement('p');
-    source.style.marginBottom = '15px'; // Increased margin
-    source.style.fontWeight = 'bold'; // Increased font weight
-    const lastUpdated = new Date().toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    source.style.marginBottom = '10px';
+    source.style.fontWeight = '600'; // Bold
+    const genDate = new Date().toLocaleString('en-US', {
+      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
-    source.textContent = `Source: Nepal Rastra Bank (NRB) | Generated: ${lastUpdated}`;
+    source.textContent = `Source: Nepal Rastra Bank (NRB) | Generated: ${genDate}`;
     footer.appendChild(source);
-
-    const disclaimer = document.createElement('p');
-    disclaimer.style.fontStyle = 'italic';
-    disclaimer.style.fontSize = '14px'; // Increased font size
-    disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
-    footer.appendChild(disclaimer);
 
     const designer = document.createElement('p');
     designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '14px'; // Increased font size
-    designer.style.marginTop = '10px';
-    designer.style.color = '#4b5563';
+    designer.style.fontSize = '14px';
+    designer.style.marginTop = '8px';
     designer.textContent = 'forex.grisma.com.np';
     footer.appendChild(designer);
 
     wrapper.appendChild(footer);
 
-    // Temporarily add to DOM to render for html2canvas
+    // 6. Append to DOM (hidden) for rendering
     wrapper.style.position = 'absolute';
     wrapper.style.left = '-9999px';
     document.body.appendChild(wrapper);
 
+    // 7. Generate canvas and download as JPG
     try {
       const canvas = await html2canvas(wrapper, {
         scale: 2, // High resolution
-        backgroundColor: '#ffffff',
-        width: wrapper.offsetWidth, // Use wrapper's actual rendered width
-        height: wrapper.offsetHeight // Use wrapper's actual rendered height
+        backgroundColor: '#ffffff', // Explicit white background
+        width: wrapper.offsetWidth,
+        height: wrapper.offsetHeight
       });
 
       const link = document.createElement('a');
-      // --- MODIFIED: Save as JPG ---
-      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.9); // 0.9 = 90% quality
+      link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.95); // 95% quality JPG
       link.click();
 
       toast({
@@ -285,10 +290,10 @@ const Index = () => {
         variant: "destructive",
       });
     } finally {
-      document.body.removeChild(wrapper); // Clean up
+      document.body.removeChild(wrapper); // 8. Clean up
     }
   };
-  // --- END MODIFIED FUNCTION ---
+  // --- END REBUILT FUNCTION ---
 
 
   // Helper function to render grid cards
