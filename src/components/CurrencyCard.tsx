@@ -87,17 +87,17 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        {/* Buy Rate */}
-        <div className="text-center bg-green-50 rounded-lg p-3 border border-green-100 group-hover:bg-green-100 transition-colors">
-          <div className="text-xs font-medium text-green-700 uppercase mb-1">Buy</div>
-          <div className="font-bold text-lg text-green-800 mb-1">
+        {/* Buy Rate - HIGHER CONTRAST */}
+        <div className="text-center bg-green-100 rounded-lg p-3 border border-green-200 group-hover:bg-green-200/60 transition-colors">
+          <div className="text-xs font-medium text-green-800 uppercase mb-1">Buy</div>
+          <div className="font-bold text-lg text-green-900 mb-1">
             {rate.buy}
           </div>
           {/* Buy Trend */}
           {buyChange.isIncrease !== null && (
             <div className={cn(
                 "flex items-center justify-center text-xs",
-                buyChange.isIncrease ? 'text-green-600' : 'text-red-600'
+                buyChange.isIncrease ? 'text-green-700' : 'text-red-700'
              )}>
               {buyChange.isIncrease ? (
                 <TrendingUp className="h-3 w-3 mr-0.5" />
@@ -112,17 +112,17 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
           )}
         </div>
 
-        {/* Sell Rate */}
-        <div className="text-center bg-red-50 rounded-lg p-3 border border-red-100 group-hover:bg-red-100 transition-colors">
-          <div className="text-xs font-medium text-red-700 uppercase mb-1">Sell</div>
-          <div className="font-bold text-lg text-red-800 mb-1">
+        {/* Sell Rate - HIGHER CONTRAST */}
+        <div className="text-center bg-red-100 rounded-lg p-3 border border-red-200 group-hover:bg-red-200/60 transition-colors">
+          <div className="text-xs font-medium text-red-800 uppercase mb-1">Sell</div>
+          <div className="font-bold text-lg text-red-900 mb-1">
             {rate.sell}
           </div>
           {/* Sell Trend */}
           {sellChange.isIncrease !== null && (
             <div className={cn(
                "flex items-center justify-center text-xs",
-               sellChange.isIncrease ? 'text-green-600' : 'text-red-600'
+               sellChange.isIncrease ? 'text-green-700' : 'text-red-700'
             )}>
               {sellChange.isIncrease ? (
                 <TrendingUp className="h-3 w-3 mr-0.5" />
