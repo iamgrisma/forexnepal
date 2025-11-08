@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { Loader2, CalendarIcon, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -70,7 +70,7 @@ const DataUpdateControl = () => {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action }), // Pass the action in the body
       });
 
       const data = await response.json();
@@ -78,7 +78,7 @@ const DataUpdateControl = () => {
       if (response.ok && data.success) {
         toast({
           title: "Success",
-          description: `Updated ${data.stored} record(s) from ${fromDate} to ${toDate}`,
+          description: `Action '${action}' completed. Stored/updated ${data.stored} record(s) from ${fromDate} to ${toDate}`,
         });
       } else {
         throw new Error(data.error || 'Update failed');
@@ -224,7 +224,7 @@ const DataUpdateControl = () => {
             className="flex-1"
           >
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Replace All
+            Replace
           </Button>
           <Button
             onClick={() => handleUpdate('cancel')}
