@@ -10,6 +10,7 @@ import Layout from '@/components/Layout';
 import CurrencyCard from '@/components/CurrencyCard';
 import ForexTicker from '@/components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
+import FlagIcon from './FlagIcon';
 // FIX: Import d1 service and date-fns
 import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // FIX: Added 'format' to the import
