@@ -214,7 +214,9 @@ const Index = () => {
     // --- Helper function to get trend data ---
     const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
       const prevRate = previousDayRates.find(r => r.currency.iso3 === currentRate.currency.iso3);
-      if (!prevRate) return { diff: 0, trend: null };
+      if (!prevRate) { // Return stable with 0 diff if no prev rate
+        return { diff: 0, trend: 'stable' }; 
+      }
       
       const prevValue = parseFloat(prevRate[type].toString()) / (prevRate.currency.unit || 1);
       const currentValue = parseFloat(currentRate[type].toString()) / (currentRate.currency.unit || 1);
@@ -245,6 +247,9 @@ const Index = () => {
         th.style.textAlign = 'left';
         th.style.color = '#1F2937'; // Dark text
         th.style.borderBottom = '2px solid #D1D5DB';
+        if (['Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'].includes(headerText)) {
+            th.style.textAlign = 'right';
+        }
         headerRow.appendChild(th);
       });
       thead.appendChild(headerRow);
@@ -262,26 +267,28 @@ const Index = () => {
         
         // Currency
         const tdCurrency = document.createElement('td');
-        tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px;">${getFlagEmoji(rate.currency.iso3)}</span> ${rate.currency.name} (${rate.currency.iso3})`;
+        tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
         tdCurrency.style.fontWeight = '600';
         tdCurrency.style.color = '#111827';
         
         // Unit
         const tdUnit = document.createElement('td');
         tdUnit.textContent = rate.currency.unit.toString();
-        tdUnit.style.textAlign = 'center';
+        tdUnit.style.textAlign = 'right';
 
         // Buy Rate
         const tdBuy = document.createElement('td');
         tdBuy.textContent = rate.buy.toFixed(2);
         tdBuy.style.color = '#15803D'; // Dark green
         tdBuy.style.fontWeight = '700';
+        tdBuy.style.textAlign = 'right';
         
         // Sell Rate
         const tdSell = document.createElement('td');
         tdSell.textContent = rate.sell.toFixed(2);
         tdSell.style.color = '#B91C1C'; // Dark red
         tdSell.style.fontWeight = '700';
+        tdSell.style.textAlign = 'right';
 
         // Trends
         const buyTrend = getTrend(rate, 'buy');
@@ -293,16 +300,14 @@ const Index = () => {
         [tdBuyTrend, tdSellTrend].forEach((td, i) => {
             const trendData = i === 0 ? buyTrend : sellTrend;
             if (trendData.trend === 'increase') {
-                td.textContent = `▲ ${trendData.diff.toFixed(2)}`;
-                td.style.color = '#16A34A';
+                td.innerHTML = `<span style="color: #16A34A;">▲ ${trendData.diff.toFixed(2)}</span>`;
             } else if (trendData.trend === 'decrease') {
-                td.textContent = `▼ ${trendData.diff.toFixed(2)}`;
-                td.style.color = '#DC2626';
+                td.innerHTML = `<span style="color: #DC2626;">▼ ${trendData.diff.toFixed(2)}</span>`;
             } else {
-                td.textContent = '—';
-                td.style.color = '#6B7280';
+                td.innerHTML = `<span style="color: #6B7280;">—</span>`;
             }
             td.style.fontWeight = '600';
+            td.style.textAlign = 'right';
         });
 
         [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
@@ -340,13 +345,14 @@ const Index = () => {
         cardHeader.style.display = 'flex';
         cardHeader.style.alignItems = 'center';
         cardHeader.style.gap = '12px';
+        cardHeader.style.height = '60px'; // Fixed height for alignment
         cardHeader.innerHTML = `
-          <span style="font-size: 32px;">${getFlagEmoji(rate.currency.iso3)}</span>
-          <div>
-            <div style="font-size: 14px; font-weight: 600; color: #1D4ED8; background: #DBEAFE; padding: 2px 8px; border-radius: 99px; display: inline-block;">${rate.currency.iso3}</div>
-            <h3 style="font-weight: 700; font-size: 20px; color: #000000; line-height: 1.2; margin-top: 4px;">${rate.currency.name}</h3>
+          <span style="font-size: 32px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
+          <div style="display: flex; flex-direction: column; justify-content: center;">
+            <div style="font-size: 14px; font-weight: 600; color: #1D4ED8; background: #DBEAFE; padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 4px; width: fit-content;">${rate.currency.iso3}</div>
+            <h3 style="font-weight: 700; font-size: 20px; color: #000000; line-height: 1.2; margin: 0;">${rate.currency.name}</h3>
           </div>
-          <span style="font-size: 14px; font-weight: 500; color: #4B5563; background: #F3F4F6; padding: 4px 8px; border-radius: 6px; margin-left: auto;">Unit: ${rate.currency.unit}</span>
+          <span style="font-size: 14px; font-weight: 500; color: #4B5563; background: #F3F4F6; padding: 4px 8px; border-radius: 6px; margin-left: auto; align-self: flex-start;">Unit: ${rate.currency.unit}</span>
         `;
         
         // Card Body (Buy/Sell)
@@ -367,7 +373,7 @@ const Index = () => {
         buyBox.style.textAlign = 'center';
         buyBox.innerHTML = `
           <div style="font-size: 14px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
-          <div style="font-size: 22px; font-weight: 700; color: #15803D;">${rate.buy.toFixed(2)}</div>
+          <div style="font-size: 22px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${rate.buy.toFixed(2)}</div>
           <div style="font-size: 14px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${buyTrend.trend === 'increase' ? `▲ ${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
           </div>
@@ -382,7 +388,7 @@ const Index = () => {
         sellBox.style.textAlign = 'center';
         sellBox.innerHTML = `
           <div style="font-size: 14px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
-          <div style="font-size: 22px; font-weight: 700; color: #B91C1C;">${rate.sell.toFixed(2)}</div>
+          <div style="font-size: 22px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${rate.sell.toFixed(2)}</div>
           <div style="font-size: 14px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${sellTrend.trend === 'increase' ? `▲ ${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
           </div>
@@ -537,7 +543,8 @@ const Index = () => {
                     )}
                   >
                     <span className="text-lg font-semibold text-gray-700">
-                      {formatDateLong(selectedDate)}
+                      {/* --- UPDATE: Use displayData date if available --- */}
+                      {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
                     </span>
                     <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                       Click to change date
@@ -580,7 +587,7 @@ const Index = () => {
             <div className="overflow-x-auto flex-shrink-0">
               <ShareButtons 
                 url="/"
-                title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(selectedDate)}`}
+                title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}`}
                 className="flex-nowrap"
               />
             </div>
