@@ -1,9 +1,10 @@
 import { Rate } from '../types/forex';
+import { getFlagEmoji } from '../services/forexService'; // UPDATED: Use getFlagEmoji
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'; 
+import { TrendingUp, TrendingDown } from 'lucide-react'; 
 import { cn } from "@/lib/utils"; 
+import { FlagIcon } from '@/pages/FlagIcon'; // Import the FlagIcon component
 import { memo } from 'react';
-import FlagIcon from '@/pages/FlagIcon'; // Import the FlagIcon component
 
 interface CurrencyCardProps {
   rate: Rate;
@@ -27,19 +28,20 @@ const getRateChange = (currentRate: Rate, previousDayRates: Rate[] | undefined, 
 
   const prevValue = parseFloat(prevRate[type].toString());
   const currentValue = parseFloat(currentRate[type].toString());
+  const diff = currentValue - prevValue;
+  const percentageChange = prevValue !== 0 ? (diff / prevValue) * 100 : null;
 
-  // Handle division by unit for correct comparison
+
+  // Handle division by unit for correct comparison if needed, assuming unit affects rates directly
   const prevValuePerUnit = prevValue / (prevRate.currency.unit || 1);
   const currentValuePerUnit = currentValue / (currentRate.currency.unit || 1);
   const diffPerUnit = currentValuePerUnit - prevValuePerUnit;
-  const percentageChangePerUnit = prevValuePerUnit !== 0 ? (diffPerUnit / prevValuePerUnit) * 100 : null;
+   const percentageChangePerUnit = prevValuePerUnit !== 0 ? (diffPerUnit / prevValuePerUnit) * 100 : null;
 
-  // Use a small epsilon to avoid floating point issues with zero
-  const epsilon = 0.00001;
 
   return {
     value: Math.abs(diffPerUnit), // Show difference per unit
-    isIncrease: diffPerUnit > epsilon ? true : diffPerUnit < -epsilon ? false : null,
+    isIncrease: diffPerUnit > 0 ? true : diffPerUnit < 0 ? false : null,
     percentage: percentageChangePerUnit // Show percentage change per unit
   };
 };
@@ -49,6 +51,8 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
   const navigate = useNavigate();
   const currency = rate.currency;
   
+  // --- REMOVED: flagClass logic ---
+
   const animationDelay = `${index * 50}ms`;
 
   const handleCardClick = () => {
@@ -61,46 +65,45 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
 
   return (
     <div
-      // --- UPDATED: Added h-52 and flex classes for uniform height ---
-      className={cn(
-        `animated-border bg-white/90 backdrop-blur-md border border-gray-200 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.03] hover:border-blue-300 cursor-pointer animate-fade-in transform group`,
-        "h-52 flex flex-col justify-between" // Enforce uniform height
-      )}
+      className={`animated-border bg-white/90 backdrop-blur-md border border-gray-200 rounded-2xl p-4 transition-all duration-300 hover:shadow-lg hover:scale-[1.03] hover:border-blue-300 cursor-pointer animate-fade-in transform group`}
       style={{ animationDelay }}
       onClick={handleCardClick}
     >
-      {/* --- UPDATED: Card Header Layout --- */}
-      <div className="flex items-center gap-3">
-        <FlagIcon iso3={currency.iso3} className="text-3xl" />
-        <div className="flex-1 min-w-0"> {/* Wrapper to allow truncation */}
-          <h3 className="font-semibold text-base text-gray-800 group-hover:text-blue-600 transition-colors leading-tight truncate">
-            {currency.name}
-          </h3>
-          <div className="text-sm font-medium text-gray-600">
-            {currency.iso3} {currency.unit}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {/* --- MODIFIED: Use getFlagEmoji --- */}
+          <span className="text-3xl">{getFlagEmoji(currency.iso3)}</span>
+          <div>
+            <div className="text-xs font-semibold text-blue-700 px-2 py-0.5 bg-blue-100 rounded-full mb-1 inline-block">
+              {currency.iso3}
+            </div>
+            <h3 className="font-semibold text-base text-gray-800 group-hover:text-blue-600 transition-colors leading-tight">
+              {currency.name}
+            </h3>
           </div>
         </div>
+        <div className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+          Unit: {currency.unit}
+        </div>
       </div>
-      {/* --- END UPDATED HEADER --- */}
-
 
       <div className="grid grid-cols-2 gap-3">
-        {/* Buy Rate - UPDATED: Larger padding and fonts */}
-        <div className="text-center bg-green-100 rounded-lg p-4 border border-green-200 group-hover:bg-green-200/60 transition-colors">
-          <div className="text-sm font-medium text-green-800 uppercase mb-1">Buy</div>
-          <div className="font-bold text-xl text-green-900 mb-1">
+        {/* Buy Rate - HIGHER CONTRAST */}
+        <div className="text-center bg-green-100 rounded-lg p-3 border border-green-200 group-hover:bg-green-200/60 transition-colors">
+          <div className="text-xs font-medium text-green-800 uppercase mb-1">Buy</div>
+          <div className="font-bold text-lg text-green-900 mb-1">
             {rate.buy}
           </div>
           {/* Buy Trend */}
           {buyChange.isIncrease !== null && (
             <div className={cn(
-                "flex items-center justify-center text-sm", // text-xs -> text-sm
+                "flex items-center justify-center text-xs",
                 buyChange.isIncrease ? 'text-green-700' : 'text-red-700'
              )}>
               {buyChange.isIncrease ? (
-                <TrendingUp className="h-4 w-4 mr-0.5" /> // h-3/w-3 -> h-4/w-4
+                <TrendingUp className="h-3 w-3 mr-0.5" />
               ) : (
-                <TrendingDown className="h-4 w-4 mr-0.5" />
+                <TrendingDown className="h-3 w-3 mr-0.5" />
               )}
               <span>{buyChange.value.toFixed(2)}</span>
               {buyChange.percentage !== null && (
@@ -110,22 +113,22 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
           )}
         </div>
 
-        {/* Sell Rate - UPDATED: Larger padding and fonts */}
-        <div className="text-center bg-red-100 rounded-lg p-4 border border-red-200 group-hover:bg-red-200/60 transition-colors">
-          <div className="text-sm font-medium text-red-800 uppercase mb-1">Sell</div>
-          <div className="font-bold text-xl text-red-900 mb-1">
+        {/* Sell Rate - HIGHER CONTRAST */}
+        <div className="text-center bg-red-100 rounded-lg p-3 border border-red-200 group-hover:bg-red-200/60 transition-colors">
+          <div className="text-xs font-medium text-red-800 uppercase mb-1">Sell</div>
+          <div className="font-bold text-lg text-red-900 mb-1">
             {rate.sell}
           </div>
           {/* Sell Trend */}
           {sellChange.isIncrease !== null && (
             <div className={cn(
-               "flex items-center justify-center text-sm", // text-xs -> text-sm
+               "flex items-center justify-center text-xs",
                sellChange.isIncrease ? 'text-green-700' : 'text-red-700'
             )}>
               {sellChange.isIncrease ? (
-                <TrendingUp className="h-4 w-4 mr-0.5" />
+                <TrendingUp className="h-3 w-3 mr-0.5" />
               ) : (
-                <TrendingDown className="h-4 w-4 mr-0.5" />
+                <TrendingDown className="h-3 w-3 mr-0.5" />
               )}
               <span>{sellChange.value.toFixed(2)}</span>
                {sellChange.percentage !== null && (
