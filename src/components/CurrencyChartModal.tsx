@@ -206,7 +206,7 @@ const CurrencyChartModal = ({ currency, isOpen, onClose }: CurrencyChartModalPro
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center">
-            <span className="text-2xl mr-2">{getFlagEmoji(currency.currency.iso3)}</span>
+            <FlagIcon iso3={currency.currency.iso3} className="text-2xl mr-2" />
             {currency.currency.name} ({currency.currency.iso3}) Exchange Rate History
           </DialogTitle>
           <DialogDescription>
