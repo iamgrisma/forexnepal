@@ -1,11 +1,11 @@
 import { useState, useMemo, memo, useCallback } from 'react';
 import { Rate } from '../types/forex';
-import { getFlagEmoji } from '../services/forexService';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Search, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
+import FlagIcon from '@/pages/FlagIcon'; // Import the FlagIcon component
 
 interface ForexTableProps {
   rates: Rate[];
@@ -100,15 +100,19 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
       return null;
     }
     
-    const prevValue = parseFloat(prevRate[type].toString());
-    const currentValue = parseFloat(currentRate[type].toString());
-    const difference = Number((currentValue - prevValue).toFixed(4));
-    const percentChange = (difference / prevValue) * 100;
+    // --- UPDATED: Normalize by unit for calculation ---
+    const prevValue = parseFloat(prevRate[type].toString()) / (prevRate.currency.unit || 1);
+    const currentValue = parseFloat(currentRate[type].toString()) / (currentRate.currency.unit || 1);
+    
+    // --- Difference per unit ---
+    const difference = Number((currentValue - prevValue).toFixed(4)); 
+    
+    const percentChange = (prevValue > 0) ? (difference / prevValue) * 100 : 0;
     
     return {
-      difference,
+      difference, // This is per-unit difference
       percentChange,
-      trend: difference > 0 ? 'increase' : difference < 0 ? 'decrease' : 'stable'
+      trend: difference > 0.0001 ? 'increase' : difference < -0.0001 ? 'decrease' : 'stable'
     };
   }, [previousDayRates]);
 
@@ -147,40 +151,40 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
         <table className="w-full">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-blue-50 border-b-2 border-gray-300">
-              <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
                 SN
               </th>
               <th
-                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('name')}
               >
                 Currency Name (ISO3){getSortIndicator('name')}
               </th>
               <th
-                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('unit')}
               >
                 Unit{getSortIndicator('unit')}
               </th>
               <th
-                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('buy')}
               >
                 Buying Rate{getSortIndicator('buy')}
               </th>
               <th
-                className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
+                className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider cursor-pointer hover:text-blue-600 transition-colors"
                 onClick={() => requestSort('sell')}
               >
                 Selling Rate{getSortIndicator('sell')}
               </th>
               {previousDayRates && previousDayRates.length > 0 && (
                 <>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Buy Trend
+                  <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
+                    Buy Trend (Per Unit)
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Sell Trend
+                  <th className="px-6 py-4 text-left text-sm font-bold text-gray-700 uppercase tracking-wider">
+                    Sell Trend (Per Unit)
                   </th>
                 </>
               )}
@@ -197,30 +201,31 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                     key={rate.currency.iso3} 
                     className="border-b border-gray-100 hover:bg-blue-50/50 transition-colors"
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                    <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-gray-900">
                       {index + 1}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-700">
                       <button 
                         onClick={() => handleCurrencyClick(rate)}
                         className="flex items-center hover:text-primary transition-colors focus:outline-none"
                       >
-                        <span className="mr-2">{getFlagEmoji(rate.currency.iso3)}</span>
-                        <span>{rate.currency.name} ({rate.currency.iso3})</span>
+                        {/* --- UPDATED: Use FlagIcon component --- */}
+                        <FlagIcon iso3={rate.currency.iso3} className="text-xl mr-3" />
+                        <span className="font-medium">{rate.currency.name} ({rate.currency.iso3})</span>
                       </button>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                    <td className="px-6 py-4 whitespace-nowrap text-base text-gray-700">
                       {rate.currency.unit}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-green">
+                    <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-forex-green">
                       {rate.buy}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-forex-red">
+                    <td className="px-6 py-4 whitespace-nowrap text-base font-medium text-forex-red">
                       {rate.sell}
                     </td>
                     {previousDayRates && previousDayRates.length > 0 && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <td className="px-6 py-4 whitespace-nowrap text-base">
                           {buyChange ? (
                             <div className="flex items-center">
                               {buyChange.trend === 'increase' ? (
@@ -235,14 +240,16 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                                 buyChange.trend === 'decrease' && 'text-forex-red',
                                 buyChange.trend === 'stable' && 'text-gray-400'
                               )}>
-                                {buyChange.difference > 0 ? '+' : ''}{buyChange.difference} ({buyChange.percentChange > 0 ? '+' : ''}{buyChange.percentChange.toFixed(2)}%)
+                                {/* --- UPDATED: Show per-unit diff --- */}
+                                {buyChange.difference > 0 ? '+' : ''}{buyChange.difference.toFixed(2)} 
+                                ({buyChange.percentChange > 0 ? '+' : ''}{buyChange.percentChange.toFixed(2)}%)
                               </span>
                             </div>
                           ) : (
                             <span className="text-gray-400">-</span>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <td className="px-6 py-4 whitespace-nowrap text-base">
                           {sellChange ? (
                             <div className="flex items-center">
                               {sellChange.trend === 'increase' ? (
@@ -257,7 +264,9 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                                 sellChange.trend === 'decrease' && 'text-forex-red',
                                 sellChange.trend === 'stable' && 'text-gray-400'
                               )}>
-                                {sellChange.difference > 0 ? '+' : ''}{sellChange.difference} ({sellChange.percentChange > 0 ? '+' : ''}{sellChange.percentChange.toFixed(2)}%)
+                                {/* --- UPDATED: Show per-unit diff --- */}
+                                {sellChange.difference > 0 ? '+' : ''}{sellChange.difference.toFixed(2)} 
+                                ({sellChange.percentChange > 0 ? '+' : ''}{sellChange.percentChange.toFixed(2)}%)
                               </span>
                             </div>
                           ) : (
