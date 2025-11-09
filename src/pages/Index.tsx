@@ -276,6 +276,8 @@ const Index = () => {
           // Currency
           const tdCurrency = document.createElement('td');
           // --- UPDATED: Use emoji for reliability in canvas ---
+          // Since flag-icon-css relies on external CSS, using emojis (as fallback or primary in isolated canvas) is safer.
+          // The emoji rendering size is controlled by the font size on the span.
           tdCurrency.innerHTML = `<span style="font-size: 32px; margin-right: 16px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
           tdCurrency.style.fontWeight = '600';
           tdCurrency.style.color = '#111827';
@@ -338,12 +340,16 @@ const Index = () => {
       tableContainer.appendChild(buildTable(column2Rates, column1Rates.length));
       wrapper.appendChild(tableContainer);
 
-    } else { // viewMode === 'grid'
+    } else { // viewMode === 'grid' - Implementing 6-6-6-4 layout
       const gridContainer = document.createElement('div');
-      gridContainer.style.display = 'grid';
+      gridContainer.style.display = 'flex'; // Use flex column to stack rows
+      gridContainer.style.flexDirection = 'column';
       gridContainer.style.gap = '24px';
       gridContainer.style.width = '100%';
       gridContainer.style.boxSizing = 'border-box';
+      
+      const ratesPerColumn = 6;
+      const numColumns = 6; // Standard row size
 
       // --- Helper to build a single card ---
       const buildGridCard = (rate: Rate) => {
@@ -356,8 +362,9 @@ const Index = () => {
         card.style.flexDirection = 'column';
         card.style.gap = '16px'; // Increased gap
         card.style.boxSizing = 'border-box';
-        card.style.height = '240px'; // --- NEW: Set fixed height for squareness ---
-        card.style.justifyContent = 'space-between'; // --- NEW: Distribute content ---
+        card.style.height = '240px'; 
+        card.style.justifyContent = 'space-between'; 
+        card.style.flexBasis = 'calc(100% / 6 - 24px)'; // Important for flex layout
 
         // Card Header
         const cardHeader = document.createElement('div');
@@ -365,13 +372,15 @@ const Index = () => {
         cardHeader.style.alignItems = 'center';
         cardHeader.style.gap = '16px';
         
+        const changeRate = (rate.buy / (rate.currency.unit || 1)) - (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.buy / (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.currency.unit || 1) || 0);
+
         // --- UPDATED: Use emoji for reliability in canvas ---
         cardHeader.innerHTML = `
           <span style="font-size: 48px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
           <div style="display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0;">
             <h3 style="font-weight: 700; font-size: 24px; color: #000000; line-height: 1.2; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rate.currency.name}</h3>
             <div style="font-size: 18px; font-weight: 600; color: #1D4ED8; margin-top: 4px;">
-              ${rate.currency.iso3} ${rate.currency.unit}
+              ${rate.currency.iso3} (${rate.currency.unit})
             </div>
           </div>
         `;
@@ -396,7 +405,7 @@ const Index = () => {
           <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
           <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${rate.buy.toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
-            ${buyTrend.trend === 'increase' ? `▲ ${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
+            ${buyTrend.trend === 'increase' ? `▲ +${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
           </div>
         `;
 
@@ -411,7 +420,7 @@ const Index = () => {
           <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
           <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${rate.sell.toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
-            ${sellTrend.trend === 'increase' ? `▲ ${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
+            ${sellTrend.trend === 'increase' ? `▲ +${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
           </div>
         `;
         
@@ -422,63 +431,63 @@ const Index = () => {
         return card;
       };
       
-      // --- Build the custom 8-6-8 grid ---
-      // Row 1 (8 items)
-      const row1 = document.createElement('div');
-      row1.style.display = 'grid';
-      row1.style.gridTemplateColumns = 'repeat(4, 1fr) 40px repeat(4, 1fr)';
-      row1.style.gap = '24px';
-      row1.style.alignItems = 'stretch';
-      ratesToRender.slice(0, 4).forEach(rate => row1.appendChild(buildGridCard(rate)));
-      row1.appendChild(document.createElement('div')); // Spacer
-      ratesToRender.slice(4, 8).forEach(rate => row1.appendChild(buildGridCard(rate)));
-      gridContainer.appendChild(row1);
-
-      // Row 2 (6 items + info box)
-      const row2 = document.createElement('div');
-      row2.style.display = 'grid';
-      row2.style.gridTemplateColumns = 'repeat(3, 1fr) 2fr repeat(3, 1fr)'; // 3 cards, 1 info box (2fr wide), 3 cards
-      row2.style.gap = '24px';
-      row2.style.alignItems = 'center'; // Center items vertically
-      ratesToRender.slice(8, 11).forEach(rate => row2.appendChild(buildGridCard(rate)));
+      // --- Build the custom 6-6-6-4 grid ---
       
-      // Info Box
+      // Helper for rows of 6 cards
+      const buildCardRow = (ratesSlice: Rate[]) => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.gap = '24px';
+        row.style.width = '100%';
+        row.style.flexWrap = 'wrap';
+        ratesSlice.forEach(rate => row.appendChild(buildGridCard(rate)));
+        return row;
+      };
+
+      // Row 1 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(0, 6)));
+
+      // Row 2 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(6, 12)));
+
+      // Row 3 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(12, 18)));
+      
+      // Row 4 (4 items + Info Box occupying 2 spots)
+      const row4 = document.createElement('div');
+      row4.style.display = 'flex';
+      row4.style.gap = '24px';
+      row4.style.width = '100%';
+      row4.style.flexWrap = 'wrap';
+
+      // 4 Cards
+      ratesToRender.slice(18, 22).forEach(rate => row4.appendChild(buildGridCard(rate)));
+      
+      // Info Box (occupying 2 spots)
       const infoBox = document.createElement('div');
       infoBox.style.padding = '20px';
-      infoBox.style.backgroundColor = '#F9FAFB';
-      infoBox.style.border = '2px solid #E5E7EB';
+      infoBox.style.backgroundColor = '#F0F4F8'; // Light Blue/Gray
+      infoBox.style.border = '2px solid #D1D5DB';
       infoBox.style.borderRadius = '12px';
       infoBox.style.textAlign = 'center';
-      infoBox.style.fontSize = '20px'; // Larger text
+      infoBox.style.fontSize = '24px'; // Larger text
       infoBox.style.color = '#374151';
       infoBox.style.lineHeight = '1.6';
-      infoBox.style.height = '100%';
+      infoBox.style.height = '240px';
+      infoBox.style.boxSizing = 'border-box';
+      infoBox.style.flexBasis = `calc((100% / 6 * 2) - 16px)`; // 2 card spaces - margin
       infoBox.style.display = 'flex';
       infoBox.style.flexDirection = 'column';
       infoBox.style.justifyContent = 'center';
       infoBox.style.alignItems = 'center';
-      infoBox.style.boxSizing = 'border-box';
       infoBox.innerHTML = `
-        <p style="font-weight: 600; margin: 0;">Forex Data from forex.grisma.com.np</p>
-        <p style="font-size: 16px; margin: 8px 0;">using NRB API</p>
-        <p style="font-size: 14px; color: #6B7280; margin: 0;">Generated and designed by Grisma.</p>
+        <p style="font-weight: 700; margin: 0; color: #1D4ED8;">Nepal Rastra Bank</p>
+        <p style="font-size: 20px; margin: 8px 0; color: #4B5563;">Official Forex Rates</p>
+        <p style="font-size: 16px; color: #6B7280; margin: 0;">Generated by forex.grisma.com.np</p>
       `;
-      row2.appendChild(infoBox);
+      row4.appendChild(infoBox);
       
-      ratesToRender.slice(11, 14).forEach(rate => row2.appendChild(buildGridCard(rate)));
-      gridContainer.appendChild(row2);
-
-      // Row 3 (8 items)
-      const row3 = document.createElement('div');
-      row3.style.display = 'grid';
-      row3.style.gridTemplateColumns = 'repeat(4, 1fr) 40px repeat(4, 1fr)';
-      row3.style.gap = '24px';
-      row3.style.alignItems = 'stretch';
-      ratesToRender.slice(14, 18).forEach(rate => row3.appendChild(buildGridCard(rate)));
-      row3.appendChild(document.createElement('div')); // Spacer
-      ratesToRender.slice(18, 22).forEach(rate => row3.appendChild(buildGridCard(rate)));
-      gridContainer.appendChild(row3);
-
+      gridContainer.appendChild(row4);
       wrapper.appendChild(gridContainer);
     }
 
@@ -526,7 +535,7 @@ const Index = () => {
         backgroundColor: '#ffffff', // Explicit white background
         width: wrapper.offsetWidth,
         height: wrapper.offsetHeight,
-        useCORS: true, // For loading external flag icons
+        useCORS: true, // For loading external assets
       });
 
       const link = document.createElement('a');
