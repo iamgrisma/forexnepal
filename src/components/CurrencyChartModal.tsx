@@ -14,6 +14,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 import { Input } from '@/components/ui/input';
 import { fetchHistoricalRatesWithCache, FetchProgress } from '../services/d1ForexService'; // Import D1 fetcher
+import FlagIcon from '@/pages/FlagIcon';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface CurrencyChartModalProps {
