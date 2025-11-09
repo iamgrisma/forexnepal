@@ -209,7 +209,7 @@ const ForexTable = memo(({ rates, isLoading, title, previousDayRates = [] }: For
                         onClick={() => handleCurrencyClick(rate)}
                         className="flex items-center hover:text-primary transition-colors focus:outline-none"
                       >
-                        {/* --- UPDATED: Use FlagIcon component --- */}
+                        {/* --- CORRECT: Uses FlagIcon component --- */}
                         <FlagIcon iso3={rate.currency.iso3} className="text-xl mr-3" />
                         <span className="font-medium">{rate.currency.name} ({rate.currency.iso3})</span>
                       </button>
