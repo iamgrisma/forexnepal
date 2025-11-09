@@ -21,6 +21,9 @@ import { format, subDays, addDays } from 'date-fns';
 import { fetchRatesForDateWithCache } from '../services/d1ForexService'; 
 // --- END TASK 4 ---
 
+// --- NEW: Import getFlagEmoji ---
+import { getFlagEmoji } from '../services/forexService';
+
 const Index = () => {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -158,92 +161,253 @@ const Index = () => {
     }
   };
 
-  // --- REBUILT FUNCTION ---
+  // --- 
+  // --- 
+  // --- COMPLETELY REDESIGNED FUNCTION ---
+  // --- 
+  // --- 
   const downloadContentAsImage = async () => {
-    // 1. Find the element to clone (the *content* only)
-    const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
-    const targetElement = document.getElementById(targetElementId);
-
-    if (!targetElement) {
-        toast({
-            title: "Error",
-            description: "Content for download not found.",
-            variant: "destructive",
-        });
-        return;
+    // 1. Determine which rates to render based on the active tab
+    const activeTab = document.querySelector<HTMLButtonElement>('[data-state=active][role=tab]')?.dataset.value || 'all';
+    let ratesToRender: Rate[];
+    switch (activeTab) {
+      case 'popular': ratesToRender = popularCurrencies; break;
+      case 'asian': ratesToRender = asianCurrencies; break;
+      case 'european': ratesToRender = europeanCurrencies; break;
+      case 'middle-east': ratesToRender = middleEastCurrencies; break;
+      case 'other': ratesToRender = otherCurrencies; break;
+      case 'all':
+      default: ratesToRender = rates;
     }
 
-    // 2. Create a new, temporary wrapper for the image
+    if (!ratesToRender || ratesToRender.length === 0) {
+      toast({
+        title: "Error",
+        description: "No data to download.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    wrapper.style.width = '1200px'; // Fixed width for consistent image
+    wrapper.style.width = '1200px';
     wrapper.style.padding = '40px';
-    wrapper.style.backgroundColor = 'white';
+    wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     wrapper.style.display = 'flex';
     wrapper.style.flexDirection = 'column';
     wrapper.style.alignItems = 'center';
 
-    // 3. Add a high-contrast title
+    // 3. Add High-Contrast Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '36px'; // Larger font
-    titleEl.style.fontWeight = '700'; // Bolder
+    titleEl.style.fontSize = '40px'; // Bigger font
+    titleEl.style.fontWeight = '700';
     titleEl.style.marginBottom = '30px';
-    titleEl.style.color = '#111827'; // Dark gray
-    titleEl.style.whiteSpace = 'pre-wrap';
-    // Use displayData to get the correct date
+    titleEl.style.color = '#111827'; // Dark text
+    titleEl.style.lineHeight = '1.2';
     const displayDate = displayData ? new Date(displayData.date) : selectedDate;
-    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(displayDate)}`;
+    titleEl.innerHTML = `Foreign Exchange Rates<br/>As Per Nepal Rastra Bank<br/>for ${formatDateLong(displayDate)}`;
     wrapper.appendChild(titleEl);
 
-    // 4. Clone the content and style it for export
-    const contentClone = targetElement.cloneNode(true) as HTMLElement;
-    contentClone.style.fontSize = '18px'; // Larger base font
-    contentClone.style.width = '100%';
-    contentClone.style.padding = '0';
-    // Remove search bar if it got cloned by accident (it shouldn't, but as a safeguard)
-    contentClone.querySelector('.relative.mb-6')?.remove(); 
+    // --- Helper function to get trend data ---
+    const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
+      const prevRate = previousDayRates.find(r => r.currency.iso3 === currentRate.currency.iso3);
+      if (!prevRate) return { diff: 0, trend: null };
+      
+      const prevValue = parseFloat(prevRate[type].toString()) / (prevRate.currency.unit || 1);
+      const currentValue = parseFloat(currentRate[type].toString()) / (currentRate.currency.unit || 1);
+      const diff = currentValue - prevValue;
+      
+      const trend = diff > 0.0001 ? 'increase' : (diff < -0.0001 ? 'decrease' : 'stable');
+      return { diff, trend };
+    };
 
-    if (viewMode === 'grid') {
-        contentClone.style.display = 'grid';
-        // Force 3 columns for a clean 1200px image
-        contentClone.style.gridTemplateColumns = 'repeat(3, 1fr)'; 
-        contentClone.style.gap = '24px'; // More gap
-    } else {
-        // Style the table for export
-        const table = contentClone.querySelector('table');
-        if (table) {
-            table.style.width = '100%';
-            table.style.tableLayout = 'auto';
-            // Increase font sizes
-            table.querySelectorAll('th').forEach(th => {
-                th.style.fontSize = '16px'; // Header font
-                th.style.color = '#374151'; // Darker gray
-                th.style.padding = '12px 16px';
-            });
-            table.querySelectorAll('td').forEach(td => {
-                td.style.fontSize = '18px'; // Data font
-                td.style.padding = '12px 16px';
-            });
-            // Ensure flag emojis are rendered large enough
-            table.querySelectorAll('td span.mr-2').forEach(span => {
-                (span as HTMLElement).style.fontSize = '24px';
-            });
-        }
+    // 4. Re-build content based on viewMode
+    if (viewMode === 'table') {
+      const table = document.createElement('table');
+      table.style.width = '100%';
+      table.style.borderCollapse = 'collapse';
+      table.style.fontFamily = 'sans-serif';
+
+      // Create Table Header
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      headerRow.style.backgroundColor = '#F3F4F6'; // Solid light gray
+      const headers = ['SN', 'Currency', 'Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'];
+      headers.forEach(headerText => {
+        const th = document.createElement('th');
+        th.textContent = headerText;
+        th.style.padding = '16px';
+        th.style.fontSize = '18px'; // Bigger font
+        th.style.fontWeight = '600';
+        th.style.textAlign = 'left';
+        th.style.color = '#1F2937'; // Dark text
+        th.style.borderBottom = '2px solid #D1D5DB';
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Create Table Body
+      const tbody = document.createElement('tbody');
+      ratesToRender.forEach((rate, index) => {
+        const tr = document.createElement('tr');
+        if (index % 2 === 1) tr.style.backgroundColor = '#F9FAFB'; // Zebra striping
+
+        // SN
+        const tdSn = document.createElement('td');
+        tdSn.textContent = (index + 1).toString();
+        
+        // Currency
+        const tdCurrency = document.createElement('td');
+        tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px;">${getFlagEmoji(rate.currency.iso3)}</span> ${rate.currency.name} (${rate.currency.iso3})`;
+        tdCurrency.style.fontWeight = '600';
+        tdCurrency.style.color = '#111827';
+        
+        // Unit
+        const tdUnit = document.createElement('td');
+        tdUnit.textContent = rate.currency.unit.toString();
+        tdUnit.style.textAlign = 'center';
+
+        // Buy Rate
+        const tdBuy = document.createElement('td');
+        tdBuy.textContent = rate.buy.toFixed(2);
+        tdBuy.style.color = '#15803D'; // Dark green
+        tdBuy.style.fontWeight = '700';
+        
+        // Sell Rate
+        const tdSell = document.createElement('td');
+        tdSell.textContent = rate.sell.toFixed(2);
+        tdSell.style.color = '#B91C1C'; // Dark red
+        tdSell.style.fontWeight = '700';
+
+        // Trends
+        const buyTrend = getTrend(rate, 'buy');
+        const sellTrend = getTrend(rate, 'sell');
+        
+        const tdBuyTrend = document.createElement('td');
+        const tdSellTrend = document.createElement('td');
+        
+        [tdBuyTrend, tdSellTrend].forEach((td, i) => {
+            const trendData = i === 0 ? buyTrend : sellTrend;
+            if (trendData.trend === 'increase') {
+                td.textContent = `▲ ${trendData.diff.toFixed(2)}`;
+                td.style.color = '#16A34A';
+            } else if (trendData.trend === 'decrease') {
+                td.textContent = `▼ ${trendData.diff.toFixed(2)}`;
+                td.style.color = '#DC2626';
+            } else {
+                td.textContent = '—';
+                td.style.color = '#6B7280';
+            }
+            td.style.fontWeight = '600';
+        });
+
+        [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
+            td.style.padding = '14px 16px';
+            td.style.borderBottom = '1px solid #E5E7EB';
+            td.style.fontSize = '18px'; // Bigger font
+            td.style.verticalAlign = 'middle';
+            tr.appendChild(td);
+        });
+        
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+
+    } else { // viewMode === 'grid'
+      const gridContainer = document.createElement('div');
+      gridContainer.style.display = 'grid';
+      gridContainer.style.gridTemplateColumns = 'repeat(3, 1fr)'; // Force 3 columns
+      gridContainer.style.gap = '24px';
+      gridContainer.style.width = '100%';
+
+      ratesToRender.forEach(rate => {
+        const card = document.createElement('div');
+        card.style.border = '2px solid #E5E7EB'; // Solid border
+        card.style.borderRadius = '12px';
+        card.style.padding = '16px';
+        card.style.backgroundColor = '#FFFFFF'; // Solid white
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.gap = '12px';
+
+        // Card Header
+        const cardHeader = document.createElement('div');
+        cardHeader.style.display = 'flex';
+        cardHeader.style.alignItems = 'center';
+        cardHeader.style.gap = '12px';
+        cardHeader.innerHTML = `
+          <span style="font-size: 32px;">${getFlagEmoji(rate.currency.iso3)}</span>
+          <div>
+            <div style="font-size: 14px; font-weight: 600; color: #1D4ED8; background: #DBEAFE; padding: 2px 8px; border-radius: 99px; display: inline-block;">${rate.currency.iso3}</div>
+            <h3 style="font-weight: 700; font-size: 20px; color: #000000; line-height: 1.2; margin-top: 4px;">${rate.currency.name}</h3>
+          </div>
+          <span style="font-size: 14px; font-weight: 500; color: #4B5563; background: #F3F4F6; padding: 4px 8px; border-radius: 6px; margin-left: auto;">Unit: ${rate.currency.unit}</span>
+        `;
+        
+        // Card Body (Buy/Sell)
+        const cardBody = document.createElement('div');
+        cardBody.style.display = 'grid';
+        cardBody.style.gridTemplateColumns = '1fr 1fr';
+        cardBody.style.gap = '12px';
+        
+        const buyTrend = getTrend(rate, 'buy');
+        const sellTrend = getTrend(rate, 'sell');
+
+        // Buy Box
+        const buyBox = document.createElement('div');
+        buyBox.style.backgroundColor = '#F0FDF4'; // Solid light green
+        buyBox.style.border = '1px solid #BBF7D0';
+        buyBox.style.borderRadius = '8px';
+        buyBox.style.padding = '12px';
+        buyBox.style.textAlign = 'center';
+        buyBox.innerHTML = `
+          <div style="font-size: 14px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
+          <div style="font-size: 22px; font-weight: 700; color: #15803D;">${rate.buy.toFixed(2)}</div>
+          <div style="font-size: 14px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+            ${buyTrend.trend === 'increase' ? `▲ ${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
+          </div>
+        `;
+
+        // Sell Box
+        const sellBox = document.createElement('div');
+        sellBox.style.backgroundColor = '#FEF2F2'; // Solid light red
+        sellBox.style.border = '1px solid #FECACA';
+        sellBox.style.borderRadius = '8px';
+        sellBox.style.padding = '12px';
+        sellBox.style.textAlign = 'center';
+        sellBox.innerHTML = `
+          <div style="font-size: 14px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
+          <div style="font-size: 22px; font-weight: 700; color: #B91C1C;">${rate.sell.toFixed(2)}</div>
+          <div style="font-size: 14px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+            ${sellTrend.trend === 'increase' ? `▲ ${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
+          </div>
+        `;
+        
+        cardBody.appendChild(buyBox);
+        cardBody.appendChild(sellBox);
+        card.appendChild(cardHeader);
+        card.appendChild(cardBody);
+        gridContainer.appendChild(card);
+      });
+      wrapper.appendChild(gridContainer);
     }
-    wrapper.appendChild(contentClone);
 
     // 5. Add a high-contrast footer
     const footer = document.createElement('div');
     footer.style.marginTop = '30px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '16px'; // Larger font
-    footer.style.color = '#4B5563'; // Medium gray
+    footer.style.fontSize = '16px'; // Bigger font
+    footer.style.color = '#374151'; // Darker text
     footer.style.width = '100%';
 
     const source = document.createElement('p');
     source.style.marginBottom = '10px';
-    source.style.fontWeight = '600'; // Bold
+    source.style.fontWeight = '600';
     const genDate = new Date().toLocaleString('en-US', {
       year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
     });
@@ -264,7 +428,7 @@ const Index = () => {
     wrapper.style.left = '-9999px';
     document.body.appendChild(wrapper);
 
-    // 7. Generate canvas and download as JPG
+    // 7. Generate canvas and download as PNG
     try {
       const canvas = await html2canvas(wrapper, {
         scale: 2, // High resolution
@@ -274,13 +438,14 @@ const Index = () => {
       });
 
       const link = document.createElement('a');
-      link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.95); // 95% quality JPG
+      // --- KEY CHANGE: Download as PNG for high quality, not JPG ---
+      link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.png`;
+      link.href = canvas.toDataURL('image/png'); // Use PNG
       link.click();
 
       toast({
         title: "Success",
-        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as JPG image.`,
+        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as PNG image.`,
       });
     } catch (error) {
       console.error('Error generating image:', error);
@@ -293,7 +458,7 @@ const Index = () => {
       document.body.removeChild(wrapper); // 8. Clean up
     }
   };
-  // --- END REBUILT FUNCTION ---
+  // --- END OF REDESIGNED FUNCTION ---
 
 
   // Helper function to render grid cards
@@ -496,7 +661,9 @@ const Index = () => {
 
             <TabsContent value="popular" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={popularCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={popularCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                 renderGridCards(popularCurrencies)
               )}
@@ -504,7 +671,9 @@ const Index = () => {
 
             <TabsContent value="asian" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={asianCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={asianCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(asianCurrencies)
               )}
@@ -512,7 +681,9 @@ const Index = () => {
 
             <TabsContent value="european" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={europeanCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={europeanCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(europeanCurrencies)
               )}
@@ -520,7 +691,9 @@ const Index = () => {
 
             <TabsContent value="middle-east" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={middleEastCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={middleEastCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(middleEastCurrencies)
               )}
@@ -528,7 +701,9 @@ const Index = () => {
 
              <TabsContent value="other" className="animate-fade-in">
                {viewMode === 'table' ? (
-                 <ForexTable rates={otherCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                 <div id="forex-table-container">
+                   <ForexTable rates={otherCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                 </div>
                ) : (
                   renderGridCards(otherCurrencies)
                )}
