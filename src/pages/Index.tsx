@@ -816,7 +816,7 @@ const Index = () => {
              </p>
            </div>
 
-           <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
+           <AdSense client="ca-pub-5410507143596599" slot="2194448645" />
 
         </div>
       </div>
