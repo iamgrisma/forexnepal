@@ -3,9 +3,9 @@ import { Link } from 'react-router-dom';
 const Footer = () => {
   return (
     <footer className="text-center text-gray-500 text-sm mt-12 pt-6 border-t border-gray-100">
-      <p>Forex data is provided by Nepal Rastra Bank</p>
-      <p className="mt-2">Made with ❤️ by <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
-      <p className="mt-1">© {new Date().getFullYear()} <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
+      <p>This Foreign Exchange Rate for Nepali Rupees is Published by Nepal Rastra Bank, the Central Bank of Nepal</p>
+      <p className="mt-2">This ForexNepal Application is Crafted by <a href="https://grisma.com.np" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma</a></p>
+      <p className="mt-1">© {new Date().getFullYear()} <a href="/" target="_blank" rel="noopener noreferrer" className="hover:text-primary">Grisma Blog</a></p>
       <div className="mt-3 space-y-1">
         <div>
           <Link to="/privacy-policy" className="hover:text-primary mr-4">Privacy Policy</Link>
