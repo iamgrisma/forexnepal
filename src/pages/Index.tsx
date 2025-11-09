@@ -24,7 +24,6 @@ import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // --- NEW: Import getFlagEmoji ---
 import { getFlagEmoji } from '../services/forexService';
 
-
 const Index = () => {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
