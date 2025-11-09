@@ -270,7 +270,7 @@ const CurrencyHistoricalData: React.FC = () => {
   const [range, setRange] = useState<RangeKey>('week');
   const [dailyLoadProgress, setDailyLoadProgress] = useState<{ percent: number, current: number, total: number } | null>(null);
   const [cooldownTimer, setCooldownTimer] = useState<number>(0);
-  const chartContainerRef = useRef<HTMLDivElement>(null); // --- NEW: Ref for chart container ---
+  const exportableCardRef = useRef<HTMLDivElement>(null); // --- NEW: Ref for the whole card ---
   
   // (Demand 4) State to trigger long-range (>3Y) queries
   const [isLongRangeJobRunning, setIsLongRangeJobRunning] = useState(false);
@@ -405,9 +405,10 @@ const CurrencyHistoricalData: React.FC = () => {
     setIsLongRangeJobRunning(false);
   };
 
-  // --- NEW: Export Chart Function ---
+  // --- UPDATED: Export Chart Function ---
   const handleExportChart = async () => {
-    if (!chartContainerRef.current) {
+    // --- FIX: Target the new card ref ---
+    if (!exportableCardRef.current) {
       sonnerToast.error("Chart element not found.");
       return;
     }
@@ -415,7 +416,8 @@ const CurrencyHistoricalData: React.FC = () => {
     sonnerToast.info("Generating chart image...", { description: "This may take a moment." });
 
     try {
-      const canvas = await html2canvas(chartContainerRef.current, {
+      // --- FIX: Target the new card ref ---
+      const canvas = await html2canvas(exportableCardRef.current, {
         scale: 3, // 3x resolution for "full size" image
         backgroundColor: '#ffffff', // Explicit white background
         useCORS: true, // Allow loading flags from CDN
@@ -433,7 +435,7 @@ const CurrencyHistoricalData: React.FC = () => {
       sonnerToast.error("Failed to generate chart image.", { description: err instanceof Error ? err.message : 'Unknown error' });
     }
   };
-  // --- END NEW FUNCTION ---
+  // --- END UPDATED FUNCTION ---
 
   // (Demand 5) Next/Prev Currency Buttons
   const { prevCurrencyCode, nextCurrencyCode } = useMemo(() => {
@@ -498,7 +500,8 @@ const CurrencyHistoricalData: React.FC = () => {
           </div>
         </div>
         
-        <Card>
+        {/* --- NEW: Added ref to Card --- */}
+        <Card ref={exportableCardRef}>
           <CardHeader>
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               {/* (Demand 5) Next/Prev Buttons */}
@@ -520,7 +523,9 @@ const CurrencyHistoricalData: React.FC = () => {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="w-full sm:w-auto flex items-center gap-2">
+              
+              {/* --- FIX: Added flex-wrap and justify-end --- */}
+              <div className="w-full sm:w-auto flex flex-wrap items-center justify-start sm:justify-end gap-2">
                 <ShareButtons url={pageUrl} title={pageTitle} />
                 {/* --- NEW: Export Button --- */}
                 <Button
@@ -656,8 +661,8 @@ const CurrencyHistoricalData: React.FC = () => {
                       />
                     </div>
                   
-                    {/* --- NEW: Added ref to this div --- */}
-                    <div className="h-[400px] w-full" ref={chartContainerRef} id="chart-to-export">
+                    {/* This div is no longer the main export target, but remains for layout */}
+                    <div className="h-[400px] w-full" id="chart-to-export">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={processedData.chartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
