@@ -24,18 +24,6 @@ import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // --- NEW: Import getFlagEmoji ---
 import { getFlagEmoji } from '../services/forexService';
 
-// --- NEW: Add FlagIcon map for image generation ---
-const iso3ToIso2Map: { [key: string]: string } = {
-  "USD": "us", "EUR": "eu", "GBP": "gb", "CHF": "ch", "AUD": "au",
-  "CAD": "ca", "SGD": "sg", "JPY": "jp", "CNY": "cn", "SAR": "sa",
-  "QAR": "qa", "THB": "th", "AED": "ae", "MYR": "my", "KRW": "kr",
-  "SEK": "se", "DKK": "dk", "HKD": "hk", "KWD": "kw", "BHD": "bh",
-  "OMR": "om", "INR": "in",
-};
-const getFlagClass = (iso3: string): string => {
-  return iso3ToIso2Map[iso3?.toUpperCase()] || 'xx'; // 'xx' for unknown
-};
-
 
 const Index = () => {
   const queryClient = useQueryClient();
@@ -176,7 +164,7 @@ const Index = () => {
 
   // --- 
   // --- 
-  // --- COMPLETELY REDESIGNED FUNCTION ---
+  // --- UPDATED IMAGE DOWNLOAD FUNCTION ---
   // --- 
   // --- 
   const downloadContentAsImage = async () => {
@@ -191,20 +179,6 @@ const Index = () => {
       });
       return;
     }
-
-    // --- NEW: Fetch flag-icon-css stylesheet ---
-    let flagCss = '';
-    try {
-      flagCss = await fetch('https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/7.2.2/css/flag-icons.min.css')
-        .then(res => res.text());
-    } catch (e) {
-      console.error("Could not fetch flag CSS", e);
-      toast({
-        title: "Warning",
-        description: "Could not load flag icons for download. Image will be generated without them.",
-      });
-    }
-    // --- END NEW ---
 
     // --- Helper function to get trend data ---
     const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
@@ -233,24 +207,19 @@ const Index = () => {
     wrapper.style.alignItems = 'center';
     wrapper.style.boxSizing = 'border-box';
 
-    // --- NEW: Inject fetched flag CSS ---
-    if (flagCss) {
-      const styleTag = document.createElement('style');
-      styleTag.textContent = flagCss;
-      wrapper.appendChild(styleTag);
-    }
-    // --- END NEW ---
 
     // 3. Add High-Contrast Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '80px'; // Larger font for 2400px width
+    // --- UPDATED: Smaller font size for one line ---
+    titleEl.style.fontSize = '60px'; 
     titleEl.style.fontWeight = '700';
     titleEl.style.marginBottom = '40px';
     titleEl.style.color = '#111827'; // Dark text
     titleEl.style.lineHeight = '1.2';
     const displayDate = displayData ? new Date(displayData.date) : selectedDate;
-    titleEl.innerHTML = `Foreign Exchange Rates<br/>As Per Nepal Rastra Bank<br/>for ${formatDateLong(displayDate)}`;
+    // --- UPDATED: Title on one line ---
+    titleEl.innerHTML = `Foreign Exchange Rate by NRB for ${formatDateLong(displayDate)}`;
     wrapper.appendChild(titleEl);
 
     // 4. Re-build content based on viewMode
@@ -280,8 +249,9 @@ const Index = () => {
         headers.forEach(headerText => {
           const th = document.createElement('th');
           th.textContent = headerText;
-          th.style.padding = '16px';
-          th.style.fontSize = '18px'; // Bigger font
+          // --- UPDATED: Larger fonts ---
+          th.style.padding = '20px';
+          th.style.fontSize = '22px';
           th.style.fontWeight = '600';
           th.style.textAlign = 'left';
           th.style.color = '#1F2937'; // Dark text
@@ -306,9 +276,8 @@ const Index = () => {
           
           // Currency
           const tdCurrency = document.createElement('td');
-          // --- UPDATED: Use flag-icon-css classes ---
-          const flagClass = getFlagClass(rate.currency.iso3);
-          tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
+          // --- UPDATED: Use emoji for reliability in canvas ---
+          tdCurrency.innerHTML = `<span style="font-size: 32px; margin-right: 16px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
           tdCurrency.style.fontWeight = '600';
           tdCurrency.style.color = '#111827';
           
@@ -352,9 +321,10 @@ const Index = () => {
           });
 
           [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
-              td.style.padding = '14px 16px';
+              // --- UPDATED: Larger fonts/padding ---
+              td.style.padding = '18px 20px';
               td.style.borderBottom = '1px solid #E5E7EB';
-              td.style.fontSize = '18px'; // Bigger font
+              td.style.fontSize = '22px';
               td.style.verticalAlign = 'middle';
               tr.appendChild(td);
           });
@@ -381,28 +351,30 @@ const Index = () => {
         const card = document.createElement('div');
         card.style.border = '2px solid #E5E7EB';
         card.style.borderRadius = '12px';
-        card.style.padding = '16px';
+        card.style.padding = '20px'; // Increased padding
         card.style.backgroundColor = '#FFFFFF';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
-        card.style.gap = '12px';
+        card.style.gap = '16px'; // Increased gap
         card.style.boxSizing = 'border-box';
+        card.style.height = '240px'; // --- NEW: Set fixed height for squareness ---
+        card.style.justifyContent = 'space-between'; // --- NEW: Distribute content ---
 
         // Card Header
         const cardHeader = document.createElement('div');
         cardHeader.style.display = 'flex';
         cardHeader.style.alignItems = 'center';
-        cardHeader.style.gap = '12px';
-        cardHeader.style.height = '60px';
-        // --- UPDATED: Use flag-icon-css classes ---
-        const flagClass = getFlagClass(rate.currency.iso3);
+        cardHeader.style.gap = '16px';
+        
+        // --- UPDATED: Use emoji for reliability in canvas ---
         cardHeader.innerHTML = `
-          <span style="font-size: 32px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span>
-          <div style="display: flex; flex-direction: column; justify-content: center; flex: 1;">
-            <div style="font-size: 14px; font-weight: 600; color: #1D4ED8; background: #DBEAFE; padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 4px; width: fit-content;">${rate.currency.iso3}</div>
-            <h3 style="font-weight: 700; font-size: 20px; color: #000000; line-height: 1.2; margin: 0;">${rate.currency.name}</h3>
+          <span style="font-size: 48px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
+          <div style="display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0;">
+            <h3 style="font-weight: 700; font-size: 24px; color: #000000; line-height: 1.2; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rate.currency.name}</h3>
+            <div style="font-size: 18px; font-weight: 600; color: #1D4ED8; margin-top: 4px;">
+              ${rate.currency.iso3} ${rate.currency.unit}
+            </div>
           </div>
-          <span style="font-size: 14px; font-weight: 500; color: #4B5563; background: #F3F4F6; padding: 4px 8px; border-radius: 6px; margin-left: auto; align-self: flex-start;">Unit: ${rate.currency.unit}</span>
         `;
         
         // Card Body (Buy/Sell)
@@ -422,9 +394,9 @@ const Index = () => {
         buyBox.style.padding = '12px';
         buyBox.style.textAlign = 'center';
         buyBox.innerHTML = `
-          <div style="font-size: 14px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
-          <div style="font-size: 22px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${rate.buy.toFixed(2)}</div>
-          <div style="font-size: 14px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+          <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
+          <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${rate.buy.toFixed(2)}</div>
+          <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${buyTrend.trend === 'increase' ? `▲ ${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
           </div>
         `;
@@ -437,9 +409,9 @@ const Index = () => {
         sellBox.style.padding = '12px';
         sellBox.style.textAlign = 'center';
         sellBox.innerHTML = `
-          <div style="font-size: 14px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
-          <div style="font-size: 22px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${rate.sell.toFixed(2)}</div>
-          <div style="font-size: 14px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+          <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
+          <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${rate.sell.toFixed(2)}</div>
+          <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${sellTrend.trend === 'increase' ? `▲ ${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
           </div>
         `;
