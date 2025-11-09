@@ -3,7 +3,7 @@ import { getFlagEmoji } from '../services/forexService'; // UPDATED: Use getFlag
 import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown } from 'lucide-react'; 
 import { cn } from "@/lib/utils"; 
-import { FlagIcon } from '@/pages/FlagIcon'; // Import the FlagIcon component
+import FlagIcon from '@/pages/FlagIcon'; // Import the FlagIcon component
 import { memo } from 'react';
 
 interface CurrencyCardProps {
@@ -71,8 +71,8 @@ const CurrencyCard = memo(({ rate, index, previousDayRates }: CurrencyCardProps)
     >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          {/* --- MODIFIED: Use getFlagEmoji --- */}
-          <span className="text-3xl">{getFlagEmoji(currency.iso3)}</span>
+          {/* --- MODIFIED: Use FlagIcon component --- */}
+          <FlagIcon iso3={currency.iso3} className="text-3xl" />
           <div>
             <div className="text-xs font-semibold text-blue-700 px-2 py-0.5 bg-blue-100 rounded-full mb-1 inline-block">
               {currency.iso3}
