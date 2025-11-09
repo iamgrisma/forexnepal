@@ -3,12 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { format, subDays } from 'date-fns';
 import { Rate } from '../types/forex';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getFlagEmoji } from '@/services/forexService';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useSiteSettings } from './Layout';
 import { cn } from "@/lib/utils";
 import { fetchRatesForDateWithCache } from '@/services/d1ForexService'; // Fetches from DB/API
-import FlagIcon from '@/pages/FlagIcon'; // --- NEW: Import FlagIcon ---
+import FlagIcon from '@/pages/FlagIcon'; // --- FIX: Import FlagIcon ---
 
 /**
  * A small component to render the change indicator (arrow + amount)
@@ -55,7 +54,7 @@ const TickerItem: React.FC<{ rate: Rate, prevRate?: Rate }> = React.memo(({ rate
 
   return (
     <div className="flex items-center space-x-3 flex-shrink-0 px-4 py-2">
-      {/* --- UPDATED: Use FlagIcon --- */}
+      {/* --- FIX: Use FlagIcon component --- */}
       <FlagIcon iso3={rate.currency.iso3} className="text-2xl" />
       <div className="flex flex-col items-start">
         <span className="text-sm font-semibold text-foreground">
