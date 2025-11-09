@@ -276,8 +276,6 @@ const Index = () => {
           // Currency
           const tdCurrency = document.createElement('td');
           // --- UPDATED: Use emoji for reliability in canvas ---
-          // Since flag-icon-css relies on external CSS, using emojis (as fallback or primary in isolated canvas) is safer.
-          // The emoji rendering size is controlled by the font size on the span.
           tdCurrency.innerHTML = `<span style="font-size: 32px; margin-right: 16px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
           tdCurrency.style.fontWeight = '600';
           tdCurrency.style.color = '#111827';
@@ -340,7 +338,7 @@ const Index = () => {
       tableContainer.appendChild(buildTable(column2Rates, column1Rates.length));
       wrapper.appendChild(tableContainer);
 
-    } else { // viewMode === 'grid' - Implementing 6-6-6-4 layout
+    } else { // viewMode === 'grid'
       const gridContainer = document.createElement('div');
       gridContainer.style.display = 'flex'; // Use flex column to stack rows
       gridContainer.style.flexDirection = 'column';
@@ -355,30 +353,32 @@ const Index = () => {
       const buildGridCard = (rate: Rate) => {
         const card = document.createElement('div');
         card.style.border = '2px solid #E5E7EB';
-        card.style.borderRadius = '12px';
-        card.style.padding = '20px'; // Increased padding
+        card.style.borderRadius = '16px'; // --- Slightly larger radius ---
+        card.style.padding = '24px'; // --- Increased padding ---
         card.style.backgroundColor = '#FFFFFF';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
-        card.style.gap = '16px'; // Increased gap
+        card.style.gap = '20px'; // --- Increased gap ---
         card.style.boxSizing = 'border-box';
-        card.style.height = '240px'; 
+        // --- UPDATED: Increased height ---
+        card.style.height = '280px'; 
         card.style.justifyContent = 'space-between'; 
-        card.style.flexBasis = 'calc(100% / 6 - 24px)'; // Important for flex layout
+        card.style.flexBasis = `calc(100% / ${numColumns} - 20px)`; // (gap * (cols-1) / cols) = 24 * 5 / 6 = 20px
+        card.style.flexGrow = '1';
 
         // Card Header
         const cardHeader = document.createElement('div');
         cardHeader.style.display = 'flex';
         cardHeader.style.alignItems = 'center';
-        cardHeader.style.gap = '16px';
+        cardHeader.style.gap = '12px'; // --- Decreased gap for more text space ---
         
         const changeRate = (rate.buy / (rate.currency.unit || 1)) - (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.buy / (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.currency.unit || 1) || 0);
 
-        // --- UPDATED: Use emoji for reliability in canvas ---
+        // --- UPDATED: Use emoji, allow text wrap, slightly smaller font ---
         cardHeader.innerHTML = `
           <span style="font-size: 48px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
           <div style="display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0;">
-            <h3 style="font-weight: 700; font-size: 24px; color: #000000; line-height: 1.2; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${rate.currency.name}</h3>
+            <h3 style="font-weight: 700; font-size: 22px; color: #000000; line-height: 1.3; margin: 0; word-wrap: break-word;">${rate.currency.name}</h3>
             <div style="font-size: 18px; font-weight: 600; color: #1D4ED8; margin-top: 4px;">
               ${rate.currency.iso3} (${rate.currency.unit})
             </div>
@@ -439,7 +439,7 @@ const Index = () => {
         row.style.display = 'flex';
         row.style.gap = '24px';
         row.style.width = '100%';
-        row.style.flexWrap = 'wrap';
+        row.style.flexWrap = 'nowrap'; // Ensure they stay in one row
         ratesSlice.forEach(rate => row.appendChild(buildGridCard(rate)));
         return row;
       };
@@ -453,39 +453,48 @@ const Index = () => {
       // Row 3 (6 items)
       gridContainer.appendChild(buildCardRow(ratesToRender.slice(12, 18)));
       
-      // Row 4 (4 items + Info Box occupying 2 spots)
+      // Row 4 (2 cards, 1 info box, 2 cards)
       const row4 = document.createElement('div');
       row4.style.display = 'flex';
       row4.style.gap = '24px';
       row4.style.width = '100%';
-      row4.style.flexWrap = 'wrap';
+      row4.style.flexWrap = 'nowrap';
+      row4.style.alignItems = 'stretch'; // Make items equal height
 
-      // 4 Cards
-      ratesToRender.slice(18, 22).forEach(rate => row4.appendChild(buildGridCard(rate)));
+      // First 2 cards
+      ratesToRender.slice(18, 20).forEach(rate => row4.appendChild(buildGridCard(rate)));
       
       // Info Box (occupying 2 spots)
       const infoBox = document.createElement('div');
-      infoBox.style.padding = '20px';
+      infoBox.style.padding = '30px';
       infoBox.style.backgroundColor = '#F0F4F8'; // Light Blue/Gray
       infoBox.style.border = '2px solid #D1D5DB';
-      infoBox.style.borderRadius = '12px';
+      infoBox.style.borderRadius = '16px';
       infoBox.style.textAlign = 'center';
-      infoBox.style.fontSize = '24px'; // Larger text
       infoBox.style.color = '#374151';
       infoBox.style.lineHeight = '1.6';
-      infoBox.style.height = '240px';
+      infoBox.style.height = '280px'; // --- Match card height ---
       infoBox.style.boxSizing = 'border-box';
-      infoBox.style.flexBasis = `calc((100% / 6 * 2) - 16px)`; // 2 card spaces - margin
+      // --- UPDATED: flexBasis math to account for 5 gaps (24px * 4 = 96) ---
+      const cardWidth = `calc((100% - (24px * ${numColumns - 1})) / ${numColumns})`;
+      const infoBoxWidth = `calc((${cardWidth} * 2) + 24px)`; // 2 cards + 1 gap
+      infoBox.style.flexBasis = infoBoxWidth;
+      infoBox.style.flexShrink = '0';
+      
       infoBox.style.display = 'flex';
       infoBox.style.flexDirection = 'column';
       infoBox.style.justifyContent = 'center';
       infoBox.style.alignItems = 'center';
+      
+      // --- UPDATED: Info block text ---
       infoBox.innerHTML = `
-        <p style="font-weight: 700; margin: 0; color: #1D4ED8;">Nepal Rastra Bank</p>
-        <p style="font-size: 20px; margin: 8px 0; color: #4B5563;">Official Forex Rates</p>
-        <p style="font-size: 16px; color: #6B7280; margin: 0;">Generated by forex.grisma.com.np</p>
+        <p style="font-weight: 700; font-size: 26px; margin: 0; color: #111827; line-height: 1.3;">Foreign Exchange Rate for Nepal Published by Nepal Rastra Bank for ${formatDateLong(displayDate)}</p>
+        <p style="font-size: 18px; margin: 12px 0 0 0; color: #4B5563; line-height: 1.5;">This data is generated using Nepal Rastra Bank ForexAPI. Data presentation, extraction and designed by Grisma | visit forex.grisma.com.np for more information.</p>
       `;
       row4.appendChild(infoBox);
+
+      // Last 2 cards
+      ratesToRender.slice(20, 22).forEach(rate => row4.appendChild(buildGridCard(rate)));
       
       gridContainer.appendChild(row4);
       wrapper.appendChild(gridContainer);
@@ -495,26 +504,29 @@ const Index = () => {
     const footer = document.createElement('div');
     footer.style.marginTop = '40px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '20px'; // Bigger font
-    footer.style.color = '#374151'; // Darker text
     footer.style.width = '100%';
+    footer.style.boxSizing = 'border-box';
+    footer.style.padding = '20px';
+    footer.style.borderTop = '2px solid #E5E7EB';
 
-    const source = document.createElement('p');
-    source.style.marginBottom = '12px';
-    source.style.fontWeight = '600';
-    const genDate = new Date().toLocaleString('en-US', {
-      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-    source.textContent = `Source: Nepal Rastra Bank (NRB) | Generated: ${genDate}`;
-    footer.appendChild(source);
+    // --- UPDATED: Footer text matches info block text ---
+    const line1 = document.createElement('p');
+    line1.style.fontWeight = '700';
+    line1.style.fontSize = '26px';
+    line1.style.margin = '0';
+    line1.style.color = '#111827';
+    line1.style.lineHeight = '1.3';
+    line1.textContent = `Foreign Exchange Rate for Nepal Published by Nepal Rastra Bank for ${formatDateLong(displayDate)}`;
+    footer.appendChild(line1);
 
-    const designer = document.createElement('p');
-    designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '18px';
-    designer.style.marginTop = '8px';
-    designer.textContent = 'forex.grisma.com.np';
-    footer.appendChild(designer);
-
+    const line2 = document.createElement('p');
+    line2.style.fontSize = '20px'; // "slightly small font"
+    line2.style.margin = '12px 0 0 0';
+    line2.style.color = '#4B5563';
+    line2.style.lineHeight = '1.5';
+    line2.textContent = `This data is generated using Nepal Rastra Bank ForexAPI. Data presentation, extraction and designed by Grisma | visit forex.grisma.com.np for more information.`;
+    footer.appendChild(line2);
+    
     wrapper.appendChild(footer);
 
     // 6. Append to DOM (hidden) for rendering
