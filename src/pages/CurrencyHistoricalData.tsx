@@ -19,6 +19,7 @@ import DateInput from '@/components/DateInput';
 import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
 import { toast } from 'sonner';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
+import FlagIcon from '@/pages/FlagIcon'; // Import FlagIcon
 
 // --- Currency Info Map ---
 // This map is necessary for units, names, and the new Next/Prev buttons
@@ -295,7 +296,7 @@ const CurrencyHistoricalData: React.FC = () => {
   // (Demand 1) Query to check if INR rate is fixed
   const { data: inrCheckData, isFetching: isCheckingINR } = useQuery({
     queryKey: ['currentRateCheckINR', upperCaseCurrencyCode],
-    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd')),
+    queryFn: () => fetchRatesForDateWithCache(format(new Date(), 'yyyy-MM-dd'), null),
     enabled: upperCaseCurrencyCode === 'INR',
     staleTime: 1000 * 60 * 60,
     refetchOnWindowFocus: false,
@@ -351,7 +352,7 @@ const CurrencyHistoricalData: React.FC = () => {
       const limitCheck = canMakeChartRequest(rangeInDays);
       if (!limitCheck.allowed) {
         Promise.resolve().then(() => setCooldownTimer(limitCheck.cooldownSeconds!));
-        throw new Error(limitCheck.reason || 'Rate limit exceeded');
+        throw new Error(limitCheck.reason || 'Rate limit exceeded on fallback');
       }
       recordChartRequest(rangeInDays);
 
@@ -475,7 +476,8 @@ const CurrencyHistoricalData: React.FC = () => {
                 </Button>
                 <div className="text-center sm:text-left">
                   <CardTitle className="text-2xl md:text-3xl font-bold flex items-center gap-3">
-                    {getFlagEmoji(upperCaseCurrencyCode)}
+                    {/* --- FIX: Use FlagIcon component --- */}
+                    <FlagIcon iso3={upperCaseCurrencyCode} className="text-3xl" />
                     {name} ({upperCaseCurrencyCode})
                   </CardTitle>
                   <CardDescription>
