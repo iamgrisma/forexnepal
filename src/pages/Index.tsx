@@ -24,6 +24,19 @@ import { fetchRatesForDateWithCache } from '../services/d1ForexService';
 // --- NEW: Import getFlagEmoji ---
 import { getFlagEmoji } from '../services/forexService';
 
+// --- NEW: Add FlagIcon map for image generation ---
+const iso3ToIso2Map: { [key: string]: string } = {
+  "USD": "us", "EUR": "eu", "GBP": "gb", "CHF": "ch", "AUD": "au",
+  "CAD": "ca", "SGD": "sg", "JPY": "jp", "CNY": "cn", "SAR": "sa",
+  "QAR": "qa", "THB": "th", "AED": "ae", "MYR": "my", "KRW": "kr",
+  "SEK": "se", "DKK": "dk", "HKD": "hk", "KWD": "kw", "BHD": "bh",
+  "OMR": "om", "INR": "in",
+};
+const getFlagClass = (iso3: string): string => {
+  return iso3ToIso2Map[iso3?.toUpperCase()] || 'xx'; // 'xx' for unknown
+};
+
+
 const Index = () => {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -168,17 +181,8 @@ const Index = () => {
   // --- 
   const downloadContentAsImage = async () => {
     // 1. Determine which rates to render based on the active tab
-    const activeTab = document.querySelector<HTMLButtonElement>('[data-state=active][role=tab]')?.dataset.value || 'all';
-    let ratesToRender: Rate[];
-    switch (activeTab) {
-      case 'popular': ratesToRender = popularCurrencies; break;
-      case 'asian': ratesToRender = asianCurrencies; break;
-      case 'european': ratesToRender = europeanCurrencies; break;
-      case 'middle-east': ratesToRender = middleEastCurrencies; break;
-      case 'other': ratesToRender = otherCurrencies; break;
-      case 'all':
-      default: ratesToRender = rates;
-    }
+    // We use the full 22 rates for both modes as per your layout spec
+    const ratesToRender: Rate[] = rates; 
 
     if (!ratesToRender || ratesToRender.length === 0) {
       toast({
@@ -188,28 +192,6 @@ const Index = () => {
       });
       return;
     }
-
-    // 2. Create a wrapper for the image content
-    const wrapper = document.createElement('div');
-    wrapper.style.width = '1200px';
-    wrapper.style.padding = '40px';
-    wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
-    wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-    wrapper.style.display = 'flex';
-    wrapper.style.flexDirection = 'column';
-    wrapper.style.alignItems = 'center';
-
-    // 3. Add High-Contrast Title
-    const titleEl = document.createElement('h1');
-    titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '40px'; // Bigger font
-    titleEl.style.fontWeight = '700';
-    titleEl.style.marginBottom = '30px';
-    titleEl.style.color = '#111827'; // Dark text
-    titleEl.style.lineHeight = '1.2';
-    const displayDate = displayData ? new Date(displayData.date) : selectedDate;
-    titleEl.innerHTML = `Foreign Exchange Rates<br/>As Per Nepal Rastra Bank<br/>for ${formatDateLong(displayDate)}`;
-    wrapper.appendChild(titleEl);
 
     // --- Helper function to get trend data ---
     const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
@@ -226,129 +208,177 @@ const Index = () => {
       return { diff, trend };
     };
 
+    // 2. Create a wrapper for the image content
+    const wrapper = document.createElement('div');
+    // Set width to 2400px, which will be scaled by 2 for a 4800px final image
+    wrapper.style.width = '2400px'; 
+    wrapper.style.padding = '40px';
+    wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
+    wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    wrapper.style.display = 'flex';
+    wrapper.style.flexDirection = 'column';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.boxSizing = 'border-box';
+
+
+    // 3. Add High-Contrast Title
+    const titleEl = document.createElement('h1');
+    titleEl.style.textAlign = 'center';
+    titleEl.style.fontSize = '80px'; // Larger font for 4800px width
+    titleEl.style.fontWeight = '700';
+    titleEl.style.marginBottom = '40px';
+    titleEl.style.color = '#111827'; // Dark text
+    titleEl.style.lineHeight = '1.2';
+    const displayDate = displayData ? new Date(displayData.date) : selectedDate;
+    titleEl.innerHTML = `Foreign Exchange Rates<br/>As Per Nepal Rastra Bank<br/>for ${formatDateLong(displayDate)}`;
+    wrapper.appendChild(titleEl);
+
     // 4. Re-build content based on viewMode
     if (viewMode === 'table') {
-      const table = document.createElement('table');
-      table.style.width = '100%';
-      table.style.borderCollapse = 'collapse';
-      table.style.fontFamily = 'sans-serif';
+      // Split rates into two columns
+      const midpoint = Math.ceil(ratesToRender.length / 2); // 22 -> 11
+      const column1Rates = ratesToRender.slice(0, midpoint);
+      const column2Rates = ratesToRender.slice(midpoint);
 
-      // Create Table Header
-      const thead = document.createElement('thead');
-      const headerRow = document.createElement('tr');
-      headerRow.style.backgroundColor = '#F3F4F6'; // Solid light gray
-      const headers = ['SN', 'Currency', 'Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'];
-      headers.forEach(headerText => {
-        const th = document.createElement('th');
-        th.textContent = headerText;
-        th.style.padding = '16px';
-        th.style.fontSize = '18px'; // Bigger font
-        th.style.fontWeight = '600';
-        th.style.textAlign = 'left';
-        th.style.color = '#1F2937'; // Dark text
-        th.style.borderBottom = '2px solid #D1D5DB';
-        if (['Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'].includes(headerText)) {
-            th.style.textAlign = 'right';
-        }
-        headerRow.appendChild(th);
-      });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
+      const tableContainer = document.createElement('div');
+      tableContainer.style.display = 'flex';
+      tableContainer.style.flexDirection = 'row';
+      tableContainer.style.gap = '20px';
+      tableContainer.style.width = '100%';
 
-      // Create Table Body
-      const tbody = document.createElement('tbody');
-      ratesToRender.forEach((rate, index) => {
-        const tr = document.createElement('tr');
-        if (index % 2 === 1) tr.style.backgroundColor = '#F9FAFB'; // Zebra striping
+      const buildTable = (ratesList: Rate[], snOffset: number) => {
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.fontFamily = 'sans-serif';
 
-        // SN
-        const tdSn = document.createElement('td');
-        tdSn.textContent = (index + 1).toString();
-        
-        // Currency
-        const tdCurrency = document.createElement('td');
-        tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
-        tdCurrency.style.fontWeight = '600';
-        tdCurrency.style.color = '#111827';
-        
-        // Unit
-        const tdUnit = document.createElement('td');
-        tdUnit.textContent = rate.currency.unit.toString();
-        tdUnit.style.textAlign = 'right';
-
-        // Buy Rate
-        const tdBuy = document.createElement('td');
-        tdBuy.textContent = rate.buy.toFixed(2);
-        tdBuy.style.color = '#15803D'; // Dark green
-        tdBuy.style.fontWeight = '700';
-        tdBuy.style.textAlign = 'right';
-        
-        // Sell Rate
-        const tdSell = document.createElement('td');
-        tdSell.textContent = rate.sell.toFixed(2);
-        tdSell.style.color = '#B91C1C'; // Dark red
-        tdSell.style.fontWeight = '700';
-        tdSell.style.textAlign = 'right';
-
-        // Trends
-        const buyTrend = getTrend(rate, 'buy');
-        const sellTrend = getTrend(rate, 'sell');
-        
-        const tdBuyTrend = document.createElement('td');
-        const tdSellTrend = document.createElement('td');
-        
-        [tdBuyTrend, tdSellTrend].forEach((td, i) => {
-            const trendData = i === 0 ? buyTrend : sellTrend;
-            if (trendData.trend === 'increase') {
-                td.innerHTML = `<span style="color: #16A34A;">▲ ${trendData.diff.toFixed(2)}</span>`;
-            } else if (trendData.trend === 'decrease') {
-                td.innerHTML = `<span style="color: #DC2626;">▼ ${trendData.diff.toFixed(2)}</span>`;
-            } else {
-                td.innerHTML = `<span style="color: #6B7280;">—</span>`;
-            }
-            td.style.fontWeight = '600';
-            td.style.textAlign = 'right';
+        // Create Table Header
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.style.backgroundColor = '#F3F4F6'; // Solid light gray
+        const headers = ['SN', 'Currency', 'Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'];
+        headers.forEach(headerText => {
+          const th = document.createElement('th');
+          th.textContent = headerText;
+          th.style.padding = '16px';
+          th.style.fontSize = '18px'; // Bigger font
+          th.style.fontWeight = '600';
+          th.style.textAlign = 'left';
+          th.style.color = '#1F2937'; // Dark text
+          th.style.borderBottom = '2px solid #D1D5DB';
+          if (['Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'].includes(headerText)) {
+              th.style.textAlign = 'right';
+          }
+          headerRow.appendChild(th);
         });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
 
-        [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
-            td.style.padding = '14px 16px';
-            td.style.borderBottom = '1px solid #E5E7EB';
-            td.style.fontSize = '18px'; // Bigger font
-            td.style.verticalAlign = 'middle';
-            tr.appendChild(td);
+        // Create Table Body
+        const tbody = document.createElement('tbody');
+        ratesList.forEach((rate, index) => {
+          const tr = document.createElement('tr');
+          if (index % 2 === 1) tr.style.backgroundColor = '#F9FAFB'; // Zebra striping
+
+          // SN
+          const tdSn = document.createElement('td');
+          tdSn.textContent = (index + 1 + snOffset).toString();
+          
+          // Currency
+          const tdCurrency = document.createElement('td');
+          // USE FLAG-ICON-CSS
+          const flagClass = getFlagClass(rate.currency.iso3);
+          tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
+          tdCurrency.style.fontWeight = '600';
+          tdCurrency.style.color = '#111827';
+          
+          // Unit
+          const tdUnit = document.createElement('td');
+          tdUnit.textContent = rate.currency.unit.toString();
+          tdUnit.style.textAlign = 'right';
+
+          // Buy Rate
+          const tdBuy = document.createElement('td');
+          tdBuy.textContent = rate.buy.toFixed(2);
+          tdBuy.style.color = '#15803D'; // Dark green
+          tdBuy.style.fontWeight = '700';
+          tdBuy.style.textAlign = 'right';
+          
+          // Sell Rate
+          const tdSell = document.createElement('td');
+          tdSell.textContent = rate.sell.toFixed(2);
+          tdSell.style.color = '#B91C1C'; // Dark red
+          tdSell.style.fontWeight = '700';
+          tdSell.style.textAlign = 'right';
+
+          // Trends
+          const buyTrend = getTrend(rate, 'buy');
+          const sellTrend = getTrend(rate, 'sell');
+          
+          const tdBuyTrend = document.createElement('td');
+          const tdSellTrend = document.createElement('td');
+          
+          [tdBuyTrend, tdSellTrend].forEach((td, i) => {
+              const trendData = i === 0 ? buyTrend : sellTrend;
+              if (trendData.trend === 'increase') {
+                  td.innerHTML = `<span style="color: #16A34A;">▲ ${trendData.diff.toFixed(2)}</span>`;
+              } else if (trendData.trend === 'decrease') {
+                  td.innerHTML = `<span style="color: #DC2626;">▼ ${trendData.diff.toFixed(2)}</span>`;
+              } else {
+                  td.innerHTML = `<span style="color: #6B7280;">—</span>`;
+              }
+              td.style.fontWeight = '600';
+              td.style.textAlign = 'right';
+          });
+
+          [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
+              td.style.padding = '14px 16px';
+              td.style.borderBottom = '1px solid #E5E7EB';
+              td.style.fontSize = '18px'; // Bigger font
+              td.style.verticalAlign = 'middle';
+              tr.appendChild(td);
+          });
+          
+          tbody.appendChild(tr);
         });
-        
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      wrapper.appendChild(table);
+        table.appendChild(tbody);
+        return table;
+      };
+
+      tableContainer.appendChild(buildTable(column1Rates, 0));
+      tableContainer.appendChild(buildTable(column2Rates, column1Rates.length));
+      wrapper.appendChild(tableContainer);
 
     } else { // viewMode === 'grid'
       const gridContainer = document.createElement('div');
       gridContainer.style.display = 'grid';
-      gridContainer.style.gridTemplateColumns = 'repeat(3, 1fr)'; // Force 3 columns
       gridContainer.style.gap = '24px';
       gridContainer.style.width = '100%';
+      gridContainer.style.boxSizing = 'border-box';
 
-      ratesToRender.forEach(rate => {
+      // --- Helper to build a single card ---
+      const buildGridCard = (rate: Rate) => {
         const card = document.createElement('div');
-        card.style.border = '2px solid #E5E7EB'; // Solid border
+        card.style.border = '2px solid #E5E7EB';
         card.style.borderRadius = '12px';
         card.style.padding = '16px';
-        card.style.backgroundColor = '#FFFFFF'; // Solid white
+        card.style.backgroundColor = '#FFFFFF';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
         card.style.gap = '12px';
+        card.style.boxSizing = 'border-box';
 
         // Card Header
         const cardHeader = document.createElement('div');
         cardHeader.style.display = 'flex';
         cardHeader.style.alignItems = 'center';
         cardHeader.style.gap = '12px';
-        cardHeader.style.height = '60px'; // Fixed height for alignment
+        cardHeader.style.height = '60px';
+        // USE FLAG-ICON-CSS
+        const flagClass = getFlagClass(rate.currency.iso3);
         cardHeader.innerHTML = `
-          <span style="font-size: 32px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
-          <div style="display: flex; flex-direction: column; justify-content: center;">
+          <span style="font-size: 32px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span>
+          <div style="display: flex; flex-direction: column; justify-content: center; flex: 1;">
             <div style="font-size: 14px; font-weight: 600; color: #1D4ED8; background: #DBEAFE; padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 4px; width: fit-content;">${rate.currency.iso3}</div>
             <h3 style="font-weight: 700; font-size: 20px; color: #000000; line-height: 1.2; margin: 0;">${rate.currency.name}</h3>
           </div>
@@ -366,7 +396,7 @@ const Index = () => {
 
         // Buy Box
         const buyBox = document.createElement('div');
-        buyBox.style.backgroundColor = '#F0FDF4'; // Solid light green
+        buyBox.style.backgroundColor = '#F0FDF4';
         buyBox.style.border = '1px solid #BBF7D0';
         buyBox.style.borderRadius = '8px';
         buyBox.style.padding = '12px';
@@ -381,7 +411,7 @@ const Index = () => {
 
         // Sell Box
         const sellBox = document.createElement('div');
-        sellBox.style.backgroundColor = '#FEF2F2'; // Solid light red
+        sellBox.style.backgroundColor = '#FEF2F2';
         sellBox.style.border = '1px solid #FECACA';
         sellBox.style.borderRadius = '8px';
         sellBox.style.padding = '12px';
@@ -398,21 +428,79 @@ const Index = () => {
         cardBody.appendChild(sellBox);
         card.appendChild(cardHeader);
         card.appendChild(cardBody);
-        gridContainer.appendChild(card);
-      });
+        return card;
+      };
+      
+      // --- Build the custom 8-6-8 grid ---
+      // Row 1 (8 items)
+      const row1 = document.createElement('div');
+      row1.style.display = 'grid';
+      row1.style.gridTemplateColumns = 'repeat(4, 1fr) 40px repeat(4, 1fr)';
+      row1.style.gap = '24px';
+      row1.style.alignItems = 'stretch';
+      ratesToRender.slice(0, 4).forEach(rate => row1.appendChild(buildGridCard(rate)));
+      row1.appendChild(document.createElement('div')); // Spacer
+      ratesToRender.slice(4, 8).forEach(rate => row1.appendChild(buildGridCard(rate)));
+      gridContainer.appendChild(row1);
+
+      // Row 2 (6 items + info box)
+      const row2 = document.createElement('div');
+      row2.style.display = 'grid';
+      row2.style.gridTemplateColumns = 'repeat(3, 1fr) 2fr repeat(3, 1fr)'; // 3 cards, 1 info box (2fr wide), 3 cards
+      row2.style.gap = '24px';
+      row2.style.alignItems = 'center'; // Center items vertically
+      ratesToRender.slice(8, 11).forEach(rate => row2.appendChild(buildGridCard(rate)));
+      
+      // Info Box
+      const infoBox = document.createElement('div');
+      infoBox.style.padding = '20px';
+      infoBox.style.backgroundColor = '#F9FAFB';
+      infoBox.style.border = '2px solid #E5E7EB';
+      infoBox.style.borderRadius = '12px';
+      infoBox.style.textAlign = 'center';
+      infoBox.style.fontSize = '20px'; // Larger text
+      infoBox.style.color = '#374151';
+      infoBox.style.lineHeight = '1.6';
+      infoBox.style.height = '100%';
+      infoBox.style.display = 'flex';
+      infoBox.style.flexDirection = 'column';
+      infoBox.style.justifyContent = 'center';
+      infoBox.style.alignItems = 'center';
+      infoBox.style.boxSizing = 'border-box';
+      infoBox.innerHTML = `
+        <p style="font-weight: 600; margin: 0;">Forex Data from forex.grisma.com.np</p>
+        <p style="font-size: 16px; margin: 8px 0;">using NRB API</p>
+        <p style="font-size: 14px; color: #6B7280; margin: 0;">Generated and designed by Grisma.</p>
+      `;
+      row2.appendChild(infoBox);
+      
+      ratesToRender.slice(11, 14).forEach(rate => row2.appendChild(buildGridCard(rate)));
+      gridContainer.appendChild(row2);
+
+      // Row 3 (8 items)
+      const row3 = document.createElement('div');
+      row3.style.display = 'grid';
+      row3.style.gridTemplateColumns = 'repeat(4, 1fr) 40px repeat(4, 1fr)';
+      row3.style.gap = '24px';
+      row3.style.alignItems = 'stretch';
+      ratesToRender.slice(14, 18).forEach(rate => row3.appendChild(buildGridCard(rate)));
+      row3.appendChild(document.createElement('div')); // Spacer
+      ratesToRender.slice(18, 22).forEach(rate => row3.appendChild(buildGridCard(rate)));
+      gridContainer.appendChild(row3);
+
       wrapper.appendChild(gridContainer);
     }
 
     // 5. Add a high-contrast footer
     const footer = document.createElement('div');
-    footer.style.marginTop = '30px';
+    footer.style.marginTop = '40px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '16px'; // Bigger font
+    footer.style.fontSize = '20px'; // Bigger font
     footer.style.color = '#374151'; // Darker text
     footer.style.width = '100%';
 
     const source = document.createElement('p');
-    source.style.marginBottom = '10px';
+    source.style.marginBottom = '12px';
     source.style.fontWeight = '600';
     const genDate = new Date().toLocaleString('en-US', {
       year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
@@ -422,7 +510,7 @@ const Index = () => {
 
     const designer = document.createElement('p');
     designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '14px';
+    designer.style.fontSize = '18px';
     designer.style.marginTop = '8px';
     designer.textContent = 'forex.grisma.com.np';
     footer.appendChild(designer);
@@ -436,15 +524,20 @@ const Index = () => {
 
     // 7. Generate canvas and download as PNG
     try {
+      toast({
+        title: "Generating Image...",
+        description: "This may take a few seconds for high resolution.",
+      });
+
       const canvas = await html2canvas(wrapper, {
-        scale: 2, // High resolution
+        scale: 2, // Scale 2 on a 2400px wrapper = 4800px width
         backgroundColor: '#ffffff', // Explicit white background
         width: wrapper.offsetWidth,
-        height: wrapper.offsetHeight
+        height: wrapper.offsetHeight,
+        useCORS: true, // For loading external flag icons
       });
 
       const link = document.createElement('a');
-      // --- KEY CHANGE: Download as PNG for high quality, not JPG ---
       link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.png`;
       link.href = canvas.toDataURL('image/png'); // Use PNG
       link.click();
