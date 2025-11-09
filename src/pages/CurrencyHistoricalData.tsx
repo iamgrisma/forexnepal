@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react'; // Added useRef
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,15 +11,16 @@ import Layout from '@/components/Layout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertCircle, ArrowLeft, RefreshCw, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertCircle, ArrowLeft, RefreshCw, Loader2, ChevronLeft, ChevronRight, Download } from 'lucide-react'; // Added Download
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import ShareButtons from '@/components/ShareButtons';
 import DateInput from '@/components/DateInput';
 import { canMakeChartRequest, recordChartRequest, getRemainingRequests } from '@/utils/chartRateLimiter';
-import { toast } from 'sonner';
+import { toast as sonnerToast } from 'sonner';
 import { isValidDateString, isValidDateRange, sanitizeDateInput } from '../lib/validation';
 import FlagIcon from '@/pages/FlagIcon'; // Import FlagIcon
+import html2canvas from 'html2canvas'; // Import html2canvas
 
 // --- Currency Info Map ---
 // This map is necessary for units, names, and the new Next/Prev buttons
@@ -269,6 +270,7 @@ const CurrencyHistoricalData: React.FC = () => {
   const [range, setRange] = useState<RangeKey>('week');
   const [dailyLoadProgress, setDailyLoadProgress] = useState<{ percent: number, current: number, total: number } | null>(null);
   const [cooldownTimer, setCooldownTimer] = useState<number>(0);
+  const chartContainerRef = useRef<HTMLDivElement>(null); // --- NEW: Ref for chart container ---
   
   // (Demand 4) State to trigger long-range (>3Y) queries
   const [isLongRangeJobRunning, setIsLongRangeJobRunning] = useState(false);
@@ -392,16 +394,46 @@ const CurrencyHistoricalData: React.FC = () => {
 
   const handleCustomApply = () => {
     if (!isValidDateString(customFromDate) || !isValidDateString(customToDate)) {
-      toast.error("Invalid date format", { description: "Please use YYYY-MM-DD." });
+      sonnerToast.error("Invalid date format", { description: "Please use YYYY-MM-DD." });
       return;
     }
     if (!isValidDateRange(customFromDate, customToDate)) {
-      toast.error("Invalid date range", { description: "Start date must be before end date." });
+      sonnerToast.error("Invalid date range", { description: "Start date must be before end date." });
       return;
     }
     // (Demand 4) Reset the "load data" button click state
     setIsLongRangeJobRunning(false);
   };
+
+  // --- NEW: Export Chart Function ---
+  const handleExportChart = async () => {
+    if (!chartContainerRef.current) {
+      sonnerToast.error("Chart element not found.");
+      return;
+    }
+
+    sonnerToast.info("Generating chart image...", { description: "This may take a moment." });
+
+    try {
+      const canvas = await html2canvas(chartContainerRef.current, {
+        scale: 3, // 3x resolution for "full size" image
+        backgroundColor: '#ffffff', // Explicit white background
+        useCORS: true, // Allow loading flags from CDN
+      });
+
+      const link = document.createElement('a');
+      link.download = `forex-chart-${upperCaseCurrencyCode}-${range}-${toDate}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      sonnerToast.success("Chart downloaded successfully!");
+
+    } catch (err) {
+      console.error("Failed to export chart:", err);
+      sonnerToast.error("Failed to generate chart image.", { description: err instanceof Error ? err.message : 'Unknown error' });
+    }
+  };
+  // --- END NEW FUNCTION ---
 
   // (Demand 5) Next/Prev Currency Buttons
   const { prevCurrencyCode, nextCurrencyCode } = useMemo(() => {
@@ -488,8 +520,19 @@ const CurrencyHistoricalData: React.FC = () => {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="w-full sm:w-auto">
+              <div className="w-full sm:w-auto flex items-center gap-2">
                 <ShareButtons url={pageUrl} title={pageTitle} />
+                {/* --- NEW: Export Button --- */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9"
+                  onClick={handleExportChart}
+                  disabled={isPageLoading || isUpdating || !processedData.chartData || processedData.chartData.length === 0}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Chart
+                </Button>
               </div>
             </div>
           </CardHeader>
@@ -613,7 +656,8 @@ const CurrencyHistoricalData: React.FC = () => {
                       />
                     </div>
                   
-                    <div className="h-[400px] w-full">
+                    {/* --- NEW: Added ref to this div --- */}
+                    <div className="h-[400px] w-full" ref={chartContainerRef} id="chart-to-export">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={processedData.chartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--muted))" />
