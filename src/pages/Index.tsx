@@ -180,9 +180,8 @@ const Index = () => {
   // --- 
   // --- 
   const downloadContentAsImage = async () => {
-    // 1. Determine which rates to render based on the active tab
-    // We use the full 22 rates for both modes as per your layout spec
-    const ratesToRender: Rate[] = rates; 
+    // 1. Determine which rates to render
+    const ratesToRender: Rate[] = rates; // Use all 22 rates
 
     if (!ratesToRender || ratesToRender.length === 0) {
       toast({
@@ -192,6 +191,20 @@ const Index = () => {
       });
       return;
     }
+
+    // --- NEW: Fetch flag-icon-css stylesheet ---
+    let flagCss = '';
+    try {
+      flagCss = await fetch('https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/7.2.2/css/flag-icons.min.css')
+        .then(res => res.text());
+    } catch (e) {
+      console.error("Could not fetch flag CSS", e);
+      toast({
+        title: "Warning",
+        description: "Could not load flag icons for download. Image will be generated without them.",
+      });
+    }
+    // --- END NEW ---
 
     // --- Helper function to get trend data ---
     const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
@@ -210,7 +223,7 @@ const Index = () => {
 
     // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    // Set width to 2400px, which will be scaled by 2 for a 4800px final image
+    // --- UPDATED: Set width to 2400px ---
     wrapper.style.width = '2400px'; 
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
@@ -220,11 +233,18 @@ const Index = () => {
     wrapper.style.alignItems = 'center';
     wrapper.style.boxSizing = 'border-box';
 
+    // --- NEW: Inject fetched flag CSS ---
+    if (flagCss) {
+      const styleTag = document.createElement('style');
+      styleTag.textContent = flagCss;
+      wrapper.appendChild(styleTag);
+    }
+    // --- END NEW ---
 
     // 3. Add High-Contrast Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '80px'; // Larger font for 4800px width
+    titleEl.style.fontSize = '80px'; // Larger font for 2400px width
     titleEl.style.fontWeight = '700';
     titleEl.style.marginBottom = '40px';
     titleEl.style.color = '#111827'; // Dark text
@@ -235,7 +255,7 @@ const Index = () => {
 
     // 4. Re-build content based on viewMode
     if (viewMode === 'table') {
-      // Split rates into two columns
+      // Split rates into two columns (11 rates each)
       const midpoint = Math.ceil(ratesToRender.length / 2); // 22 -> 11
       const column1Rates = ratesToRender.slice(0, midpoint);
       const column2Rates = ratesToRender.slice(midpoint);
@@ -286,7 +306,7 @@ const Index = () => {
           
           // Currency
           const tdCurrency = document.createElement('td');
-          // USE FLAG-ICON-CSS
+          // --- UPDATED: Use flag-icon-css classes ---
           const flagClass = getFlagClass(rate.currency.iso3);
           tdCurrency.innerHTML = `<span style="font-size: 24px; margin-right: 12px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
           tdCurrency.style.fontWeight = '600';
@@ -374,7 +394,7 @@ const Index = () => {
         cardHeader.style.alignItems = 'center';
         cardHeader.style.gap = '12px';
         cardHeader.style.height = '60px';
-        // USE FLAG-ICON-CSS
+        // --- UPDATED: Use flag-icon-css classes ---
         const flagClass = getFlagClass(rate.currency.iso3);
         cardHeader.innerHTML = `
           <span style="font-size: 32px; vertical-align: middle;"><span class="fi fi-${flagClass}"></span></span>
@@ -530,7 +550,8 @@ const Index = () => {
       });
 
       const canvas = await html2canvas(wrapper, {
-        scale: 2, // Scale 2 on a 2400px wrapper = 4800px width
+        // --- UPDATED: Use scale 1 for 2400px width ---
+        scale: 1, 
         backgroundColor: '#ffffff', // Explicit white background
         width: wrapper.offsetWidth,
         height: wrapper.offsetHeight,
@@ -598,8 +619,9 @@ const Index = () => {
 
           {/* Main Title with Date Navigation - Fixed heights */}
           <div className="text-center mb-8 min-h-[100px]">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
-              Foreign Exchange Rates as Per Nepal Rastra Bank
+            {/* --- UPDATED: Title font size reduced --- */}
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 truncate">
+              Foreign Exchange Rates by NRB for {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
             </h2>
 
             {/* --- NEW: Show fallback message --- */}
@@ -629,15 +651,15 @@ const Index = () => {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[240px] justify-center text-left font-normal group relative",
+                      "w-auto px-4 justify-center text-left font-normal group relative", // w-[240px] removed
                       !selectedDate && "text-muted-foreground",
                       // --- NEW: Highlight if showing fallback ---
                       isShowingFallback && "border-orange-300 bg-orange-50 hover:bg-orange-100"
                     )}
                   >
+                    {/* --- UPDATED: Removed formatting, just show date --- */}
                     <span className="text-lg font-semibold text-gray-700">
-                      {/* --- UPDATE: Use displayData date if available --- */}
-                      {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
+                      {format(displayData ? new Date(displayData.date) : selectedDate, 'MMMM d, yyyy')}
                     </span>
                     <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                       Click to change date
