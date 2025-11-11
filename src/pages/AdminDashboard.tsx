@@ -1,6 +1,6 @@
 // src/pages/AdminDashboard.tsx
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/components/ProtectedRoute';
+import { useAuth } from '@/components/ProtectedRoute'; // This import will now work
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -23,18 +23,20 @@ import ForexDataManagement from '@/components/admin/ForexDataManagement';
 import PostsManagement from '@/components/admin/PostsManagement';
 import UserManagement from '@/components/admin/UserManagement';
 import SiteSettingsComponent from '@/components/admin/SiteSettings';
-import ApiSettings from '@/components/admin/ApiSettings'; // --- NEW IMPORT ---
+import ApiSettings from '@/components/admin/ApiSettings';
 
-const AdminDashboard = () => {
-  const { logout } = useAuth();
+const AdminDashboard = ()_blank => {
+  const { logout } = useAuth(); // This will now receive the logout function
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = ()_blank => {
+    logout(); // Call the logout function from context
+    // The ProtectedRoute's effect will handle navigation,
+    // but we can also navigate directly for a faster UI update.
     navigate('/admin/login');
   };
 
-  const goToHome = () => {
+  const goToHome = ()_blank => {
     navigate('/');
   };
 
@@ -63,7 +65,6 @@ const AdminDashboard = () => {
                 <TabsTrigger value="posts">Posts</TabsTrigger>
                 <TabsTrigger value="users">Users</TabsTrigger>
                 <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
-                {/* --- NEW TAB TRIGGER --- */}
                 <TabsTrigger value="api-settings">API Settings</TabsTrigger>
               </TabsList>
             </div>
@@ -132,7 +133,6 @@ const AdminDashboard = () => {
                   </CardContent>
                 </Card>
             </TabsContent>
-            {/* --- NEW TAB CONTENT --- */}
             <TabsContent value="api-settings">
                 <Card>
                   <CardHeader>
