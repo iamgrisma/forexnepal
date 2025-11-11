@@ -88,7 +88,6 @@ const HistoricalCharts = () => {
           {/* Share Buttons */}
           <div className="flex justify-center my-6"> {/* Added my-6 for spacing */}
             <ShareButtons 
-              url="/historical-charts"
               title="Historical Forex Data - Nepal Rastra Bank"
               className="flex-nowrap"
             />

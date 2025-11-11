@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, Suspense, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -159,7 +159,7 @@ const ArchiveDetail = () => {
       },
       enabled: !!comparisonDateStr, // Only run when a comparison date is set
       staleTime: 1000 * 60 * 60 * 24, // Cache for 24 hours
-      keepPreviousData: true,
+      placeholderData: keepPreviousData,
   });
 
   // --- Effect to trigger lazy-loading when tab changes ---
@@ -428,7 +428,6 @@ const ArchiveDetail = () => {
           {/* Share Buttons */}
           <div className="flex justify-center mb-6">
             <ShareButtons 
-              url={`/daily-update/forex-for/${shortDate}`}
               title={`Nepal Rastra Bank Forex Rates for ${formattedDate}`}
             />
           </div>
@@ -942,9 +941,8 @@ const ArchiveTextGenerator = {
   /**
    * Generates the expanded "Market Trend Summary" text (7 Variations)
    */
-  getMarketTrendSummary: (analysisData: DailyAnalysis, historicalAnalysis: HistoricalAnalysisData | null, dayOfWeek: number) => {
+  getMarketTrendSummary: (analysisData: DailyAnalysis, historicalAnalysis: HistoricalAnalysisData | null, dayOfWeek: number, date: string) => {
     const { allRates, majorRates, topGainer, topLoser } = analysisData;
-    const date = allRates[0].date;
     const gainersToday = allRates.filter(r => r.dailyChangePercent > 0.01 && r.currency.iso3 !== 'INR').length;
     const losersToday = allRates.filter(r => r.dailyChangePercent < -0.01 && r.currency.iso3 !== 'INR').length;
     const stableToday = allRates.filter(r => Math.abs(r.dailyChangePercent) <= 0.01 && r.currency.iso3 !== 'INR').length;
@@ -1022,7 +1020,7 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
 
   // This check is crucial, as analysisData might be null during the first render
   if (!analysisData || analysisData.allRates.length === 0) {
-    return <PageSkeleton />; // Or some other loading/empty state
+    return <div className="space-y-4"><Skeleton className="h-32 w-full" /><Skeleton className="h-64 w-full" /></div>;
   }
 
   const { topGainer, topLoser, allRates, top10High, top12Low } = analysisData;
@@ -1040,7 +1038,7 @@ export const GeneratedArchiveArticle: React.FC<ArticleTemplateProps> = (props) =
   // Get the generated text
   const introText = ArchiveTextGenerator.getNewsIntro(longDateHeader, analysisData, dayOfWeek);
   const todaysDetailText = ArchiveTextGenerator.getTodaysForexDetail(analysisData, dayOfWeek);
-  const marketSummaryText = ArchiveTextGenerator.getMarketTrendSummary(analysisData, historicalAnalysis, dayOfWeek);
+  const marketSummaryText = ArchiveTextGenerator.getMarketTrendSummary(analysisData, historicalAnalysis, dayOfWeek, shortDate);
   const rankingsText = ArchiveTextGenerator.getCurrencyRankingsText(shortDate, allRates, dayOfWeek);
 
 

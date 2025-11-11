@@ -83,15 +83,8 @@ const Index = () => {
     }
   }, [prevDayData]);
 
-  // --- THIS IS THE KEY FIX ---
-  // Determine which data to display.
-  // Use today's data (forexData) if it's available and has rates.
-  // Otherwise, fall back to the previous day's data (prevDayData).
-  const displayData: RatesData | undefined = 
-    (forexData?.rates && forexData.rates.length > 0) 
-    ? forexData 
-    : prevDayData;
-  // --- END OF FIX ---
+  // Use forexData if available
+  const displayData: RatesData | undefined = forexData;
 
   useEffect(() => {
     // --- UPDATE: Use displayData ---
@@ -137,10 +130,8 @@ const Index = () => {
     ]);
   };
   
-  // --- UPDATE: Use displayData to populate rates ---
   const rates: Rate[] = displayData?.rates || [];
-  // --- UPDATE: Check if the data being shown is from the fallback ---
-  const isShowingFallback = (!forexData || forexData.rates.length === 0) && (prevDayData?.rates && prevDayData.rates.length > 0);
+  const hasNoData = !isLoading && (!rates || rates.length === 0);
 
 
   const handleDateChange = (date: Date | undefined) => {
@@ -611,18 +602,9 @@ const Index = () => {
 
           {/* Main Title with Date Navigation - Fixed heights */}
           <div className="text-center mb-8 min-h-[100px]">
-            {/* --- UPDATED: Title font size reduced --- */}
             <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 truncate">
               Foreign Exchange Rates by NRB for {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
             </h2>
-
-            {/* --- NEW: Show fallback message --- */}
-            {isShowingFallback && (
-              <div className="text-sm text-orange-600 font-medium animate-fade-in">
-                No data found for {formatDateLong(selectedDate)}. Showing data for {formatDateLong(subDays(selectedDate, 1))}.
-              </div>
-            )}
-            {/* --- END NEW --- */}
 
             <div className="flex items-center justify-center gap-2 h-10 mt-2">
               <Button
@@ -643,10 +625,8 @@ const Index = () => {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-auto px-4 justify-center text-left font-normal group relative", // w-[240px] removed
-                      !selectedDate && "text-muted-foreground",
-                      // --- NEW: Highlight if showing fallback ---
-                      isShowingFallback && "border-orange-300 bg-orange-50 hover:bg-orange-100"
+                      "w-auto px-4 justify-center text-left font-normal group relative",
+                      !selectedDate && "text-muted-foreground"
                     )}
                   >
                     {/* --- UPDATED: Removed formatting, just show date --- */}
@@ -693,7 +673,6 @@ const Index = () => {
           <div className="flex flex-wrap justify-end items-center mb-6 gap-2 min-h-[40px]">
             <div className="overflow-x-auto flex-shrink-0">
               <ShareButtons 
-                url="/"
                 title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}`}
                 className="flex-nowrap"
               />

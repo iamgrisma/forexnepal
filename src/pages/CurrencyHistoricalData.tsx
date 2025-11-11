@@ -526,7 +526,9 @@ const CurrencyHistoricalData: React.FC = () => {
               
               {/* --- FIX: Added flex-wrap and justify-end --- */}
               <div className="w-full sm:w-auto flex flex-wrap items-center justify-start sm:justify-end gap-2">
-                <ShareButtons url={pageUrl} title={pageTitle} />
+          <ShareButtons 
+            title={pageTitle}
+          />
                 {/* --- NEW: Export Button --- */}
                 <Button
                   variant="outline"

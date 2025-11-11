@@ -52,53 +52,42 @@ async function getCachedRates(date: string): Promise<RatesData | null> {
  * This is the primary function for getting daily rates.
  */
 export async function fetchRatesForDateWithCache(date: string, bypassCache: boolean = false): Promise<RatesData> {
-  let retries = 0;
-  const MAX_RETRIES = 3;
+  // 1. Try API first (most current data)
+  try {
+    const apiResponse: ForexResponse = await fetchForexRatesByDate(date);
+    if (apiResponse && apiResponse.data && apiResponse.data.payload.length > 0) {
+      const ratesData = apiResponse.data.payload[0];
+      cacheRates(date, ratesData);
+      return ratesData;
+    }
+  } catch (apiError) {
+    console.warn(`API fetch failed for ${date}, trying DB:`, apiError);
+  }
 
-  while (retries < MAX_RETRIES) {
-    // 1. Try cache first (unless bypassed)
-    if (!bypassCache && retries === 0) {
-      const cachedData = await getCachedRates(date);
-      if (cachedData) {
-        return cachedData;
+  // 2. Try DB via worker as fallback
+  try {
+    const response = await fetch(`${API_URL}/rates/date/${date}`);
+    if (response.ok) {
+      const data: RatesData = await response.json();
+      
+      if (data && data.rates && data.rates.length > 0) {
+        cacheRates(date, data);
+        return data;
       }
     }
+  } catch (dbError) {
+    console.warn(`DB fetch failed for ${date}:`, dbError);
+  }
 
-    // 2. Try DB via worker
-    try {
-      const response = await fetch(`${API_URL}/rates/date/${date}`);
-      if (response.ok) {
-        const data: RatesData = await response.json();
-        
-        // 3. If DB has data, cache and return
-        if (data && data.rates && data.rates.length > 0) {
-          cacheRates(date, data);
-          return data;
-        }
-      }
-    } catch (dbError) {
-      console.warn(`DB fetch attempt ${retries + 1} failed for ${date}:`, dbError);
-    }
-
-    // 4. Fallback to NRB API
-    try {
-      const apiResponse: ForexResponse = await fetchForexRatesByDate(date);
-      if (apiResponse && apiResponse.data && apiResponse.data.payload.length > 0) {
-        const ratesData = apiResponse.data.payload[0];
-        cacheRates(date, ratesData);
-        return ratesData;
-      }
-    } catch (apiError) {
-      console.warn(`API fetch attempt ${retries + 1} failed for ${date}:`, apiError);
-    }
-
-    retries++;
-    if (retries < MAX_RETRIES) {
-      await new Promise(resolve => setTimeout(resolve, 500 * retries)); // Exponential backoff
+  // 3. Try cache as final fallback
+  if (!bypassCache) {
+    const cachedData = await getCachedRates(date);
+    if (cachedData) {
+      return cachedData;
     }
   }
 
-  // Final fallback
+  // Final fallback - no data available
   return { 
     date, 
     rates: [],

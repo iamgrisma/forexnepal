@@ -177,7 +177,6 @@ const PostDetail = () => {
             
             <div className="overflow-x-auto">
               <ShareButtons 
-                url={`/posts/${post.slug}`}
                 title={post.title}
                 className="flex-nowrap"
               />

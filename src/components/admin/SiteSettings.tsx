@@ -34,8 +34,10 @@ const fetchSiteSettings = async (): Promise<SiteSettings> => {
 };
 
 const updateSiteSettings = async (settings: SiteSettings): Promise<SiteSettings> => {
-  // FIX: apiClient.post returns the data directly
   const data = await apiClient.post<SiteSettings>('/admin/settings', settings);
+  if (!data) {
+    throw new Error('Failed to update settings');
+  }
   return data;
 };
 

@@ -224,6 +224,14 @@ const AdminLogin = () => {
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Next
               </Button>
+              <Button
+                type="button"
+                variant="link"
+                onClick={() => navigate('/admin/forgot-password')}
+                className="w-full text-sm"
+              >
+                Forgot Password?
+              </Button>
             </form>
           </CardContent>
         );
@@ -254,6 +262,14 @@ const AdminLogin = () => {
               <Button type="submit" className="w-full" disabled={loading || !password}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Login
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                onClick={() => navigate('/admin/forgot-password')}
+                className="w-full text-sm"
+              >
+                Forgot Password?
               </Button>
             </form>
           </CardContent>

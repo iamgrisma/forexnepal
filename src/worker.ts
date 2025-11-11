@@ -780,6 +780,186 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
 }
 
+// --- NEW: Request Password Reset Handler ---
+async function handleRequestPasswordReset(request: Request, env: Env): Promise<Response> {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    
+    try {
+        const { username } = await request.json();
+        if (!username) {
+            return new Response(JSON.stringify({ success: false, error: 'Username required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Check if user exists and has email
+        const user = await env.FOREX_DB.prepare(
+            `SELECT username, email FROM users WHERE username = ?`
+        ).bind(username).first<{ username: string; email: string | null }>();
+
+        // Always return success for security (don't reveal if user exists)
+        if (!user || !user.email) {
+            return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Generate reset token
+        const resetToken = crypto.randomUUID().replace(/-/g, '');
+        const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+
+        // Store reset token
+        await env.FOREX_DB.prepare(
+            `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
+        ).bind(username, resetToken, expiresAt).run();
+
+        // Call Supabase edge function to send email
+        const SUPABASE_URL = 'https://xxzsmottgfhhessivgtq.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4enNtb3R0Z2ZoaGVzc2l2Z3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MTgyNjUsImV4cCI6MjA3ODM5NDI2NX0.fu6rmyivPDcd3fIEK2Rdm5qOipfn0wjz5JkyQnSDjBw';
+        
+        const resetUrl = `https://forex.grisma.com.np/admin/reset-password?token=${resetToken}`;
+        
+        try {
+            const emailResponse = await fetch(`${SUPABASE_URL}/functions/v1/send-password-reset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                },
+                body: JSON.stringify({
+                    to: user.email,
+                    username: user.username,
+                    resetToken,
+                    resetUrl,
+                }),
+            });
+
+            if (!emailResponse.ok) {
+                console.error('Failed to send reset email:', await emailResponse.text());
+            }
+        } catch (emailError) {
+            console.error('Email sending error:', emailError);
+        }
+
+        return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Request password reset error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+// --- NEW: Reset Password Handler ---
+async function handleResetPassword(request: Request, env: Env): Promise<Response> {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    
+    try {
+        const { token, newPassword } = await request.json();
+        if (!token || !newPassword) {
+            return new Response(JSON.stringify({ success: false, error: 'Token and password required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        if (newPassword.length < 8) {
+            return new Response(JSON.stringify({ success: false, error: 'Password must be >= 8 characters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Find and validate reset token
+        const resetRecord = await env.FOREX_DB.prepare(
+            `SELECT username, expires_at, used FROM password_reset_tokens WHERE token = ?`
+        ).bind(token).first<{ username: string; expires_at: string; used: number }>();
+
+        if (!resetRecord) {
+            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired reset token' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        if (resetRecord.used === 1) {
+            return new Response(JSON.stringify({ success: false, error: 'Reset token already used' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        const expiresAt = new Date(resetRecord.expires_at);
+        if (expiresAt < new Date()) {
+            return new Response(JSON.stringify({ success: false, error: 'Reset token expired' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Hash new password and update user
+        const newPasswordHash = await simpleHash(newPassword);
+        await env.FOREX_DB.prepare(
+            `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
+        ).bind(newPasswordHash, resetRecord.username).run();
+
+        // Mark token as used
+        await env.FOREX_DB.prepare(
+            `UPDATE password_reset_tokens SET used = 1 WHERE token = ?`
+        ).bind(token).run();
+
+        return new Response(JSON.stringify({ success: true, message: "Password reset successfully" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Reset password error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+// --- NEW: User Management Handlers ---
+async function handleUsers(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    
+    try {
+        if (request.method === 'GET') {
+            const { results } = await env.FOREX_DB.prepare(
+                `SELECT username, email, role, is_active, created_at FROM users ORDER BY created_at DESC`
+            ).all();
+            return new Response(JSON.stringify({ success: true, users: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        if (request.method === 'POST') {
+            const { username, email, password, role } = await request.json();
+            if (!username || !password) {
+                return new Response(JSON.stringify({ success: false, error: 'Username and password required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            
+            const passwordHash = await simpleHash(password);
+            await env.FOREX_DB.prepare(
+                `INSERT INTO users (username, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`
+            ).bind(username, email || null, passwordHash, role || 'admin').run();
+            
+            return new Response(JSON.stringify({ success: true }), { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error('User management error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+async function handleUserById(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    
+    const url = new URL(request.url);
+    const username = url.pathname.split('/').pop();
+    
+    try {
+        if (request.method === 'DELETE') {
+            await env.FOREX_DB.prepare(`DELETE FROM users WHERE username = ?`).bind(username).run();
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error('User delete error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
 async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -1070,6 +1250,12 @@ export default {
         if (pathname === '/api/admin/change-password') {
             return handleChangePassword(request, env);
         }
+        if (pathname === '/api/admin/request-password-reset') {
+            return handleRequestPasswordReset(request, env);
+        }
+        if (pathname === '/api/admin/reset-password') {
+            return handleResetPassword(request, env);
+        }
 
         // ADMIN API - Data/Posts/Settings (Requires Token Verification)
         // Note: The handlers perform their own token check
@@ -1078,6 +1264,12 @@ export default {
         }
         if (pathname === '/api/admin/forex-data') {
             return handleForexData(request, env);
+        }
+        if (pathname === '/api/admin/users') {
+            return handleUsers(request, env);
+        }
+        if (pathname.startsWith('/api/admin/users/')) {
+            return handleUserById(request, env);
         }
         if (pathname === '/api/admin/posts') {
             return handlePosts(request, env);

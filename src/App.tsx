@@ -19,6 +19,8 @@ const Disclosure = lazy(() => import("./pages/Disclosure"));
 const AdsTxt = lazy(() => import("./pages/AdsTxt"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const AdminLogin = lazy(() => import("./pages/AdminLogin"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Posts = lazy(() => import("./pages/Posts"));
 const PostDetail = lazy(() => import("./pages/PostDetail"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
@@ -73,6 +75,8 @@ const App = () => (
 
         {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/forgot-password" element={<ForgotPassword />} />
+        <Route path="/admin/reset-password" element={<ResetPassword />} />
 
         {/* --- Protected Admin Routes --- */}
         {/* The ProtectedRoute component wraps all routes that need authentication */}
