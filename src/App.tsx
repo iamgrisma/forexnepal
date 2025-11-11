@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'; // <-- This was the typo
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'; // <-- This line is now fixed
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Index from './pages/Index';
 import About from './pages/About';
@@ -13,7 +13,7 @@ import { Toaster } from "@/components/ui/toaster"; // shadcn toaster
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"; // sonner toaster
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import HistoricalCharts from './pages/HistoricalCharts';
-import CurrencyHistoricalData from './pages/CurrencyHistoricalData';
+import CurrencyHistoricalData from './pagesData.tsx';
 import ConverterProfitCalculator from './pages/ConverterProfitCalculator';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
