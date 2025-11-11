@@ -12,7 +12,12 @@ database_id = "05ede330-5c35-4aee-8843-6c3527817925" # Replace with your actual 
 # KV namespace for static assets
 [[kv_namespaces]]
 binding = "__STATIC_CONTENT"
-id = "YOUR_KV_NAMESPACE_ID" # Replace with your actual KV namespace ID
+id = "4832be13ba554d09a34e4890957d78e5" # Replace with your actual KV namespace ID
+
+# --- NEW: KV namespace for API settings cache ---
+[[kv_namespaces]]
+binding = "API_SETTINGS_CACHE"
+id = "aaccf23c215949aea14b2cd7bcc8ccca" # Create this in Cloudflare and paste its ID here
 
 # Multiple cron schedules for database updates (Nepal Time = UTC+5:45)
 # 12:00 AM NPT = 6:15 PM UTC (18:15 UTC)
