@@ -3,10 +3,10 @@ import { Env, ExecutionContext, ScheduledEvent } from './worker-types';
 import { corsHeaders } from './constants';
 import { handleScheduled } from './scheduled';
 import { handleSitemap } from './sitemapGenerator';
-import * as auth from './auth'; // --- THIS IS THE FIX ---
-import { checkApiAccess } from './api-helpers'; // NEW: Import the access checker
+import * as auth from './auth'; // Correct import
+import { checkApiAccess } from './api-helpers';
 
-// NEW: Import handlers from the new refactored files
+// Import handlers from the new refactored files
 import {
     handlePublicSettings,
     handleLatestRates,
@@ -61,7 +61,6 @@ export default {
         // --- API Routes ---
         if (pathname.startsWith('/api/')) {
             
-            // --- NEW: API Access Check Middleware ---
             let accessResponse: Response | null = null;
             
             // --- Public Endpoints (Apply checkApiAccess) ---
@@ -71,7 +70,6 @@ export default {
                 '/api/image/latest-rates', '/api/archive/list', '/api/archive/detail/:date'
             ];
             
-            // Normalize path for dynamic routes
             let endpointToCheck = pathname;
             if (pathname.startsWith('/api/posts/')) endpointToCheck = '/api/posts/:slug';
             if (pathname.startsWith('/api/rates/date/')) endpointToCheck = '/api/rates/date/:date';
@@ -80,7 +78,7 @@ export default {
             if (publicEndpoints.includes(endpointToCheck)) {
                 accessResponse = await checkApiAccess(request, env, ctx, endpointToCheck);
                 if (accessResponse) {
-                    return accessResponse; // Access denied (disabled, quota, etc.)
+                    return accessResponse; 
                 }
             }
             
@@ -105,8 +103,6 @@ export default {
             if (pathname.startsWith('/api/posts/') && method === 'GET') {
                 return handlePublicPostBySlug(request, env);
             }
-            
-            // NEW Public API Routes
             if (pathname === '/api/image/latest-rates' && method === 'GET') {
                 return handleImageApi(request, env);
             }
@@ -117,66 +113,63 @@ export default {
                 return handleArchiveDetailApi(request, env);
             }
 
-            // --- Admin Auth Routes (No token required) ---
+            // --- Admin Auth Routes (No token required, but pass secret for token generation) ---
             if (pathname === '/api/admin/check-user' && method === 'POST') {
                 return handleCheckUser(request, env);
             }
             if (pathname === '/api/admin/login' && method === 'POST') {
-                return handleAdminLogin(request, env);
+                return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
             if (pathname === '/api/admin/request-password-reset' && method === 'POST') {
-                return handleRequestPasswordReset(request, env, ctx);
+                return handleRequestPasswordReset(request, env, ctx); // env contains BREVO_API_KEY
             }
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
 
             // --- Admin Protected Routes (Token required) ---
-            // All other /api/admin/* routes
             if (pathname.startsWith('/api/admin/')) {
                 const authHeader = request.headers.get('Authorization');
                 const token = authHeader?.replace('Bearer ', '');
                 
-                // Use the auth object to call verifyToken
-                if (!token || !(await auth.verifyToken(token))) {
+                // Pass the secret from env to verifyToken
+                if (!token || !(await auth.verifyToken(token, env.JWT_SECRET))) {
                     return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 }
 
                 // Token is valid, proceed to admin handlers
                 if (pathname === '/api/admin/change-password' && method === 'POST') {
-                    return handleChangePassword(request, env);
+                    return handleChangePassword(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/fetch-nrb' && method === 'POST') {
-                    return handleFetchAndStore(request, env);
+                    return handleFetchAndStore(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/settings') {
-                    return handleSiteSettings(request, env); // GET or POST
+                    return handleSiteSettings(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/users' && (method === 'GET' || method === 'POST')) {
-                    return handleUsers(request, env);
+                    return handleUsers(request, env); // env contains JWT_SECRET
                 }
                 if (pathname.startsWith('/api/admin/users/') && method === 'DELETE') {
-                    return handleUserById(request, env);
+                    return handleUserById(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/posts' && (method === 'GET' || method === 'POST')) {
-                    return handlePosts(request, env);
+                    return handlePosts(request, env); // env contains JWT_SECRET
                 }
                 if (pathname.startsWith('/api/admin/posts/') && (method === 'GET' || method === 'PUT' || method === 'DELETE')) {
-                    return handlePostById(request, env);
+                    return handlePostById(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/forex-data' && (method === 'GET' || method === 'POST')) {
-                    return handleForexData(request, env);
+                    return handleForexData(request, env); // env contains JWT_SECRET
                 }
-                
-                // NEW Admin API Settings Routes
                 if (pathname === '/api/admin/api-settings' && method === 'GET') {
-                    return handleGetApiSettings(request, env);
+                    return handleGetApiSettings(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
-                    return handleUpdateApiSettings(request, env);
+                    return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
             }
 
