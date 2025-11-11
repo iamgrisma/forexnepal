@@ -154,7 +154,7 @@ const Index = () => {
 
   // --- 
   // --- 
-  // --- START: CORRECTED FUNCTION ---
+  // --- UPDATED IMAGE DOWNLOAD FUNCTION ---
   // --- 
   // --- 
   const downloadContentAsImage = async () => {
@@ -177,8 +177,9 @@ const Index = () => {
         return { diff: 0, trend: 'stable' }; 
       }
       
-      const prevValue = parseFloat(prevRate[type].toString()) / (prevRate.currency.unit || 1);
-      const currentValue = parseFloat(currentRate[type].toString()) / (currentRate.currency.unit || 1);
+      // --- FIX: Use parseFloat with fallback to 0 to handle null/string ---
+      const prevValue = parseFloat(prevRate[type] as any || 0) / (prevRate.currency.unit || 1);
+      const currentValue = parseFloat(currentRate[type] as any || 0) / (currentRate.currency.unit || 1);
       const diff = currentValue - prevValue;
       
       const trend = diff > 0.0001 ? 'increase' : (diff < -0.0001 ? 'decrease' : 'stable');
@@ -187,7 +188,6 @@ const Index = () => {
 
     // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    // --- FIX: Set explicit width for wrapper in BOTH modes ---
     wrapper.style.width = '2400px'; 
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
@@ -274,14 +274,16 @@ const Index = () => {
 
           // Buy Rate
           const tdBuy = document.createElement('td');
-          tdBuy.textContent = rate.buy.toFixed(2);
+          // --- FIX: Wrap in Number() with fallback to 0 ---
+          tdBuy.textContent = Number(rate.buy || 0).toFixed(2);
           tdBuy.style.color = '#15803D'; // Dark green
           tdBuy.style.fontWeight = '700';
           tdBuy.style.textAlign = 'right';
           
           // Sell Rate
           const tdSell = document.createElement('td');
-          tdSell.textContent = rate.sell.toFixed(2);
+          // --- FIX: Wrap in Number() with fallback to 0 ---
+          tdSell.textContent = Number(rate.sell || 0).toFixed(2);
           tdSell.style.color = '#B91C1C'; // Dark red
           tdSell.style.fontWeight = '700';
           tdSell.style.textAlign = 'right';
@@ -334,10 +336,8 @@ const Index = () => {
       
       const numColumns = 6;
       const gap = 24;
-      // --- FIX: Calculate explicit pixel width based on 2400px wrapper ---
       const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
       const cardWidthPx = (2400 - totalGapWidth) / numColumns; // (2400 - 120) / 6 = 380px
-      // ---
 
       // --- Helper to build a single card ---
       const buildGridCard = (rate: Rate) => {
@@ -352,11 +352,9 @@ const Index = () => {
         card.style.boxSizing = 'border-box';
         card.style.height = '280px'; 
         card.style.justifyContent = 'space-between'; 
-        // --- FIX: Use explicit pixel width ---
         card.style.flexBasis = `${cardWidthPx}px`;
         card.style.flexGrow = '0';
         card.style.flexShrink = '0';
-        // ---
 
         // Card Header
         const cardHeader = document.createElement('div');
@@ -392,7 +390,8 @@ const Index = () => {
         buyBox.style.textAlign = 'center';
         buyBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
-          <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${rate.buy.toFixed(2)}</div>
+          // --- FIX: Wrap in Number() with fallback to 0 ---
+          <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${Number(rate.buy || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${buyTrend.trend === 'increase' ? `▲ +${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
           </div>
@@ -407,7 +406,8 @@ const Index = () => {
         sellBox.style.textAlign = 'center';
         sellBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
-          <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${rate.sell.toFixed(2)}</div>
+          // --- FIX: Wrap in Number() with fallback to 0 ---
+          <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${Number(rate.sell || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${sellTrend.trend === 'increase' ? `▲ +${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
           </div>
@@ -464,11 +464,9 @@ const Index = () => {
       infoBox.style.lineHeight = '1.6';
       infoBox.style.height = '280px'; // --- Match card height ---
       infoBox.style.boxSizing = 'border-box';
-      // --- FIX: Calculate explicit pixel width for info box ---
       const infoBoxWidthPx = (cardWidthPx * 2) + gap; // (380 * 2) + 24 = 784px
       infoBox.style.flexBasis = `${infoBoxWidthPx}px`;
       infoBox.style.flexShrink = '0';
-      // ---
       
       infoBox.style.display = 'flex';
       infoBox.style.flexDirection = 'column';
@@ -529,11 +527,10 @@ const Index = () => {
       });
 
       const canvas = await html2canvas(wrapper, {
-        // --- FIX: Use explicit 2400px width and remove height ---
         scale: 1, 
         backgroundColor: '#ffffff', 
-        width: 2400,
-        useCORS: true,
+        width: 2400, // --- FIX: Use explicit 2400px width ---
+        useCORS: true, 
       });
 
       const link = document.createElement('a');
@@ -614,7 +611,7 @@ const Index = () => {
                 className="group relative"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
-                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowDrap">
+                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                   Previous Day
                 </span>
               </Button>
