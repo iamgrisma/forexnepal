@@ -8,7 +8,6 @@ import { verifyToken, simpleHash, simpleHashCompare, generateToken } from './aut
 import { processAndStoreApiData } from './scheduled';
 import { getAllSettings } from './api-helpers';
 
-// Key for the KV cache. Must match api-helpers.ts
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
 /**
@@ -17,7 +16,7 @@ const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 export async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -26,7 +25,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     const toDate = url.searchParams.get('to');
     
     if (!fromDate || !toDate) {
-           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
+           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status 400, headers: corsHeaders });
     }
 
     try {
@@ -61,7 +60,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
 export async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -88,7 +87,6 @@ export async function handleSiteSettings(request: Request, env: Env): Promise<Re
 
             await env.FOREX_DB.batch([stmt1, stmt2, stmt3]);
             
-            // --- FIX: Clear the API settings cache ---
             await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY); 
 
             const updatedSettings = await getAllSettings(env.FOREX_DB);
@@ -204,7 +202,7 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const token = await generateToken(username);
+        const token = await generateToken(username, env.JWT_SECRET); // <-- Pass secret
         return new Response(JSON.stringify({
             success: true,
             token,
@@ -249,7 +247,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     }
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -491,7 +489,7 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
 export async function handleUsers(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -533,7 +531,7 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
 export async function handleUserById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -559,7 +557,7 @@ export async function handleUserById(request: Request, env: Env): Promise<Respon
 export async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -598,7 +596,7 @@ export async function handlePosts(request: Request, env: Env): Promise<Response>
 export async function handlePostById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     const url = new URL(request.url);
@@ -651,7 +649,7 @@ export async function handlePostById(request: Request, env: Env): Promise<Respon
 export async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -715,7 +713,7 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
 export async function handleGetApiSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -734,7 +732,7 @@ export async function handleGetApiSettings(request: Request, env: Env): Promise<
 export async function handleUpdateApiSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
