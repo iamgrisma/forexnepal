@@ -346,7 +346,7 @@ const Index = () => {
       const numColumns = 6;
       const gap = 24;
       const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
-      const cardWidthPx = (2520 - totalGapWidth) / numColumns; // (2520 - 120) / 6 = 380px
+      const cardWidthPx = (2400 - totalGapWidth) / numColumns; // (2400 - 120) / 6 = 380px
 
       // --- Helper to build a single card ---
       const buildGridCard = (rate: Rate) => {
@@ -533,12 +533,19 @@ const Index = () => {
         description: "This may take a few seconds for high resolution.",
       });
 
+      // --- 
+      // --- THIS IS THE FIX ---
+      // --- 
       const canvas = await html2canvas(wrapper, {
         scale: 1, 
         backgroundColor: '#ffffff', 
-        width: 2400, // --- FIX: Use explicit 2400px width ---
+        width: wrapper.offsetWidth,  // Use the element's full calculated width (2480px)
+        height: wrapper.offsetHeight, // Use the element's full calculated height
         useCORS: true, 
       });
+      // --- 
+      // --- END OF FIX ---
+      // --- 
 
       const link = document.createElement('a');
       link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.png`;
