@@ -13,6 +13,7 @@ import { getAllSettings } from './api-helpers';
 export async function handlePublicSettings(request: Request, env: Env): Promise<Response> {
     try {
         const settings = await getAllSettings(env.FOREX_DB);
+        // Only return public-safe settings
         const publicSettings = {
             ticker_enabled: settings.ticker_enabled,
             adsense_enabled: settings.adsense_enabled,
@@ -23,7 +24,7 @@ export async function handlePublicSettings(request: Request, env: Env): Promise<
             headers: {
                 ...corsHeaders,
                 'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=300'
+                'Cache-Control': 'public, max-age=300' // Cache public settings for 5 mins
             }
         });
     } catch (e: any) {
@@ -40,7 +41,7 @@ async function getLatestForexRow(env: Env): Promise<any> {
     const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
     
     const todayStr = formatDate(nowNpt);
-    const yesterdayStr = formatDate(new Date(nowNpt.getTime() - 86400000));
+    const yesterdayStr = formatDate(new Date(nowNpt.getTime() - 86400000)); // 24h ago
 
     let row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(todayStr).first<any>();
     if (!row) {
@@ -91,6 +92,7 @@ export async function handleLatestRates(request: Request, env: Env): Promise<Res
         return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
     }
 }
+
 
 /**
  * (PUBLIC) Fetches rates for a specific date from the DB.
@@ -164,6 +166,7 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
 
     try {
         if (currencyCode) {
+            // Logic for single currency chart
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
                 return new Response(JSON.stringify({ success: false, error: 'Invalid currency' }), { status: 400, headers: corsHeaders });
@@ -204,6 +207,7 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         } else {
+            // Logic for multi-currency comparison (e.g., profit calculator)
             const sql = `
                 SELECT * FROM forex_rates
                 WHERE date = ? OR date = ?
@@ -286,7 +290,7 @@ export async function handlePublicPostBySlug(request: Request, env: Env): Promis
 /**
  * (PUBLIC) API for Image Embed
  * Returns JSON data needed for the client-side image render.
- * Does not generate an image on the server.
+ * This API returns the data, the client builds the HTML/image.
  */
 export async function handleImageApi(request: Request, env: Env): Promise<Response> {
     try {
@@ -314,10 +318,10 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
                 let sellTrend = { diff: 0, trend: 'stable' };
 
                 if (prevRow) {
-                    const prevBuy = prevRow[`${code}_buy`] / (prevRow.unit || 1);
-                    const prevSell = prevRow[`${code}_sell`] / (prevRow.unit || 1);
-                    const currentBuy = buyRate / unit;
-                    const currentSell = sellRate / unit;
+                    const prevBuy = (prevRow[`${code}_buy`] || 0) / (CURRENCY_MAP[code]?.unit || 1);
+                    const prevSell = (prevRow[`${code}_sell`] || 0) / (CURRENCY_MAP[code]?.unit || 1);
+                    const currentBuy = (buyRate || 0) / unit;
+                    const currentSell = (sellRate || 0) / unit;
                     
                     const buyDiff = currentBuy - prevBuy;
                     const sellDiff = currentSell - prevSell;
@@ -410,7 +414,6 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
     }
 
     try {
-        // Fetch data for the selected date and the day before
         const prevDate = formatDate(new Date(new Date(date).getTime() - 86400000));
         
         const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
@@ -420,7 +423,6 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
             return new Response(JSON.stringify({ error: 'No data found for this date' }), { status: 404, headers: corsHeaders });
         }
         
-        // --- Re-generate text content (simplified version of ArchiveDetail.tsx logic) ---
         const usdRate = row['USD_buy'];
         const usdSell = row['USD_sell'];
         let gainerName = 'N/A';
@@ -436,8 +438,8 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
                 if (code === 'INR') continue;
                 
                 const unit = CURRENCY_MAP[code]?.unit || 1;
-                const buy = row[`${code}_buy`] / unit;
-                const prevBuy = prevRow[`${code}_buy`] / unit;
+                const buy = (row[`${code}_buy`] || 0) / unit;
+                const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
                 
                 if (buy && prevBuy) {
                     const change = buy - prevBuy;
