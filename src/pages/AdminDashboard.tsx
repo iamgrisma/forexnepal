@@ -139,7 +139,7 @@ const AdminDashboard = () => {
                     <CardTitle>API Settings</CardTitle>
                     <CardDescription>
                       Manage public API access, restrictions, and quotas.
-                    </D escription>
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ApiSettings />
