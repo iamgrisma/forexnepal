@@ -12,17 +12,13 @@ database_id = "05ede330-5c35-4aee-8843-6c3527817925" # Replace with your actual 
 # KV namespace for static assets
 [[kv_namespaces]]
 binding = "__STATIC_CONTENT"
-id = "4832be13ba554d09a34e4890957d78e5" # Replace with your actual KV namespace ID
+id = "YOUR_KV_NAMESPACE_ID" # Replace with your actual KV namespace ID
 
-# --- NEW: KV namespace for API settings cache ---
+# KV namespace for API settings cache
 [[kv_namespaces]]
 binding = "API_SETTINGS_CACHE"
-id = "aaccf23c215949aea14b2cd7bcc8ccca" # Create this in Cloudflare and paste its ID here
+id = "YOUR_NEW_API_SETTINGS_KV_ID" # Your ID for the API cache
 
-# Multiple cron schedules for database updates (Nepal Time = UTC+5:45)
-# 12:00 AM NPT = 6:15 PM UTC (18:15 UTC)
-# 12:20 AM NPT = 6:35 PM UTC (18:35 UTC)
-# 5:00 AM NPT = 11:15 PM UTC (23:15 UTC)
 [triggers]
 crons = ["15 18 * * *", "35 18 * * *", "15 23 * * *"]
 
@@ -34,3 +30,5 @@ command = "npm run build"
 
 [build.upload]
 format = "service-worker"
+[vars]
+JWT_SECRET = "a-quick-br0wn-f0x+jump$0verThelazydog=-=-3443434324832423849329874fdshasdlfa---==-+++@#$%^oeuhsfaehdofasd"
