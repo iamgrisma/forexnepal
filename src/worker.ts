@@ -3,7 +3,7 @@ import { Env, ExecutionContext, ScheduledEvent } from './worker-types';
 import { corsHeaders } from './constants';
 import { handleScheduled } from './scheduled';
 import { handleSitemap } from './sitemapGenerator';
-import { verifyToken } as auth from './auth';
+import * as auth from './auth'; // --- THIS IS THE FIX ---
 import { checkApiAccess } from './api-helpers'; // NEW: Import the access checker
 
 // NEW: Import handlers from the new refactored files
@@ -62,10 +62,6 @@ export default {
         if (pathname.startsWith('/api/')) {
             
             // --- NEW: API Access Check Middleware ---
-            // This check runs for all public API endpoints.
-            // Admin endpoints are checked individually *after* this.
-            // We apply it here for public routes.
-            
             let accessResponse: Response | null = null;
             
             // --- Public Endpoints (Apply checkApiAccess) ---
@@ -144,6 +140,7 @@ export default {
                 const authHeader = request.headers.get('Authorization');
                 const token = authHeader?.replace('Bearer ', '');
                 
+                // Use the auth object to call verifyToken
                 if (!token || !(await auth.verifyToken(token))) {
                     return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 }
@@ -193,41 +190,7 @@ export default {
 
         // --- Serve Static Assets (from KV) ---
         try {
-            // This relies on the Pages "catch-all" behavior configured in _routes.json
-            // or the default behavior of serving assets.
-            // For a pure worker, you'd use env.__STATIC_CONTENT.get(...)
-            // But since this is a Pages project, we let it fall through.
-            
-            // This is a common pattern for SPA (Single Page App) routing
-            // If the file isn't found, it should serve index.html
-            
-            // Let Pages function handle static assets
-            // The `next()` function is typically available in Pages functions middleware
-            // In a pure worker, this part is handled differently.
-            // Assuming this is a Pages project, we just need to handle API routes.
-            // The rest will be handled by the static asset server.
-            
-            // Fallback for SPA routing - if not an asset, serve index.html
-            // This logic is often implicit in Pages, but explicit here for clarity.
-            // We assume if it's not an API route, Pages will try to find it.
-            // If it fails, it should serve the index.html for client-side routing.
-            
-            // This part is tricky without seeing the full Pages setup.
-            // We'll assume that Pages handles non-API routes.
-            // If you're using a worker *only*, you need to serve index.html:
-            /*
-            if (method === 'GET') {
-                const asset = await env.__STATIC_CONTENT.get(pathname);
-                if (asset) {
-                    // ... serve asset
-                }
-                // Serve index.html as SPA fallback
-                const indexHtml = await env.__STATIC_CONTENT.get('index.html');
-                return new Response(indexHtml, { headers: { 'Content-Type': 'text/html' }});
-            }
-            */
-            // Since you have a complex setup, we'll let non-API routes fall through
-            // to the default Pages behavior.
+            return env.__STATIC_CONTENT.fetch(request);
         } catch (e) {
             // Fallback: Serve index.html for SPA routing
             try {
@@ -237,9 +200,5 @@ export default {
                 return new Response('Not found', { status: 404, headers: corsHeaders });
             }
         }
-        
-        // This return is crucial for Pages to serve static files
-        // We're returning the original request to be handled by the static asset server
-        return env.__STATIC_CONTENT.fetch(request);
     },
 };
