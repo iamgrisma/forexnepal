@@ -1,6 +1,5 @@
 // src/worker.ts
 import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
-// Make sure Rate and RatesData are imported correctly
 import type { Rate, RatesData } from './types/forex';
 
 // --- SITEMAP IMPORTS ---
@@ -46,9 +45,12 @@ interface ScheduledEvent {
     cron: string;
 }
 
+// --- UPDATED ENV INTERFACE ---
 export interface Env {
     FOREX_DB: D1Database;
     __STATIC_CONTENT: KVNamespace;
+    // This secret must be set in your Cloudflare project
+    BREVO_API_KEY: string; 
 }
 
 // --- CURRENCIES List ---
@@ -100,13 +102,13 @@ function formatDate(date: Date): string {
     return `${year}-${month}-${day}`;
 }
 
-// --- Type for Settings (NEW) ---
+// --- Type for Settings ---
 interface SiteSettings {
     ticker_enabled: boolean;
     adsense_enabled: boolean;
 }
 
-// Helper to safely get settings (NEW)
+// Helper to safely get settings
 async function getAllSettings(db: D1Database): Promise<SiteSettings> {
     const { results } = await db.prepare("SELECT key, value FROM site_settings").all();
     const settings: any = {
@@ -118,14 +120,12 @@ async function getAllSettings(db: D1Database): Promise<SiteSettings> {
             if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
                 settings[row.key] = row.value === 'true';
             }
-            // Ignore other settings keys for this specific return type
         });
     }
     return settings;
 }
 
-// --- *** DATA INGESTION LOGIC *** ---
-// MODIFIED to handle 'update' vs 'replace'
+// --- DATA INGESTION LOGIC ---
 async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'replace'): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
@@ -166,26 +166,17 @@ async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'r
         if (hasRatesForDate) {
             let query: string;
             if (action === 'replace') {
-                // --- REPLACE LOGIC ---
-                // This overwrites the entire row.
                 query = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
             
             } else {
-                // --- UPDATE (EMPTY) LOGIC ---
-                // This inserts a new row OR updates an existing one,
-                // but only fills in fields that are currently NULL.
                 const updateSetters: string[] = [];
-                // Build the SET clause for the ON CONFLICT
                 CURRENCIES.forEach(code => {
                     const buyCol = `"${code}_buy"`;
                     const sellCol = `"${code}_sell"`;
-                    // COALESCE(existing_value, new_value)
-                    // If existing_value is NOT NULL, it's used.
-                    // If existing_value IS NULL, the new_value (from 'excluded') is used.
                     updateSetters.push(`${buyCol} = COALESCE(forex_rates.${buyCol}, excluded.${buyCol})`);
                     updateSetters.push(`${sellCol} = COALESCE(forex_rates.${sellCol}, excluded.${sellCol})`);
                 });
-                updateSetters.push("updated_at = datetime('now')"); // Always update the timestamp
+                updateSetters.push("updated_at = datetime('now')");
 
                 query = `
                     INSERT INTO forex_rates (${wideColumns.join(', ')}) 
@@ -207,17 +198,12 @@ async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'r
     return processedDates;
 }
 
-// --- NEW HELPER FUNCTION ---
-/**
- * Copies the data from the previous day's row into a new row for the given date.
- */
 async function copyPreviousDayData(prevDayRow: any, todayDateStr: string, env: Env): Promise<void> {
     if (!prevDayRow) {
         console.error(`Cannot copy data for ${todayDateStr}: Previous day's data is null.`);
         return;
     }
 
-    // Prepare columns and values, excluding 'date' and 'updated_at'
     const columns: string[] = [];
     const values: (string | number | null)[] = [];
     
@@ -240,18 +226,15 @@ async function copyPreviousDayData(prevDayRow: any, todayDateStr: string, env: E
 }
 
 
-// --- UPDATED CRON JOB FUNCTION FOR 3 SCHEDULES ---
 async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
     console.log(`[cron ${event.cron}] Triggered at ${new Date().toISOString()}`);
     
-    // Get current time in NPT (UTC+5:45)
     const nowUtc = new Date();
     const nptOffsetMs = (5 * 60 + 45) * 60 * 1000;
     const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
     const todayNptStr = formatDate(nowNpt);
 
     try {
-        // 1. Check if data already exists
         const existingData = await env.FOREX_DB.prepare(
             `SELECT date FROM forex_rates WHERE date = ?`
         ).bind(todayNptStr).first();
@@ -261,15 +244,12 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
             return;
         }
 
-        // 2. Attempt to fetch from NRB API
         console.log(`[cron ${event.cron}] No data for ${todayNptStr}. Fetching from NRB...`);
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=1&from=${todayNptStr}&to=${todayNptStr}`;
         const response = await fetch(apiUrl);
 
         if (response.ok) {
             const data = await response.json();
-            // --- CRON Job should always use 'replace' to ensure it gets the new data ---
-            // 'update' is for admins to fill gaps. Cron should be the source of truth.
             const processedDates = await processAndStoreApiData(data, env, 'replace');
             console.log(`[cron ${event.cron}] Successfully stored ${processedDates} record(s) for ${todayNptStr}.`);
             return;
@@ -278,7 +258,6 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
         if (response.status === 404) {
             console.log(`[cron ${event.cron}] NRB data not published yet (404).`);
             
-            // On the 5:00 AM schedule (final attempt), copy previous day's data
             const isFinalAttempt = event.cron === "15 23 * * *"; // 23:15 UTC = 5:00 AM NPT
             
             if (isFinalAttempt) {
@@ -310,11 +289,9 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
 }
 
 
-// --- API Handlers (Updated) ---
+// --- API Handlers ---
 
-// --- MODIFIED: handleFetchAndStore ---
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
-    // This function is now the manual run equivalent of the cron job (for admin use)
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
     if (!token || !(await verifyToken(token))) {
@@ -330,12 +307,10 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
     }
 
     try {
-        // --- Read the action from the body ---
         const { action } = await request.json() as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
             return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: corsHeaders });
         }
-        // --- End reading action ---
 
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDate}&to=${toDate}`;
         const response = await fetch(apiUrl);
@@ -348,7 +323,6 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         }
 
         const data = await response.json();
-        // --- Pass the action to the processing function ---
         const processedDates = await processAndStoreApiData(data, env, action);
 
         return new Response(JSON.stringify({ success: true, stored: processedDates, fromDate, toDate }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -357,20 +331,13 @@ async function handleFetchAndStore(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: corsHeaders });
     }
 }
-// --- END MODIFICATION ---
 
-// --- *** NEW: Handler for /api/rates/date/:date *** ---
-/**
- * Fetches the wide-row data for a *single date* and transforms it
- * into the RatesData object format that the frontend expects.
- */
 async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const date = url.pathname.split('/').pop(); // Get last part of URL, e.g., "2025-11-06"
+    const date = url.pathname.split('/').pop();
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
     if (!date || !dateRegex.test(date)) {
-        // Return an empty RatesData structure on bad request
         return new Response(JSON.stringify({ date: date, rates: [] }), { 
             status: 400, 
             headers: {...corsHeaders, 'Content-Type': 'application/json'} 
@@ -381,19 +348,16 @@ async function handleRatesByDate(request: Request, env: Env): Promise<Response> 
         const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
 
         if (!row) {
-            // Return empty RatesData, frontend (d1ForexService) will fallback to NRB API
             return new Response(JSON.stringify({ date: date, rates: [] }), { 
                 status: 404, 
                 headers: {...corsHeaders, 'Content-Type': 'application/json'} 
             });
         }
 
-        // Transform wide row to RatesData
         const rates: Rate[] = [];
         CURRENCIES.forEach(code => {
             const buyRate = row[`${code}_buy`];
             const sellRate = row[`${code}_sell`];
-            // Only add if data exists for that currency on that day
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
                     currency: { ...CURRENCY_MAP[code], iso3: code },
@@ -420,9 +384,6 @@ async function handleRatesByDate(request: Request, env: Env): Promise<Response> 
     }
 }
 
-
-// --- *** FINAL, CORRECTED `handleHistoricalRates` *** ---
-// This handles: 1. Single currency for charts, 2. Single date fetch, 3. Date range for ArchiveDetail tabs
 async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const currencyCode = url.searchParams.get('currency');
@@ -437,24 +398,20 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
     try {
         if (currencyCode) {
-            // 1. Query for a SINGLE CURRENCY (for Charts) - API ONLY
             const upperCaseCurrencyCode = currencyCode.toUpperCase();
             if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
                 return new Response(JSON.stringify({ success: false, error: 'Invalid currency' }), { status: 400, headers: corsHeaders });
             }
             
-            // Build the query to fetch the specific column
             let samplingClause = "";
             const bindings = [fromDate, toDate];
 
-            // Sampling logic is simplified to just skip rows based on date math for efficiency
             if (sampling !== 'daily') {
                 switch (sampling) {
-                    case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break; // Assumes Thursday as NRB's typical update day (or just some day)
+                    case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break;
                     case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
                     case 'yearly': samplingClause = "AND (CAST(STRFTIME('%j', date) AS INT) IN (1, 180, 365))"; break;
                 }
-                // Always include boundary dates, which is simpler than the complex sampling before
                 samplingClause += ` OR date = ? OR date = ?`;
                 bindings.push(fromDate, toDate);
             }
@@ -469,13 +426,11 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             
             const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
             
-            // Normalize per-unit rates (Fixes the issue with JPY/KRW values being large)
             const currencyInfo = CURRENCY_MAP[upperCaseCurrencyCode];
             const unit = currencyInfo?.unit || 1;
             
             const chartData = results.map((item: any) => ({
                 date: item.date,
-                // Ensure null rates are handled (e.g., if a date exists but that currency was not reported)
                 buy: item.buy && typeof item.buy === 'number' ? item.buy / unit : null,
                 sell: item.sell && typeof item.sell === 'number' ? item.sell / unit : null
             })).filter(d => d.buy !== null || d.sell !== null);
@@ -484,8 +439,6 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
 
         } else {
-            // 2. Query for a date range, ALL currencies (for ArchiveDetail historical tabs)
-            // Note: This logic only works efficiently for fetching boundary dates (from/to) for the ArchiveDetail tabs.
             const sql = `
                 SELECT * FROM forex_rates
                 WHERE date = ? OR date = ?
@@ -493,7 +446,6 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
             `;
             const { results } = await env.FOREX_DB.prepare(sql).bind(fromDate, toDate).all<any>();
 
-            // Re-structure the "wide" data into the RatesData format
             const payloads: RatesData[] = results.map(row => {
                 const rates: Rate[] = [];
                 CURRENCIES.forEach(code => {
@@ -515,7 +467,6 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
                 };
             }).filter(p => p.rates.length > 0);
 
-            // This structure aligns with the front-end expected payload for ArchiveDetail's historical tabs
             return new Response(JSON.stringify({ status: { code: 200, message: 'OK' }, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
@@ -527,11 +478,9 @@ async function handleHistoricalRates(request: Request, env: Env): Promise<Respon
 
 // --- Admin / Posts Handlers ---
 
-// Public endpoint for new site settings (NEW)
 async function handlePublicSettings(request: Request, env: Env): Promise<Response> {
     try {
         const settings = await getAllSettings(env.FOREX_DB);
-        // Use a 5-minute cache header for the public endpoint
         return new Response(JSON.stringify(settings), {
             status: 200,
             headers: {
@@ -545,7 +494,6 @@ async function handlePublicSettings(request: Request, env: Env): Promise<Respons
     }
 }
 
-// Admin endpoint for settings (UPDATED)
 async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
@@ -566,7 +514,6 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
                  return new Response(JSON.stringify({ success: false, error: 'Missing settings keys' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
 
-            // Using batch to insert/replace the new settings keys
             const stmt1 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('ticker_enabled', ?, datetime('now'))")
                 .bind(settings.ticker_enabled ? 'true' : 'false');
             const stmt2 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('adsense_enabled', ?, datetime('now'))")
@@ -585,7 +532,6 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
     }
 }
 
-// --- NEW FUNCTION: handleCheckUser ---
 async function handleCheckUser(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -596,18 +542,15 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
              return new Response(JSON.stringify({ success: false, error: 'Missing credentials/identifiers' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Rate limit checks for 'check' type
         const { results: attemptsResults } = await env.FOREX_DB.prepare(
             `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'check' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).all<{ count: number }>();
         const failedAttempts = attemptsResults[0]?.count || 0;
 
-        // More lenient limit for username checks (e.g., 10)
         if (failedAttempts >= 10) {
             return new Response(JSON.stringify({ success: false, error: 'Bro, get out of my system!' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
         
-        // Randomly redirect 1 in 20 times for security
         if (Math.random() < 0.05) {
             return new Response(JSON.stringify({ success: false, error: 'Redirect' }), { status: 418, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
@@ -618,7 +561,6 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
 
         const userExists = !!user;
 
-        // Log this 'check' attempt
         await env.FOREX_DB.prepare(
             `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'check')`
         ).bind(ipAddress, sessionId, username, userExists ? 1 : 0).run();
@@ -627,7 +569,6 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
             return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // User exists, allow proceeding to password step
         return new Response(JSON.stringify({ success: true, message: "User verified" }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
@@ -635,7 +576,6 @@ async function handleCheckUser(request: Request, env: Env): Promise<Response> {
         return new Response(JSON.stringify({ success: false, error: 'Server error during user check' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-// --- END NEW FUNCTION ---
 
 
 async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
@@ -648,17 +588,14 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
              return new Response(JSON.stringify({ success: false, error: 'Missing credentials/identifiers' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // --- MODIFIED: Check for 'login' type attempts ---
         const { results: attemptsResults } = await env.FOREX_DB.prepare(
             `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).all<{ count: number }>();
         const failedAttempts = attemptsResults[0]?.count || 0;
 
-        // Stricter limit for password attempts
         if (failedAttempts >= 7) {
             return new Response(JSON.stringify({ success: false, error: 'Too many failed password attempts.' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
-        // --- END MODIFICATION ---
 
         const user = await env.FOREX_DB.prepare(
             `SELECT username, plaintext_password, password_hash FROM users WHERE username = ?`
@@ -684,11 +621,9 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
             }
         }
 
-        // --- MODIFIED: Insert with type 'login' ---
         await env.FOREX_DB.prepare(
             `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'login')`
         ).bind(ipAddress, sessionId, username, isValid ? 1 : 0).run();
-        // --- END MODIFICATION ---
 
         if (!isValid) {
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -716,7 +651,6 @@ async function handleCheckAttempts(request: Request, env: Env): Promise<Response
         return new Response(JSON.stringify({ error: 'Missing IP or session' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
-        // --- MODIFIED: Check for 'login' type attempts ---
         const result = await env.FOREX_DB.prepare(
             `SELECT COUNT(*) as count FROM login_attempts WHERE (ip_address = ? OR session_id = ?) AND type = 'login' AND success = 0 AND datetime(attempt_time) > datetime('now', '-1 hour')`
         ).bind(ipAddress, sessionId).first<{ count: number }>();
@@ -780,8 +714,98 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
 }
 
-// --- NEW: Request Password Reset Handler ---
-async function handleRequestPasswordReset(request: Request, env: Env): Promise<Response> {
+// --- *** NEW: Brevo Email Sending Function *** ---
+async function sendPasswordResetEmail(
+    env: Env,
+    to: string,
+    username: string,
+    resetToken: string,
+    resetUrl: string,
+    ctx: ExecutionContext
+): Promise<void> {
+    const BREVO_API_KEY = env.BREVO_API_KEY;
+    if (!BREVO_API_KEY) {
+        console.error('BREVO_API_KEY secret not set in Cloudflare Worker.');
+        return;
+    }
+
+    const emailPromise = fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'api-key': BREVO_API_KEY,
+        },
+        body: JSON.stringify({
+            sender: {
+                name: 'Forex Nepal Admin',
+                email: 'cadmin@grisma.com.np', // Your requested "from" email
+            },
+            to: [{ email: to, name: username }],
+            subject: 'Password Reset Request - Forex Nepal Admin',
+            htmlContent: `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+                  .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+                  .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                  .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
+                  .token { font-family: 'Courier New', monospace; background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 18px; letter-spacing: 2px; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header">
+                    <h1>Password Reset Request</h1>
+                  </div>
+                  <div class="content">
+                    <p>Hello <strong>${username}</strong>,</p>
+                    <p>We received a request to reset your password for the Forex Nepal Admin Dashboard.</p>
+                    <p>Click the button below to reset your password:</p>
+                    <p style="text-align: center;">
+                      <a href="${resetUrl}" class="button">Reset Password</a>
+                    </p>
+                    <p>Or copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
+                    <p>Alternatively, use this reset code:</p>
+                    <p style="text-align: center;" class="token">${resetToken}</p>
+                    <p><strong>This link and code will expire in 1 hour.</strong></p>
+                    <p>If you didn't request a password reset, please ignore this email or contact support if you're concerned about your account security.</p>
+                  </div>
+                  <div class="footer">
+                    <p>Forex Nepal Admin Dashboard | Powered by Grisma</p>
+                    <p>This is an automated email, please do not reply.</p>
+                  </div>
+                </div>
+              </body>
+              </html>
+            `,
+        }),
+    }).then(async (emailResponse) => {
+         if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            console.error('Brevo API error:', errorText);
+        } else {
+            console.log('Password reset email sent successfully via Brevo.');
+        }
+    }).catch(emailError => {
+        console.error('Email sending error:', emailError);
+    });
+
+    // Use waitUntil to send the email in the background
+    ctx.waitUntil(emailPromise);
+}
+// --- *** END NEW FUNCTION *** ---
+
+
+// --- UPDATED: Request Password Reset Handler ---
+async function handleRequestPasswordReset(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -792,53 +816,38 @@ async function handleRequestPasswordReset(request: Request, env: Env): Promise<R
             return new Response(JSON.stringify({ success: false, error: 'Username required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Check if user exists and has email
         const user = await env.FOREX_DB.prepare(
             `SELECT username, email FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; email: string | null }>();
 
-        // Always return success for security (don't reveal if user exists)
         if (!user || !user.email) {
+            console.log(`Password reset request for "${username}", but user or email not found. Sending success for security.`);
             return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Generate reset token
         const resetToken = crypto.randomUUID().replace(/-/g, '');
         const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
 
-        // Store reset token
         await env.FOREX_DB.prepare(
             `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
         ).bind(username, resetToken, expiresAt).run();
 
-        // Call Supabase edge function to send email
-        const SUPABASE_URL = 'https://xxzsmottgfhhessivgtq.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4enNtb3R0Z2ZoaGVzc2l2Z3RxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MTgyNjUsImV4cCI6MjA3ODM5NDI2NX0.fu6rmyivPDcd3fIEK2Rdm5qOipfn0wjz5JkyQnSDjBw';
+        // --- MODIFIED: Call local Brevo function ---
+        const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
-        const resetUrl = `https://forex.grisma.com.np/admin/reset-password?token=${resetToken}`;
-        
-        try {
-            const emailResponse = await fetch(`${SUPABASE_URL}/functions/v1/send-password-reset`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-                },
-                body: JSON.stringify({
-                    to: user.email,
-                    username: user.username,
-                    resetToken,
-                    resetUrl,
-                }),
-            });
+        // Pass the execution context (ctx) to the email function
+        // This allows the email to be sent *after* the response is returned
+        sendPasswordResetEmail(
+            env,
+            user.email,
+            user.username,
+            resetToken,
+            resetUrl,
+            ctx
+        );
+        // --- END MODIFICATION ---
 
-            if (!emailResponse.ok) {
-                console.error('Failed to send reset email:', await emailResponse.text());
-            }
-        } catch (emailError) {
-            console.error('Email sending error:', emailError);
-        }
-
+        // Return success to the user *immediately*
         return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
@@ -863,7 +872,6 @@ async function handleResetPassword(request: Request, env: Env): Promise<Response
             return new Response(JSON.stringify({ success: false, error: 'Password must be >= 8 characters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Find and validate reset token
         const resetRecord = await env.FOREX_DB.prepare(
             `SELECT username, expires_at, used FROM password_reset_tokens WHERE token = ?`
         ).bind(token).first<{ username: string; expires_at: string; used: number }>();
@@ -881,13 +889,11 @@ async function handleResetPassword(request: Request, env: Env): Promise<Response
             return new Response(JSON.stringify({ success: false, error: 'Reset token expired' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Hash new password and update user
         const newPasswordHash = await simpleHash(newPassword);
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, resetRecord.username).run();
 
-        // Mark token as used
         await env.FOREX_DB.prepare(
             `UPDATE password_reset_tokens SET used = 1 WHERE token = ?`
         ).bind(token).run();
@@ -1054,7 +1060,6 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
                 const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first();
                 return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             } else {
-                // Fetch paginated rates data (simplified to last 30 for admin overview)
                 const { results } = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates ORDER BY date DESC LIMIT 30`).all();
                 return new Response(JSON.stringify({ success: true, data: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
             }
@@ -1083,13 +1088,11 @@ async function handleForexData(request: Request, env: Env): Promise<Response> {
                 if (parsedBuy !== null || parsedSell !== null) {
                     validRatesFound = true;
                 }
-                // *** REMOVED: Old forex_rates_historical insertion logic ***
             }
 
             if (!validRatesFound) return new Response(JSON.stringify({ success: false, error: 'No rates provided' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
             const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
-            // Used bind(...wideValues) to correctly pass the array of parameters
             await env.FOREX_DB.prepare(wideQuery).bind(...wideValues).run();
 
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -1231,13 +1234,11 @@ export default {
         if (pathname.startsWith('/api/posts/')) {
             return handlePublicPostBySlug(request, env);
         }
-        // --- NEW ROUTE HANDLER ---
         if (pathname.startsWith('/api/rates/date/')) {
             return handleRatesByDate(request, env);
         }
 
         // ADMIN API - Login/Security
-        // --- ADDED NEW ROUTE ---
         if (pathname === '/api/admin/check-user') {
             return handleCheckUser(request, env);
         }
@@ -1251,14 +1252,14 @@ export default {
             return handleChangePassword(request, env);
         }
         if (pathname === '/api/admin/request-password-reset') {
-            return handleRequestPasswordReset(request, env);
+            // --- UPDATED: Pass Env and Ctx ---
+            return handleRequestPasswordReset(request, env, ctx);
         }
         if (pathname === '/api/admin/reset-password') {
             return handleResetPassword(request, env);
         }
 
         // ADMIN API - Data/Posts/Settings (Requires Token Verification)
-        // Note: The handlers perform their own token check
         if (pathname === '/api/admin/settings') {
             return handleSiteSettings(request, env);
         }
@@ -1330,9 +1331,7 @@ export default {
         }
     },
 
-    // --- REVISED Scheduled Task ---
     async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-        // We wrap the new logic in waitUntil
         ctx.waitUntil(handleScheduled(event, env));
     }
 };
