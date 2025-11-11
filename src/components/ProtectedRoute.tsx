@@ -11,7 +11,7 @@ import Layout from './Layout';
 import { Loader2 } from 'lucide-react';
 import { apiClient } from '@/services/apiClient';
 
-// --- NEW: Define the Auth Context ---
+// --- Define the Auth Context ---
 interface AuthContextType {
   token: string | null;
   username: string | null;
@@ -21,8 +21,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-// --- NEW: Create the useAuth hook ---
-export const useAuth = ()_blank => {
+// --- Create the useAuth hook ---
+export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');
@@ -31,7 +31,7 @@ export const useAuth = ()_blank => {
 };
 
 // --- Updated ProtectedRoute component ---
-const ProtectedRoute = ()_blank => {
+const ProtectedRoute = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [token, setToken] = useState<string | null>(
     localStorage.getItem('authToken')
@@ -41,8 +41,8 @@ const ProtectedRoute = ()_blank => {
   );
   const navigate = useNavigate();
 
-  useEffect(()_blank => {
-    const verifyAuth = async ()_blank => {
+  useEffect(() => {
+    const verifyAuth = async () => {
       if (!token) {
         setIsAuthenticated(false);
         return;
@@ -77,7 +77,7 @@ const ProtectedRoute = ()_blank => {
     verifyAuth();
   }, [token]);
 
-  const handleLogout = ()_blank => {
+  const handleLogout = () => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('username');
     setToken(null);
@@ -86,9 +86,9 @@ const ProtectedRoute = ()_blank => {
     navigate('/admin/login');
   };
 
-  // --- NEW: Memoize the context value ---
+  // --- Memoize the context value ---
   const authContextValue = useMemo(
-    ()_blank => ({
+    () => ({
       token,
       username,
       isAuthenticated: isAuthenticated === true,
@@ -113,7 +113,7 @@ const ProtectedRoute = ()_blank => {
     return <Navigate to="/admin/login" replace />;
   }
 
-  // --- NEW: Wrap Outlet with AuthContext.Provider ---
+  // --- Wrap Outlet with AuthContext.Provider ---
   // This makes the `useAuth` hook work for all child components
   return (
     <AuthContext.Provider value={authContextValue}>
