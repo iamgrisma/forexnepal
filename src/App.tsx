@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'; // <-- This line is now fixed
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'; // <-- FIX 1
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Index from './pages/Index';
 import About from './pages/About';
@@ -13,7 +13,7 @@ import { Toaster } from "@/components/ui/toaster"; // shadcn toaster
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"; // sonner toaster
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import HistoricalCharts from './pages/HistoricalCharts';
-import CurrencyHistoricalData from './pagesData.tsx';
+import CurrencyHistoricalData from './pages/CurrencyHistoricalData'; // <-- FIX 2
 import ConverterProfitCalculator from './pages/ConverterProfitCalculator';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
@@ -25,7 +25,7 @@ import PostEditor from './pages/PostEditor';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import ChangePassword from './pages/ChangePassword';
-import ApiDocs from './pages/ApiDocs'; // --- 1. IMPORT THE NEW PAGE ---
+import ApiDocs from './pages/ApiDocs'; 
 
 const queryClient = new QueryClient();
 
@@ -48,7 +48,6 @@ function App() {
           <Route path="/posts" element={<Posts />} />
           <Route path="/posts/:slug" element={<PostDetail />} />
           
-          {/* --- 2. ADD THE NEW API ROUTE --- */}
           <Route path="/api" element={<ApiDocs />} />
 
           {/* Admin Routes */}
