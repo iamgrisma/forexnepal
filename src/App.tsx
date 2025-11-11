@@ -28,6 +28,7 @@ const Archive = lazy(() => import("./pages/Archive"));
 const ArchiveDetail = lazy(() => import("./pages/ArchiveDetail"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const PostEditor = lazy(() => import("./pages/PostEditor"));
+const ApiDocs = lazy(() => import("./pages/ApiDocs")); // <-- NEW: Import ApiDocs
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -72,6 +73,7 @@ const App = () => (
         <Route path="/ads.txt" element={<AdsTxt />} />
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
+        <Route path="/api" element={<ApiDocs />} /> {/* <-- NEW: Add /api route */}
 
         {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
