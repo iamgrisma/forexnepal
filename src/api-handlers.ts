@@ -2,7 +2,7 @@
 import { Env, ExecutionContext, SiteSettings, D1Database } from './worker-types';
 import type { Rate, RatesData } from './types/forex';
 import { corsHeaders, CURRENCIES, CURRENCY_MAP } from './constants';
-import { generateSlug } from './worker-utils';
+import { generateSlug, formatDate } from './worker-utils'; // <-- IMPORTED formatDate
 import { verifyToken, simpleHash, simpleHashCompare, generateToken } from './auth';
 import { processAndStoreApiData } from './scheduled';
 
@@ -56,6 +56,68 @@ export async function handlePublicSettings(request: Request, env: Env): Promise<
         return new Response(JSON.stringify({ error: 'Failed to fetch settings' }), { status: 500, headers: corsHeaders });
     }
 }
+
+/**
+ * (PUBLIC) Fetches the latest available rates (today or yesterday).
+ * NEW FUNCTION
+ */
+export async function handleLatestRates(request: Request, env: Env): Promise<Response> {
+    try {
+        // Get NPT date (UTC+5:45)
+        const nowUtc = new Date();
+        const nptOffsetMs = (5 * 60 + 45) * 60 * 1000;
+        const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
+        
+        const todayStr = formatDate(nowNpt);
+        const yesterdayStr = formatDate(new Date(nowNpt.getTime() - 86400000)); // 24h ago
+
+        let row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(todayStr).first<any>();
+
+        // If no data for today, try yesterday
+        if (!row) {
+            row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(yesterdayStr).first<any>();
+        }
+
+        if (!row) {
+            return new Response(JSON.stringify({ error: 'No forex data found for today or yesterday.' }), { 
+                status: 404, 
+                headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+            });
+        }
+
+        // Format the row into RatesData
+        const rates: Rate[] = [];
+        CURRENCIES.forEach(code => {
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
+            if (typeof buyRate === 'number' || typeof sellRate === 'number') {
+                rates.push({
+                    currency: { ...CURRENCY_MAP[code], iso3: code },
+                    buy: buyRate ?? 0,
+                    sell: sellRate ?? 0,
+                });
+            }
+        });
+        
+        const ratesData: RatesData = {
+            date: row.date,
+            published_on: row.updated_at || row.date,
+            modified_on: row.updated_at || row.date,
+            rates: rates
+        };
+        
+        // Note: The worker already returns RatesData[], but for latest-rates, we return just one object
+        // To match the API docs snippets, we will return the same structure as fetchRatesForDateWithCache
+        return new Response(JSON.stringify(ratesData), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleLatestRates:`, error.message, error.cause);
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
 
 /**
  * (PUBLIC) Fetches rates for a specific date from the DB.
