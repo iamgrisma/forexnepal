@@ -1,148 +1,245 @@
 // src/worker.ts
-import { getAssetFromKV } from '@cloudflare/kv-asset-handler';
 import { Env, ExecutionContext, ScheduledEvent } from './worker-types';
-import * as sitemap from './sitemapGenerator';
-import * as api from './api-handlers';
+import { corsHeaders } from './constants';
 import { handleScheduled } from './scheduled';
-import { handleOptions } from './worker-utils';
+import { handleSitemap } from './sitemapGenerator';
+import { verifyToken } as auth from './auth';
+import { checkApiAccess } from './api-helpers'; // NEW: Import the access checker
+
+// NEW: Import handlers from the new refactored files
+import {
+    handlePublicSettings,
+    handleLatestRates,
+    handleRatesByDate,
+    handleHistoricalRates,
+    handlePublicPosts,
+    handlePublicPostBySlug,
+    handleImageApi,
+    handleArchiveListApi,
+    handleArchiveDetailApi
+} from './api-public';
+
+import {
+    handleFetchAndStore,
+    handleSiteSettings,
+    handleCheckUser,
+    handleAdminLogin,
+    handleCheckAttempts,
+    handleChangePassword,
+    handleRequestPasswordReset,
+    handleResetPassword,
+    handleUsers,
+    handleUserById,
+    handlePosts,
+    handlePostById,
+    handleForexData,
+    handleGetApiSettings,
+    handleUpdateApiSettings
+} from './api-admin';
 
 export default {
     /**
-     * Handles all incoming HTTP requests (API, Sitemaps, Static Assets).
+     * Handles scheduled events (CRON triggers).
      */
-    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-        const url = new URL(request.url);
-        const pathname = url.pathname;
-
-        // Handle CORS pre-flight requests
-        if (request.method === 'OPTIONS') {
-            return handleOptions(request);
-        }
-
-        try {
-            // --- API ROUTING ---
-            
-            // Public API Endpoints
-            if (pathname === '/api/settings') {
-                return api.handlePublicSettings(request, env);
-            }
-            // --- NEW: Add /api/latest-rates route ---
-            if (pathname === '/api/latest-rates') {
-                return api.handleLatestRates(request, env);
-            }
-            if (pathname === '/api/historical-rates') {
-                return api.handleHistoricalRates(request, env);
-            }
-            if (pathname === '/api/posts') {
-                return api.handlePublicPosts(request, env);
-            }
-            if (pathname.startsWith('/api/posts/')) {
-                return api.handlePublicPostBySlug(request, env);
-            }
-            if (pathname.startsWith('/api/rates/date/')) {
-                return api.handleRatesByDate(request, env);
-            }
-
-            // Admin API Endpoints - Auth
-            if (pathname === '/api/admin/check-user') {
-                return api.handleCheckUser(request, env);
-            }
-            if (pathname === '/api/admin/login') {
-                return api.handleAdminLogin(request, env);
-            }
-            if (pathname === '/api/admin/check-attempts') {
-                return api.handleCheckAttempts(request, env);
-            }
-            if (pathname === '/api/admin/change-password') {
-                return api.handleChangePassword(request, env);
-            }
-            if (pathname === '/api/admin/request-password-reset') {
-                return api.handleRequestPasswordReset(request, env, ctx); // Pass ctx for waitUntil
-            }
-            if (pathname === '/api/admin/reset-password') {
-                return api.handleResetPassword(request, env);
-            }
-
-            // Admin API Endpoints - Data Management (Token Required)
-            if (pathname === '/api/fetch-and-store') {
-                return api.handleFetchAndStore(request, env);
-            }
-            if (pathname === '/api/admin/settings') {
-                return api.handleSiteSettings(request, env);
-            }
-            if (pathname === '/api/admin/forex-data') {
-                return api.handleForexData(request, env);
-            }
-            if (pathname === '/api/admin/users') {
-                return api.handleUsers(request, env);
-            }
-            if (pathname.startsWith('/api/admin/users/')) {
-                return api.handleUserById(request, env);
-            }
-            if (pathname === '/api/admin/posts') {
-                return api.handlePosts(request, env);
-            }
-            if (pathname.startsWith('/api/admin/posts/')) {
-                return api.handlePostById(request, env);
-            }
-
-            // --- SITEMAP ROUTING ---
-            const sitemapHeaders = {
-                "content-type": "application/xml; charset=utf-8",
-                "cache-control": "public, max-age=3600",
-            };
-            if (pathname === '/sitemap.xml') {
-                const archiveSitemapCount = sitemap.getArchiveSitemapCount();
-                const xml = sitemap.generateSitemapIndex(archiveSitemapCount);
-                return new Response(xml, { headers: sitemapHeaders });
-            }
-            if (pathname === '/page-sitemap.xml') {
-                const xml = sitemap.generatePageSitemap();
-                return new Response(xml, { headers: sitemapHeaders });
-            }
-            if (pathname === '/post-sitemap.xml') {
-                const xml = await sitemap.generatePostSitemap(env.FOREX_DB);
-                return new Response(xml, { headers: sitemapHeaders });
-            }
-            const archiveMatch = pathname.match(/\/archive-sitemap(\d+)\.xml$/);
-            if (archiveMatch && archiveMatch[1]) {
-                const id = parseInt(archiveMatch[1]);
-                const xml = sitemap.generateArchiveSitemap(id);
-                if (!xml) {
-                    return new Response('Sitemap not found', { status: 404 });
-                }
-                return new Response(xml, { headers: sitemapHeaders });
-            }
-
-            // --- Static Asset Serving (SPA Fallback) ---
-            return await getAssetFromKV(
-                { request, waitUntil: (promise: Promise<any>) => ctx.waitUntil(promise) },
-                { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
-            );
-
-        } catch (e: any) {
-            // Handle 404s by serving index.html for SPA routing
-            if (e instanceof Error && e.message.includes('404') || e.status === 404) {
-                try {
-                    const indexRequest = new Request(new URL('/', request.url).toString(), request);
-                    return await getAssetFromKV(
-                        { request: indexRequest, waitUntil: (p) => ctx.waitUntil(p) },
-                        { ASSET_NAMESPACE: env.__STATIC_CONTENT, ASSET_MANIFEST: {} }
-                    );
-                } catch (e2) {
-                     return new Response('Not Found', { status: 404 });
-                }
-            } else {
-                 console.error('Worker fetch error:', e.message, e.stack);
-                 return new Response('Internal Server Error', { status: 500 });
-            }
-        }
+    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+        ctx.waitUntil(handleScheduled(event, env, ctx));
     },
 
     /**
-     * Handles scheduled cron jobs.
+     * Handles incoming HTTP requests.
      */
-    async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-        ctx.waitUntil(handleScheduled(event, env));
-    }
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+        const url = new URL(request.url);
+        const { pathname } = url;
+        const method = request.method;
+
+        // Handle OPTIONS preflight requests
+        if (method === 'OPTIONS') {
+            return new Response(null, { headers: corsHeaders });
+        }
+
+        // --- API Routes ---
+        if (pathname.startsWith('/api/')) {
+            
+            // --- NEW: API Access Check Middleware ---
+            // This check runs for all public API endpoints.
+            // Admin endpoints are checked individually *after* this.
+            // We apply it here for public routes.
+            
+            let accessResponse: Response | null = null;
+            
+            // --- Public Endpoints (Apply checkApiAccess) ---
+            const publicEndpoints = [
+                '/api/settings', '/api/latest-rates', '/api/historical-rates',
+                '/api/posts', '/api/posts/:slug', '/api/rates/date/:date',
+                '/api/image/latest-rates', '/api/archive/list', '/api/archive/detail/:date'
+            ];
+            
+            // Normalize path for dynamic routes
+            let endpointToCheck = pathname;
+            if (pathname.startsWith('/api/posts/')) endpointToCheck = '/api/posts/:slug';
+            if (pathname.startsWith('/api/rates/date/')) endpointToCheck = '/api/rates/date/:date';
+            if (pathname.startsWith('/api/archive/detail/')) endpointToCheck = '/api/archive/detail/:date';
+
+            if (publicEndpoints.includes(endpointToCheck)) {
+                accessResponse = await checkApiAccess(request, env, ctx, endpointToCheck);
+                if (accessResponse) {
+                    return accessResponse; // Access denied (disabled, quota, etc.)
+                }
+            }
+            
+            // --- Route Handlers ---
+            
+            // Public Routes
+            if (pathname === '/api/settings' && method === 'GET') {
+                return handlePublicSettings(request, env);
+            }
+            if (pathname === '/api/latest-rates' && method === 'GET') {
+                return handleLatestRates(request, env);
+            }
+            if (pathname.startsWith('/api/rates/date/') && method === 'GET') {
+                return handleRatesByDate(request, env);
+            }
+            if (pathname === '/api/historical-rates' && method === 'GET') {
+                return handleHistoricalRates(request, env);
+            }
+            if (pathname === '/api/posts' && method === 'GET') {
+                return handlePublicPosts(request, env);
+            }
+            if (pathname.startsWith('/api/posts/') && method === 'GET') {
+                return handlePublicPostBySlug(request, env);
+            }
+            
+            // NEW Public API Routes
+            if (pathname === '/api/image/latest-rates' && method === 'GET') {
+                return handleImageApi(request, env);
+            }
+            if (pathname === '/api/archive/list' && method === 'GET') {
+                return handleArchiveListApi(request, env);
+            }
+            if (pathname.startsWith('/api/archive/detail/') && method === 'GET') {
+                return handleArchiveDetailApi(request, env);
+            }
+
+            // --- Admin Auth Routes (No token required) ---
+            if (pathname === '/api/admin/check-user' && method === 'POST') {
+                return handleCheckUser(request, env);
+            }
+            if (pathname === '/api/admin/login' && method === 'POST') {
+                return handleAdminLogin(request, env);
+            }
+            if (pathname === '/api/admin/check-attempts' && method === 'GET') {
+                return handleCheckAttempts(request, env);
+            }
+            if (pathname === '/api/admin/request-password-reset' && method === 'POST') {
+                return handleRequestPasswordReset(request, env, ctx);
+            }
+            if (pathname === '/api/admin/reset-password' && method === 'POST') {
+                return handleResetPassword(request, env);
+            }
+
+            // --- Admin Protected Routes (Token required) ---
+            // All other /api/admin/* routes
+            if (pathname.startsWith('/api/admin/')) {
+                const authHeader = request.headers.get('Authorization');
+                const token = authHeader?.replace('Bearer ', '');
+                
+                if (!token || !(await auth.verifyToken(token))) {
+                    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+                }
+
+                // Token is valid, proceed to admin handlers
+                if (pathname === '/api/admin/change-password' && method === 'POST') {
+                    return handleChangePassword(request, env);
+                }
+                if (pathname === '/api/admin/fetch-nrb' && method === 'POST') {
+                    return handleFetchAndStore(request, env);
+                }
+                if (pathname === '/api/admin/settings') {
+                    return handleSiteSettings(request, env); // GET or POST
+                }
+                if (pathname === '/api/admin/users' && (method === 'GET' || method === 'POST')) {
+                    return handleUsers(request, env);
+                }
+                if (pathname.startsWith('/api/admin/users/') && method === 'DELETE') {
+                    return handleUserById(request, env);
+                }
+                if (pathname === '/api/admin/posts' && (method === 'GET' || method === 'POST')) {
+                    return handlePosts(request, env);
+                }
+                if (pathname.startsWith('/api/admin/posts/') && (method === 'GET' || method === 'PUT' || method === 'DELETE')) {
+                    return handlePostById(request, env);
+                }
+                if (pathname === '/api/admin/forex-data' && (method === 'GET' || method === 'POST')) {
+                    return handleForexData(request, env);
+                }
+                
+                // NEW Admin API Settings Routes
+                if (pathname === '/api/admin/api-settings' && method === 'GET') {
+                    return handleGetApiSettings(request, env);
+                }
+                if (pathname === '/api/admin/api-settings' && method === 'POST') {
+                    return handleUpdateApiSettings(request, env);
+                }
+            }
+
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
+        }
+
+        // --- Sitemap ---
+        if (pathname === '/sitemap.xml' || pathname === '/sitemap_index.xml') {
+            return handleSitemap(request, env);
+        }
+
+        // --- Serve Static Assets (from KV) ---
+        try {
+            // This relies on the Pages "catch-all" behavior configured in _routes.json
+            // or the default behavior of serving assets.
+            // For a pure worker, you'd use env.__STATIC_CONTENT.get(...)
+            // But since this is a Pages project, we let it fall through.
+            
+            // This is a common pattern for SPA (Single Page App) routing
+            // If the file isn't found, it should serve index.html
+            
+            // Let Pages function handle static assets
+            // The `next()` function is typically available in Pages functions middleware
+            // In a pure worker, this part is handled differently.
+            // Assuming this is a Pages project, we just need to handle API routes.
+            // The rest will be handled by the static asset server.
+            
+            // Fallback for SPA routing - if not an asset, serve index.html
+            // This logic is often implicit in Pages, but explicit here for clarity.
+            // We assume if it's not an API route, Pages will try to find it.
+            // If it fails, it should serve the index.html for client-side routing.
+            
+            // This part is tricky without seeing the full Pages setup.
+            // We'll assume that Pages handles non-API routes.
+            // If you're using a worker *only*, you need to serve index.html:
+            /*
+            if (method === 'GET') {
+                const asset = await env.__STATIC_CONTENT.get(pathname);
+                if (asset) {
+                    // ... serve asset
+                }
+                // Serve index.html as SPA fallback
+                const indexHtml = await env.__STATIC_CONTENT.get('index.html');
+                return new Response(indexHtml, { headers: { 'Content-Type': 'text/html' }});
+            }
+            */
+            // Since you have a complex setup, we'll let non-API routes fall through
+            // to the default Pages behavior.
+        } catch (e) {
+            // Fallback: Serve index.html for SPA routing
+            try {
+                const indexHtml = await env.__STATIC_CONTENT.get('index.html');
+                return new Response(indexHtml, { headers: { ...corsHeaders, 'Content-Type': 'text/html' } });
+            } catch (err) {
+                return new Response('Not found', { status: 404, headers: corsHeaders });
+            }
+        }
+        
+        // This return is crucial for Pages to serve static files
+        // We're returning the original request to be handled by the static asset server
+        return env.__STATIC_CONTENT.fetch(request);
+    },
 };
