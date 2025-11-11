@@ -49,8 +49,10 @@ interface ScheduledEvent {
 export interface Env {
     FOREX_DB: D1Database;
     __STATIC_CONTENT: KVNamespace;
-    // This secret must be set in your Cloudflare project
+    
+    // Secrets
     BREVO_API_KEY: string; 
+    JWT_SECRET: string; // <-- MOVED SECRET HERE
 }
 
 // --- CURRENCIES List ---
@@ -82,7 +84,7 @@ const CURRENCIES = Object.keys(CURRENCY_MAP);
 
 
 // --- JWT Secret ---
-const JWT_SECRET = 'forexnepal-jwt-secret-key-2025';
+// const JWT_SECRET = 'forexnepal-jwt-secret-key-2025'; // <-- DELETED! Now read from env.
 
 // --- CORS ---
 const corsHeaders = {
@@ -106,19 +108,26 @@ function formatDate(date: Date): string {
 interface SiteSettings {
     ticker_enabled: boolean;
     adsense_enabled: boolean;
+    adsense_exclusions: string;
 }
 
 // Helper to safely get settings
 async function getAllSettings(db: D1Database): Promise<SiteSettings> {
     const { results } = await db.prepare("SELECT key, value FROM site_settings").all();
+    
     const settings: any = {
-        ticker_enabled: true, // default: ON
-        adsense_enabled: false // default: OFF
+        ticker_enabled: true,
+        adsense_enabled: false,
+        adsense_exclusions: '/admin,/login'
     };
+
     if (results) {
         results.forEach((row: any) => {
             if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
                 settings[row.key] = row.value === 'true';
+            }
+            if (row.key === 'adsense_exclusions') {
+                settings[row.key] = row.value;
             }
         });
     }
@@ -294,7 +303,8 @@ async function handleScheduled(event: ScheduledEvent, env: Env): Promise<void> {
 async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -497,7 +507,8 @@ async function handlePublicSettings(request: Request, env: Env): Promise<Respons
 async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -510,7 +521,11 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
         if (request.method === 'POST') {
             const settings: SiteSettings = await request.json();
 
-            if (typeof settings.ticker_enabled === 'undefined' || typeof settings.adsense_enabled === 'undefined') {
+            if (
+                typeof settings.ticker_enabled === 'undefined' ||
+                typeof settings.adsense_enabled === 'undefined' ||
+                typeof settings.adsense_exclusions === 'undefined'
+            ) {
                  return new Response(JSON.stringify({ success: false, error: 'Missing settings keys' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
 
@@ -518,8 +533,10 @@ async function handleSiteSettings(request: Request, env: Env): Promise<Response>
                 .bind(settings.ticker_enabled ? 'true' : 'false');
             const stmt2 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('adsense_enabled', ?, datetime('now'))")
                 .bind(settings.adsense_enabled ? 'true' : 'false');
+            const stmt3 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value, updated_at) VALUES ('adsense_exclusions', ?, datetime('now'))")
+                .bind(settings.adsense_exclusions);
 
-            await env.FOREX_DB.batch([stmt1, stmt2]);
+            await env.FOREX_DB.batch([stmt1, stmt2, stmt3]);
 
             const updatedSettings = await getAllSettings(env.FOREX_DB);
             return new Response(JSON.stringify(updatedSettings), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -606,7 +623,8 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
 
         if (user) {
             if (user.plaintext_password && user.password_hash) {
-                if (password === user.plaintext_password || await simpleHashCompare(password, user.password_hash)) {
+                // --- UPDATED: Pass env to hash function ---
+                if (password === user.plaintext_password || await simpleHashCompare(password, user.password_hash, env)) {
                     isValid = true;
                     mustChangePassword = true;
                 }
@@ -616,7 +634,8 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
                     mustChangePassword = true;
                 }
             } else if (!user.plaintext_password && user.password_hash) {
-                isValid = await simpleHashCompare(password, user.password_hash);
+                // --- UPDATED: Pass env to hash function ---
+                isValid = await simpleHashCompare(password, user.password_hash, env);
                 mustChangePassword = false;
             }
         }
@@ -629,7 +648,8 @@ async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const token = await generateToken(username);
+        // --- UPDATED: Pass env to token function ---
+        const token = await generateToken(username, env);
         return new Response(JSON.stringify({
             success: true,
             token,
@@ -668,7 +688,8 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -692,12 +713,14 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
             if (user.password_hash) {
                 newPasswordHash = user.password_hash;
             } else if (user.plaintext_password) {
-                newPasswordHash = await simpleHash(user.plaintext_password);
+                // --- UPDATED: Pass env to hash function ---
+                newPasswordHash = await simpleHash(user.plaintext_password, env);
             } else {
                  return new Response(JSON.stringify({ success: false, error: 'Cannot keep password, no hash or plaintext found.' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
         } else {
-            newPasswordHash = await simpleHash(newPassword);
+            // --- UPDATED: Pass env to hash function ---
+            newPasswordHash = await simpleHash(newPassword, env);
         }
 
         await env.FOREX_DB.prepare(
@@ -714,7 +737,7 @@ async function handleChangePassword(request: Request, env: Env): Promise<Respons
     }
 }
 
-// --- *** NEW: Brevo Email Sending Function *** ---
+// --- Brevo Email Sending Function ---
 async function sendPasswordResetEmail(
     env: Env,
     to: string,
@@ -739,7 +762,7 @@ async function sendPasswordResetEmail(
         body: JSON.stringify({
             sender: {
                 name: 'Forex Nepal Admin',
-                email: 'cadmin@grisma.com.np', // Your requested "from" email
+                email: 'cadmin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
             subject: 'Password Reset Request - Forex Nepal Admin',
@@ -798,13 +821,11 @@ async function sendPasswordResetEmail(
         console.error('Email sending error:', emailError);
     });
 
-    // Use waitUntil to send the email in the background
     ctx.waitUntil(emailPromise);
 }
-// --- *** END NEW FUNCTION *** ---
 
 
-// --- UPDATED: Request Password Reset Handler ---
+// --- Request Password Reset Handler ---
 async function handleRequestPasswordReset(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -832,11 +853,8 @@ async function handleRequestPasswordReset(request: Request, env: Env, ctx: Execu
             `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
         ).bind(username, resetToken, expiresAt).run();
 
-        // --- MODIFIED: Call local Brevo function ---
         const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
-        // Pass the execution context (ctx) to the email function
-        // This allows the email to be sent *after* the response is returned
         sendPasswordResetEmail(
             env,
             user.email,
@@ -845,9 +863,7 @@ async function handleRequestPasswordReset(request: Request, env: Env, ctx: Execu
             resetUrl,
             ctx
         );
-        // --- END MODIFICATION ---
 
-        // Return success to the user *immediately*
         return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
@@ -856,7 +872,7 @@ async function handleRequestPasswordReset(request: Request, env: Env, ctx: Execu
     }
 }
 
-// --- NEW: Reset Password Handler ---
+// --- Reset Password Handler ---
 async function handleResetPassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
@@ -889,7 +905,8 @@ async function handleResetPassword(request: Request, env: Env): Promise<Response
             return new Response(JSON.stringify({ success: false, error: 'Reset token expired' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const newPasswordHash = await simpleHash(newPassword);
+        // --- UPDATED: Pass env to hash function ---
+        const newPasswordHash = await simpleHash(newPassword, env);
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, resetRecord.username).run();
@@ -906,11 +923,12 @@ async function handleResetPassword(request: Request, env: Env): Promise<Response
     }
 }
 
-// --- NEW: User Management Handlers ---
+// --- User Management Handlers ---
 async function handleUsers(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -928,7 +946,8 @@ async function handleUsers(request: Request, env: Env): Promise<Response> {
                 return new Response(JSON.stringify({ success: false, error: 'Username and password required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
             
-            const passwordHash = await simpleHash(password);
+            // --- UPDATED: Pass env to hash function ---
+            const passwordHash = await simpleHash(password, env);
             await env.FOREX_DB.prepare(
                 `INSERT INTO users (username, email, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`
             ).bind(username, email || null, passwordHash, role || 'admin').run();
@@ -946,7 +965,8 @@ async function handleUsers(request: Request, env: Env): Promise<Response> {
 async function handleUserById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -969,7 +989,8 @@ async function handleUserById(request: Request, env: Env): Promise<Response> {
 async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -1002,7 +1023,8 @@ async function handlePosts(request: Request, env: Env): Promise<Response> {
 async function handlePostById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     const url = new URL(request.url);
@@ -1049,7 +1071,8 @@ async function handlePostById(request: Request, env: Env): Promise<Response> {
 async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    // --- UPDATED: Pass env to verifyToken ---
+    if (!token || !(await verifyToken(token, env))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -1138,25 +1161,27 @@ async function handlePublicPostBySlug(request: Request, env: Env): Promise<Respo
     }
 }
 
-// --- Auth Helpers (Unchanged) ---
-async function simpleHash(password: string): Promise<string> {
+// --- Auth Helpers (UPDATED to use env) ---
+async function simpleHash(password: string, env: Env): Promise<string> {
     const encoder = new TextEncoder();
-    const data = encoder.encode(password + JWT_SECRET);
+    // --- UPDATED: Read secret from env ---
+    const data = encoder.encode(password + env.JWT_SECRET);
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-async function simpleHashCompare(password: string, storedHash: string | null): Promise<boolean> {
+async function simpleHashCompare(password: string, storedHash: string | null, env: Env): Promise<boolean> {
     if (!storedHash) {
         return false;
     }
-    const inputHash = await simpleHash(password);
+    // --- UPDATED: Pass env to hash function ---
+    const inputHash = await simpleHash(password, env);
     return inputHash === storedHash;
 }
 
 
-async function generateToken(username: string): Promise<string> {
+async function generateToken(username: string, env: Env): Promise<string> {
     const header = { alg: 'HS256', typ: 'JWT' };
     const payload = {
         username,
@@ -1167,13 +1192,14 @@ async function generateToken(username: string): Promise<string> {
     const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
     const signatureInput = `${encodedHeader}.${encodedPayload}`;
     const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey('raw', encoder.encode(JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    // --- UPDATED: Read secret from env ---
+    const key = await crypto.subtle.importKey('raw', encoder.encode(env.JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureInput));
     let base64Signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
     return `${signatureInput}.${base64Signature}`;
 }
 
-async function verifyToken(token: string): Promise<boolean> {
+async function verifyToken(token: string, env: Env): Promise<boolean> {
     if (!token || typeof token !== 'string') return false;
     const parts = token.split('.');
     if (parts.length !== 3) return false;
@@ -1188,7 +1214,8 @@ async function verifyToken(token: string): Promise<boolean> {
             return false;
         }
         const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey('raw', encoder.encode(JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+        // --- UPDATED: Read secret from env ---
+        const key = await crypto.subtle.importKey('raw', encoder.encode(env.JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
         let base64 = signature.replace(/-/g, '+').replace(/_/g, '/');
         while (base64.length % 4) { base64 += '='; }
         const signatureBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
@@ -1252,11 +1279,11 @@ export default {
             return handleChangePassword(request, env);
         }
         if (pathname === '/api/admin/request-password-reset') {
-            // --- UPDATED: Pass Env and Ctx ---
             return handleRequestPasswordReset(request, env, ctx);
         }
         if (pathname === '/api/admin/reset-password') {
             return handleResetPassword(request, env);
+NEW:
         }
 
         // ADMIN API - Data/Posts/Settings (Requires Token Verification)
