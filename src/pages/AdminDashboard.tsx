@@ -25,18 +25,18 @@ import UserManagement from '@/components/admin/UserManagement';
 import SiteSettingsComponent from '@/components/admin/SiteSettings';
 import ApiSettings from '@/components/admin/ApiSettings';
 
-const AdminDashboard = ()_blank => {
+const AdminDashboard = () => {
   const { logout } = useAuth(); // This will now receive the logout function
   const navigate = useNavigate();
 
-  const handleLogout = ()_blank => {
+  const handleLogout = () => {
     logout(); // Call the logout function from context
     // The ProtectedRoute's effect will handle navigation,
     // but we can also navigate directly for a faster UI update.
     navigate('/admin/login');
   };
 
-  const goToHome = ()_blank => {
+  const goToHome = () => {
     navigate('/');
   };
 
@@ -139,7 +139,7 @@ const AdminDashboard = ()_blank => {
                     <CardTitle>API Settings</CardTitle>
                     <CardDescription>
                       Manage public API access, restrictions, and quotas.
-                    </CardDescription>
+                    </D escription>
                   </CardHeader>
                   <CardContent>
                     <ApiSettings />
