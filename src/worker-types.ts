@@ -41,9 +41,10 @@ export interface Env {
     FOREX_DB: D1Database;
     __STATIC_CONTENT: KVNamespace;
     BREVO_API_KEY: string;
-    
-    // --- NEW: KV Cache for API Access Rules ---
     API_SETTINGS_CACHE: KVNamespace; 
+    
+    // --- NEWLY ADDED SECRET ---
+    JWT_SECRET: string;
 }
 
 // --- Custom App Types ---
@@ -53,7 +54,7 @@ export interface SiteSettings {
     adsense_exclusions: string;
 }
 
-// --- NEW: Types for API Access Control ---
+// --- Types for API Access Control ---
 export type ApiAccessLevel = 'public' | 'disabled' | 'restricted';
 
 export interface ApiAccessSetting {
