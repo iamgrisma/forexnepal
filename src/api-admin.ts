@@ -1,8 +1,7 @@
 // src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
-// (This is an updated file, now including new API settings handlers)
 
-import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting } from './worker-types';
+import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement } from './worker-types';
 import { corsHeaders, CURRENCIES, CURRENCY_MAP } from './constants';
 import { generateSlug, formatDate } from './worker-utils';
 import { verifyToken, simpleHash, simpleHashCompare, generateToken } from './auth';
@@ -88,9 +87,9 @@ export async function handleSiteSettings(request: Request, env: Env): Promise<Re
 
 
             await env.FOREX_DB.batch([stmt1, stmt2, stmt3]);
-
-            // --- MODIFICATION: Clear the API settings cache ---
-            await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY);
+            
+            // --- FIX: Clear the API settings cache ---
+            await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY); 
 
             const updatedSettings = await getAllSettings(env.FOREX_DB);
             return new Response(JSON.stringify(updatedSettings), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -657,4 +656,126 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
     }
     try {
         if (request.method === 'GET') {
-            const url
+            const url = new URL(request.url);
+            const date = url.searchParams.get('date');
+            if (date) {
+                const result = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first();
+                return new Response(JSON.stringify({ success: true, data: result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+            } else {
+                const { results } = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates ORDER BY date DESC LIMIT 30`).all();
+                return new Response(JSON.stringify({ success: true, data: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+        }
+        if (request.method === 'POST') {
+            const data = await request.json();
+            const date = data.date;
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!date || !dateRegex.test(date)) return new Response(JSON.stringify({ success: false, error: 'Invalid date' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+            const wideColumns: string[] = ['date', 'updated_at'];
+            const widePlaceholders: string[] = ['?', "datetime('now')"];
+            const wideValues: (string | number | null)[] = [date];
+
+            let validRatesFound = false;
+
+            for (const currency of CURRENCIES) {
+                const buyKey = `${currency}_buy`, sellKey = `${currency}_sell`;
+                const parsedBuy = (data[buyKey] === '' || data[buyKey] == null) ? null : parseFloat(data[buyKey]);
+                const parsedSell = (data[sellKey] === '' || data[sellKey] == null) ? null : parseFloat(data[sellKey]);
+
+                wideColumns.push(`"${buyKey}"`, `"${sellKey}"`);
+                widePlaceholders.push('?', '?');
+                wideValues.push(parsedBuy, parsedSell);
+
+                if (parsedBuy !== null || parsedSell !== null) {
+                    validRatesFound = true;
+                }
+            }
+
+            if (!validRatesFound) return new Response(JSON.stringify({ success: false, error: 'No rates provided' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+            const wideQuery = `INSERT OR REPLACE INTO forex_rates (${wideColumns.join(', ')}) VALUES (${widePlaceholders.join(', ')})`;
+            await env.FOREX_DB.prepare(wideQuery).bind(...wideValues).run();
+
+            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error(`Error in handleForexData (${request.method}):`, error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+
+// --- NEW ADMIN HANDLERS FOR API SETTINGS ---
+
+/**
+ * (ADMIN) GET all API access settings.
+ */
+export async function handleGetApiSettings(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { results } = await env.FOREX_DB.prepare("SELECT * FROM api_access_settings ORDER BY endpoint ASC").all<ApiAccessSetting>();
+        return new Response(JSON.stringify({ success: true, settings: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (e: any) {
+        console.error('Failed to fetch API settings:', e);
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+/**
+ * (ADMIN) POST (update) API access settings.
+ */
+export async function handleUpdateApiSettings(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const settings: ApiAccessSetting[] = await request.json();
+        
+        if (!Array.isArray(settings)) {
+            return new Response(JSON.stringify({ success: false, error: 'Invalid data format, expected an array of settings' }), { status: 400, headers: corsHeaders });
+        }
+
+        const stmts: D1PreparedStatement[] = [];
+        for (const setting of settings) {
+            if (!setting.endpoint || !setting.access_level) {
+                console.warn('Skipping invalid API setting entry:', setting);
+                continue;
+            }
+
+            stmts.push(
+                env.FOREX_DB.prepare(
+                    `UPDATE api_access_settings 
+                     SET access_level = ?, allowed_rules = ?, quota_per_hour = ?, updated_at = datetime('now')
+                     WHERE endpoint = ?`
+                ).bind(
+                    setting.access_level,
+                    setting.allowed_rules || '[]',
+                    setting.quota_per_hour || -1,
+                    setting.endpoint
+                )
+            );
+        }
+
+        if (stmts.length > 0) {
+            await env.FOREX_DB.batch(stmts);
+        }
+        
+        // Clear the KV cache
+        await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY);
+
+        return new Response(JSON.stringify({ success: true, message: `${stmts.length} settings updated` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (e: any) {
+        console.error('Failed to update API settings:', e);
+        return new Response(JSON.stringify({ success: false, error: 'Database update failed' }), { status: 500, headers: corsHeaders });
+    }
+}
