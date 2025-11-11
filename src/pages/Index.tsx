@@ -154,7 +154,7 @@ const Index = () => {
 
   // --- 
   // --- 
-  // --- UPDATED IMAGE DOWNLOAD FUNCTION ---
+  // --- START: RESTORED FUNCTION ---
   // --- 
   // --- 
   const downloadContentAsImage = async () => {
@@ -554,14 +554,18 @@ const Index = () => {
       console.error('Error generating image:', error);
       toast({
         title: "Error",
-        description: `Failed to download ${viewMode === 'table' ? 'table' : 'grid'} as image.`,
+        description: `Failed to download ${viewMode === 'table' ? 'Table' : 'grid'} as image.`,
         variant: "destructive",
       });
     } finally {
       document.body.removeChild(wrapper); // 8. Clean up
     }
   };
-  // --- END OF REDESIGNED FUNCTION ---
+  // --- 
+  // --- 
+  // --- END: RESTORED FUNCTION ---
+  // --- 
+  // --- 
 
 
   // Helper function to render grid cards
