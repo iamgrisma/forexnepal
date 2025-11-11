@@ -197,7 +197,7 @@ const Index = () => {
 
     // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    wrapper.style.width = '2500px'; 
+    wrapper.style.width = '2800px'; 
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
@@ -340,13 +340,13 @@ const Index = () => {
       gridContainer.style.display = 'flex'; // Use flex column to stack rows
       gridContainer.style.flexDirection = 'column';
       gridContainer.style.gap = '24px';
-      gridContainer.style.width = '100%'; // Will be 100% of 2500px wrapper
+      gridContainer.style.width = '100%'; // Will be 100% of 2800px wrapper
       gridContainer.style.boxSizing = 'border-box';
       
       const numColumns = 6;
       const gap = 24;
       const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
-      const cardWidthPx = (2500 - totalGapWidth) / numColumns; // (2500 - 120) / 6 = 380px
+      const cardWidthPx = (2800 - totalGapWidth) / numColumns; // (2800 - 120) / 6 = 380px
 
       // --- Helper to build a single card ---
       const buildGridCard = (rate: Rate) => {
@@ -536,7 +536,7 @@ const Index = () => {
       const canvas = await html2canvas(wrapper, {
         scale: 1, 
         backgroundColor: '#ffffff', 
-        width: 2500, // --- FIX: Use explicit 2500px width ---
+        width: 2800, // --- FIX: Use explicit 2800px width ---
         useCORS: true, 
       });
 
