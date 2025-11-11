@@ -23,6 +23,7 @@ export interface D1Result<T = unknown> {
 export interface KVNamespace {
     get(key: string, options?: any): Promise<any>;
     put(key: string, value: any, options?: any): Promise<void>;
+    delete(key: string): Promise<void>;
 }
 
 export interface ExecutionContext {
@@ -39,7 +40,10 @@ export interface ScheduledEvent {
 export interface Env {
     FOREX_DB: D1Database;
     __STATIC_CONTENT: KVNamespace;
-    BREVO_API_KEY: string; 
+    BREVO_API_KEY: string;
+    
+    // --- NEW: KV Cache for API Access Rules ---
+    API_SETTINGS_CACHE: KVNamespace; 
 }
 
 // --- Custom App Types ---
@@ -47,4 +51,23 @@ export interface SiteSettings {
     ticker_enabled: boolean;
     adsense_enabled: boolean;
     adsense_exclusions: string;
+}
+
+// --- NEW: Types for API Access Control ---
+export type ApiAccessLevel = 'public' | 'disabled' | 'restricted';
+
+export interface ApiAccessSetting {
+    id: number;
+    endpoint: string;
+    access_level: ApiAccessLevel;
+    allowed_rules: string; // JSON string array
+    quota_per_hour: number; // -1 for unlimited
+    updated_at: string;
+}
+
+export interface ApiUsageLog {
+    id?: number;
+    identifier: string;
+    endpoint: string;
+    request_time: string;
 }
