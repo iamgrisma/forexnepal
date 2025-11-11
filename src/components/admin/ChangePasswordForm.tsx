@@ -1,9 +1,12 @@
+// src/components/admin/ChangePasswordForm.tsx
+
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2 } from 'lucide-react';
+import { apiClient } from '@/services/apiClient'; // <-- 1. IMPORT apiClient
 
 const ChangePasswordForm = () => {
   const [newPassword, setNewPassword] = useState('');
@@ -23,45 +26,44 @@ const ChangePasswordForm = () => {
     }
 
     setLoading(true);
-    const token = localStorage.getItem('authToken');
+    // Token is now read by apiClient automatically
     const username = localStorage.getItem('username');
 
-    if (!token || !username) {
+    if (!username) {
       toast({ title: "Error", description: "Authentication error. Please log in again.", variant: "destructive" });
       setLoading(false);
       return;
     }
 
+    // --- 2. REPLACE raw fetch with apiClient ---
     try {
-      const response = await fetch('/api/admin/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+      const data = await apiClient.post<{ success: boolean, message?: string, error?: string }>(
+        '/admin/change-password', // apiClient adds the /api prefix
+        {
           username,
           newPassword,
           keepSamePassword: false,
-        }),
-      });
+        }
+      );
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
+      // 3. apiClient throws errors, so if we get here, it was successful
+      if (data.success) {
         toast({ title: "Success", description: "Password changed successfully." });
         setNewPassword('');
         setConfirmPassword('');
       } else {
-        toast({ title: "Error", description: data.error || "Failed to change password.", variant: "destructive" });
+         // This is a fallback, but apiClient should have thrown an error
+         toast({ title: "Error", description: data.error || "Failed to change password.", variant: "destructive" });
       }
-    } catch (error) {
+    } catch (error: any) {
+      // 4. The catch block now handles API errors
       console.error("Password change error:", error);
-      toast({ title: "Error", description: "A network error occurred.", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "A network error occurred.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
+  // --- END OF CHANGES ---
 
   return (
     <Card>
