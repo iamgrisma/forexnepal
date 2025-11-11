@@ -25,14 +25,14 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     const toDate = url.searchParams.get('to');
     
     if (!fromDate || !toDate) {
-           // --- THIS WAS THE SYNTAX ERROR ---
+           // --- SYNTAX ERROR FIX ---
            return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
     }
 
     try {
         const { action } = (await request.json()) as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
-            // --- THIS WAS THE SYNTAX ERROR ---
+            // --- SYNTAX ERROR FIX ---
             return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: corsHeaders });
         }
 
@@ -742,7 +742,7 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
         const settings: ApiAccessSetting[] = await request.json();
         
         if (!Array.isArray(settings)) {
-            return new Response(JSON.stringify({ success: false, error: 'Invalid data format, expected an array of settings' }), { status: 400, headers: corsHeaders });
+            return new Response(JSON.stringify({ success: false, error: 'Invalid data format, expected an array of settings' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         const stmts: D1PreparedStatement[] = [];
