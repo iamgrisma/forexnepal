@@ -83,8 +83,15 @@ const Index = () => {
     }
   }, [prevDayData]);
 
-  // Use forexData if available
-  const displayData: RatesData | undefined = forexData;
+  // --- THIS IS THE KEY FIX ---
+  // Determine which data to display.
+  // Use today's data (forexData) if it's available and has rates.
+  // Otherwise, fall back to the previous day's data (prevDayData).
+  const displayData: RatesData | undefined = 
+    (forexData?.rates && forexData.rates.length > 0) 
+    ? forexData 
+    : prevDayData;
+  // --- END OF FIX ---
 
   useEffect(() => {
     // --- UPDATE: Use displayData ---
@@ -130,8 +137,10 @@ const Index = () => {
     ]);
   };
   
+  // --- UPDATE: Use displayData to populate rates ---
   const rates: Rate[] = displayData?.rates || [];
-  const hasNoData = !isLoading && (!rates || rates.length === 0);
+  // --- UPDATE: Check if the data being shown is from the fallback ---
+  const isShowingFallback = (!forexData || (forexData.rates && forexData.rates.length === 0)) && (prevDayData?.rates && prevDayData.rates.length > 0);
 
 
   const handleDateChange = (date: Date | undefined) => {
@@ -390,7 +399,7 @@ const Index = () => {
         buyBox.style.textAlign = 'center';
         buyBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
-          // --- FIX: Wrap in Number() with fallback to 0 ---
+          {/* --- FIX: Wrap in Number() with fallback to 0 --- */}
           <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${Number(rate.buy || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${buyTrend.trend === 'increase' ? `▲ +${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
@@ -406,7 +415,7 @@ const Index = () => {
         sellBox.style.textAlign = 'center';
         sellBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
-          // --- FIX: Wrap in Number() with fallback to 0 ---
+          {/* --- FIX: Wrap in Number() with fallback to 0 --- */}
           <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${Number(rate.sell || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${sellTrend.trend === 'increase' ? `▲ +${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
@@ -598,9 +607,18 @@ const Index = () => {
 
           {/* Main Title with Date Navigation - Fixed heights */}
           <div className="text-center mb-8 min-h-[100px]">
+            {/* --- UPDATED: Title font size reduced --- */}
             <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 truncate">
               Foreign Exchange Rates by NRB for {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
             </h2>
+
+            {/* --- NEW: Show fallback message --- */}
+            {isShowingFallback && (
+              <div className="text-sm text-orange-600 font-medium animate-fade-in">
+                No data found for {formatDateLong(selectedDate)}. Showing data for {formatDateLong(subDays(selectedDate, 1))}.
+              </div>
+            )}
+            {/* --- END NEW --- */}
 
             <div className="flex items-center justify-center gap-2 h-10 mt-2">
               <Button
@@ -621,8 +639,10 @@ const Index = () => {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-auto px-4 justify-center text-left font-normal group relative",
-                      !selectedDate && "text-muted-foreground"
+                      "w-auto px-4 justify-center text-left font-normal group relative", // w-[240px] removed
+                      !selectedDate && "text-muted-foreground",
+                      // --- NEW: Highlight if showing fallback ---
+                      isShowingFallback && "border-orange-300 bg-orange-50 hover:bg-orange-100"
                     )}
                   >
                     {/* --- UPDATED: Removed formatting, just show date --- */}
