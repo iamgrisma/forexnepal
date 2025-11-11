@@ -25,12 +25,14 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     const toDate = url.searchParams.get('to');
     
     if (!fromDate || !toDate) {
-           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status 400, headers: corsHeaders });
+           // --- THIS WAS THE SYNTAX ERROR ---
+           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
     }
 
     try {
         const { action } = (await request.json()) as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
+            // --- THIS WAS THE SYNTAX ERROR ---
             return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: corsHeaders });
         }
 
@@ -140,7 +142,7 @@ export async function handleCheckUser(request: Request, env: Env): Promise<Respo
             return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        return new Response(JSON.stringify({ success: true, message: "User verified" }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        return new Response(JSON.stringify({ success: true, message: "User verified" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
         console.error('Check user error:', error.message, error.cause);
@@ -705,7 +707,7 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
 }
 
 
-// --- NEW ADMIN HANDLERS FOR API SETTINGS ---
+// --- ADMIN HANDLERS FOR API SETTINGS ---
 
 /**
  * (ADMIN) GET all API access settings.
