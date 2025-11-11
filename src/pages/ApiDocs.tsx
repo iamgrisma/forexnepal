@@ -1,468 +1,882 @@
-import { useState } from 'react';
-import Layout from '@/components/Layout';
+// src/pages/ApiDocs.tsx
+import React from 'react';
+import { Helmet } from 'react-helmet-async';
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from "@/components/ui/accordion";
+} from '@/components/ui/accordion';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Code } from 'lucide-react';
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import CopyCodeButton from '@/components/CopyCodeButton';
+import ApiEmbedPreview from '@/components/ApiEmbedPreview';
 
-// --- Code Snippets ---
-
-const tableSnippet = `
-<div id="forex-table-container"></div>
-
-<style>
-  #forex-table-container {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 2rem;
-  }
-  .forex-table {
-    width: 100%;
-    border-collapse: collapse;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-    border-radius: 8px;
-    overflow: hidden;
-  }
-  .forex-table th, .forex-table td {
-    padding: 12px 16px;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-  }
-  .forex-table th {
-    background-color: #f9fafb;
-    font-weight: 600;
-    color: #374151;
-  }
-  .forex-table tbody tr:hover {
-    background-color: #f5f5f5;
-  }
-  .forex-table td:nth-child(4) {
-    color: #16a34a;
-    font-weight: 500;
-  }
-  .forex-table td:nth-child(5) {
-    color: #dc2626;
-    font-weight: 500;
-  }
-  .loading-text {
-    text-align: center;
-    padding: 2rem;
-    font-size: 1.2rem;
-    color: #555;
-  }
-</style>
-
-<script>
-  async function fetchForexData() {
-    const container = document.getElementById('forex-table-container');
-    container.innerHTML = '<p class="loading-text">Loading forex data...</p>';
-
-    try {
-      // 1. Fetch data from the API
-      const response = await fetch('https://forex.grisma.com.np/api/latest-rates');
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-      const data = await response.json();
-
-      if (!data.rates || data.rates.length === 0) {
-        container.innerHTML = '<p class="loading-text">No rates available.</p>';
-        return;
-      }
-
-      // 2. Build the HTML table
-      let tableHTML = \`
-        <table class="forex-table">
-          <thead>
-            <tr>
-              <th>Currency</th>
-              <th>Unit</th>
-              <th>Buy</th>
-              <th>Sell</th>
-            </tr>
-          </thead>
-          <tbody>
-      \`;
-
-      // 3. Loop through rates and create rows
-      for (const rate of data.rates) {
-        tableHTML += \`
-          <tr>
-            <td><strong>\${rate.currency.iso3}</strong> (\${rate.currency.name})</td>
-            <td>\${rate.currency.unit}</td>
-            <td>\${rate.buy.toFixed(2)}</td>
-            <td>\${rate.sell.toFixed(2)}</td>
-          </tr>
-        \`;
-      }
-
-      tableHTML += \`
-          </tbody>
-        </table>
-        <p style="text-align: right; font-size: 0.9rem; color: #6b7280; margin-top: 8px;">
-          Data published on: \${new Date(data.date).toLocaleDateString()}
-        </p>
-      \`;
-
-      // 4. Display the table
-      container.innerHTML = tableHTML;
-
-    } catch (error) {
-      console.error('Fetch error:', error);
-      container.innerHTML = '<p style="color: red; text-align: center;">Failed to load data.</p>';
-    }
-  }
-
-  // Load the data when the script runs
-  fetchForexData();
-</script>
-`;
-
-const gridSnippet = `
-<div id="forex-grid-container"></div>
-
-<style>
-  #forex-grid-container {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 2rem;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
-  }
-  .forex-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-  }
-  .card-header {
-    margin-bottom: 1rem;
-  }
-  .card-header h3 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0;
-  }
-  .card-header p {
-    font-size: 0.9rem;
-    color: #6b7280;
-    margin: 4px 0 0 0;
-  }
-  .card-rates {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-  .rate-box {
-    padding: 1rem;
-    border-radius: 6px;
-    text-align: center;
-  }
-  .rate-box-buy {
-    background-color: #f0fdf4;
-    border: 1px solid #bbf7d0;
-  }
-  .rate-box-sell {
-    background-color: #fef2f2;
-    border: 1px solid #fecaca;
-  }
-  .rate-label {
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-  .rate-box-buy .rate-label { color: #166534; }
-  .rate-box-sell .rate-label { color: #991b1b; }
-  .rate-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin-top: 4px;
-  }
-  .rate-box-buy .rate-value { color: #15803d; }
-  .rate-box-sell .rate-value { color: #b91c1c; }
-  .loading-text {
-    grid-column: 1 / -1;
-    text-align: center;
-    padding: 2rem;
-    font-size: 1.2rem;
-    color: #555;
-  }
-</style>
-
-<script>
-  async function fetchForexData() {
-    const container = document.getElementById('forex-grid-container');
-    container.innerHTML = '<p class="loading-text">Loading forex data...</p>';
-
-    try {
-      // 1. Fetch data from the API
-      const response = await fetch('https://forex.grisma.com.np/api/latest-rates');
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-      const data = await response.json();
-
-      if (!data.rates || data.rates.length === 0) {
-        container.innerHTML = '<p class="loading-text">No rates available.</p>';
-        return;
-      }
-
-      // 2. Clear loading message
-      container.innerHTML = ''; 
-
-      // 3. Loop through rates and create cards
-      for (const rate of data.rates) {
-        const card = document.createElement('div');
-        card.className = 'forex-card';
-        
-        card.innerHTML = \`
-          <div class="card-header">
-            <h3>\${rate.currency.name}</h3>
-            <p>\${rate.currency.iso3} / NPR (Unit: \${rate.currency.unit})</p>
-          </div>
-          <div class="card-rates">
-            <div class="rate-box rate-box-buy">
-              <div class="rate-label">Buy</div>
-              <div class="rate-value">\${rate.buy.toFixed(2)}</div>
-            </div>
-            <div class="rate-box rate-box-sell">
-              <div class="rate-label">Sell</div>
-              <div class="rate-value">\${rate.sell.toFixed(2)}</div>
-            </div>
-          </div>
-        \`;
-        container.appendChild(card);
-      }
-
-    } catch (error) {
-      console.error('Fetch error:', error);
-      container.innerHTML = '<p style="color: red; text-align: center;">Failed to load data.</p>';
-    }
-  }
-
-  // Load the data when the script runs
-  fetchForexData();
-</script>
-`;
+const CodeBlock: React.FC<{ code: string; title?: string }> = ({ code, title }) => (
+  <div className="relative mt-4">
+    {title && <h4 className="text-sm font-medium mb-2">{title}</h4>}
+    <div className="relative rounded-md border bg-gray-900 text-gray-50 p-4 font-mono text-sm overflow-x-auto">
+      <CopyCodeButton
+        codeToCopy={code}
+        className="absolute top-2 right-2 text-white hover:bg-gray-700"
+      />
+      <pre>
+        <code>{code}</code>
+      </pre>
+    </div>
+  </div>
+);
 
 const ApiDocs = () => {
-  const [snippet, setSnippet] = useState(tableSnippet);
-  const [design, setDesign] = useState('table');
-  const [activeAccordion, setActiveAccordion] = useState('item-1');
 
-  const handleDesignChange = (value: string) => {
-    setDesign(value);
-    if (value === 'table') {
-      setSnippet(tableSnippet);
-    } else if (value === 'grid') {
-      setSnippet(gridSnippet);
+  const imageTableEmbedCode = `
+<div id="forex-grisma-widget-table"></div>
+<script>
+  (function() {
+    const container = document.getElementById('forex-grisma-widget-table');
+    if (!container) return;
+
+    const sourceLink = 'Source: <a href="https://forex.grisma.com.np" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">Forex by Grisma</a>, A NRB Realtime API Based Platform';
+
+    const style = \`
+      <style>
+        #forex-grisma-widget-table {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+          max-width: 400px;
+          min-width: 300px;
+          background: #ffffff;
+        }
+        .fgwt-header {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .fgwt-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 0;
+        }
+        .fgwt-header p {
+          font-size: 12px;
+          color: #64748b;
+          margin: 4px 0 0;
+        }
+        .fgwt-body {
+          max-height: 300px;
+          overflow-y: auto;
+        }
+        .fgwt-table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .fgwt-table th, .fgwt-table td {
+          text-align: left;
+          padding: 10px 16px;
+          font-size: 14px;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .fgwt-table th {
+          background: #f8f9fa;
+          font-weight: 500;
+          color: #475569;
+        }
+        .fgwt-table td {
+          color: #1e293b;
+        }
+        .fgwt-currency {
+          font-weight: 500;
+        }
+        .fgwt-trend {
+          font-size: 18px;
+          line-height: 1;
+        }
+        .fgwt-trend-increase { color: #10b981; }
+        .fgwt-trend-decrease { color: #ef4444; }
+        .fgwt-trend-stable { color: #64748b; }
+        .fgwt-footer {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-top: 1px solid #e2e8f0;
+          font-size: 11px;
+          text-align: center;
+          color: #64748b;
+        }
+        .fgwt-footer a {
+          color: #3b82f6;
+          text-decoration: none;
+        }
+      </style>
+    \`;
+    document.head.insertAdjacentHTML('beforeend', style);
+
+    function renderWidget(data) {
+      const getTrendIcon = (trend) => {
+        if (trend.trend === 'increase') return '<span class="fgwt-trend fgwt-trend-increase" title="Up by ' + trend.diff.toFixed(2) + '">&#9650;</span>';
+        if (trend.trend === 'decrease') return '<span class="fgwt-trend fgwt-trend-decrease" title="Down by ' + trend.diff.toFixed(2) + '">&#9660;</span>';
+        return '<span class="fgwt-trend fgwt-trend-stable" title="Stable">&#9644;</span>';
+      };
+
+      container.innerHTML = \`
+        <div class="fgwt-header">
+          <h3>Nepal Forex Rates</h3>
+          <p>As of \${data.date}</p>
+        </div>
+        <div class="fgwt-body">
+          <table class="fgwt-table">
+            <thead>
+              <tr>
+                <th>Currency</th>
+                <th>Buy</th>
+                <th>Sell</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${data.rates.map(rate => \`
+                <tr>
+                  <td class="fgwt-currency">\${rate.iso3} (\${rate.unit})</td>
+                  <td>\${rate.buy.toFixed(2)} \${getTrendIcon(rate.buyTrend)}</td>
+                  <td>\${rate.sell.toFixed(2)} \${getTrendIcon(rate.sellTrend)}</td>
+                </tr>
+              \`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="fgwt-footer">
+          \${sourceLink}
+        </div>
+      \`;
     }
-  };
+
+    container.innerHTML = '<div style="padding: 20px; text-align: center; font-size: 14px; color: #64748b;">Loading...</div>';
+
+    fetch('https://forex.grisma.com.np/api/image/latest-rates')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          renderWidget(data);
+        } else {
+          throw new Error(data.error || 'Failed to load data');
+        }
+      })
+      .catch(error => {
+        container.innerHTML = \`<div style="padding: 20px; text-align: center; font-size: 14px; color: #ef4444;">\${error.message}</div>\`;
+      });
+  })();
+</script>
+  `;
+  
+  const imageGridEmbedCode = `
+<div id="forex-grisma-widget-grid"></div>
+<script>
+  (function() {
+    const container = document.getElementById('forex-grisma-widget-grid');
+    if (!container) return;
+    
+    const sourceLink = 'Source: <a href="https://forex.grisma.com.np" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">Forex by Grisma</a>, A NRB Realtime API Based Platform';
+
+    const style = \`
+      <style>
+        #forex-grisma-widget-grid {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+          max-width: 100%;
+          background: #ffffff;
+        }
+        .fgwg-header {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .fgwg-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 0;
+        }
+        .fgwg-header p {
+          font-size: 12px;
+          color: #64748b;
+          margin: 4px 0 0;
+        }
+        .fgwg-body {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+          gap: 1px;
+          background: #e2e8f0;
+          max-height: 320px;
+          overflow-y: auto;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .fgwg-card {
+          background: #ffffff;
+          padding: 12px;
+        }
+        .fgwg-currency {
+          font-size: 14px;
+          font-weight: 600;
+          color: #1e293b;
+        }
+        .fgwg-unit {
+          font-size: 11px;
+          color: #64748b;
+          margin-left: 4px;
+        }
+        .fgwg-rates {
+          margin-top: 8px;
+          font-size: 13px;
+        }
+        .fgwg-rate {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .fgwg-label {
+          color: #64748b;
+        }
+        .fgwg-value {
+          font-weight: 500;
+        }
+        .fgwg-trend {
+          font-size: 14px;
+          line-height: 1;
+          margin-left: 4px;
+        }
+        .fgwg-trend-increase { color: #10b981; }
+        .fgwg-trend-decrease { color: #ef4444; }
+        .fgwg-trend-stable { color: #64748b; }
+        .fgwg-footer {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          font-size: 11px;
+          text-align: center;
+          color: #64748b;
+        }
+        .fgwg-footer a {
+          color: #3b82f6;
+          text-decoration: none;
+        }
+      </style>
+    \`;
+    document.head.insertAdjacentHTML('beforeend', style);
+
+    function renderWidget(data) {
+      const getTrendIcon = (trend) => {
+        if (trend.trend === 'increase') return '<span class="fgwg-trend fgwg-trend-increase" title="Up by ' + trend.diff.toFixed(2) + '">&#9650;</span>';
+        if (trend.trend === 'decrease') return '<span class="fgwg-trend fgwg-trend-decrease" title="Down by ' + trend.diff.toFixed(2) + '">&#9660;</span>';
+        return '<span class="fgwg-trend fgwg-trend-stable" title="Stable">&#9644;</span>';
+      };
+
+      container.innerHTML = \`
+        <div class="fgwg-header">
+          <h3>Nepal Forex Rates</h3>
+          <p>As of \${data.date}</p>
+        </div>
+        <div class="fgwg-body">
+          \${data.rates.map(rate => \`
+            <div class="fgwg-card">
+              <div>
+                <span class="fgwg-currency">\${rate.iso3}</span>
+                <span class="fgwg-unit">(\${rate.unit})</span>
+              </div>
+              <div class="fgwg-rates">
+                <div class="fgwg-rate">
+                  <span class="fgwg-label">Buy:</span>
+                  <span class="fgwg-value">\${rate.buy.toFixed(2)} \${getTrendIcon(rate.buyTrend)}</span>
+                </div>
+                <div class="fgwg-rate">
+                  <span class="fgwg-label">Sell:</span>
+                  <span class="fgwg-value">\${rate.sell.toFixed(2)} \${getTrendIcon(rate.sellTrend)}</span>
+                </div>
+              </div>
+            </div>
+          \`).join('')}
+        </div>
+        <div class="fgwg-footer">
+          \${sourceLink}
+        </div>
+      \`;
+    }
+
+    container.innerHTML = '<div style="padding: 20px; text-align: center; font-size: 14px; color: #64748b;">Loading...</div>';
+
+    fetch('https://forex.grisma.com.np/api/image/latest-rates')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          renderWidget(data);
+        } else {
+          throw new Error(data.error || 'Failed to load data');
+        }
+      })
+      .catch(error => {
+        container.innerHTML = \`<div style="padding: 20px; text-align: center; font-size: 14px; color: #ef4444;">\${error.message}</div>\`;
+      });
+  })();
+</script>
+  `;
+  
+  const archiveListEmbedCode = `
+<div id="forex-grisma-widget-archive-list"></div>
+<script>
+  (function() {
+    const container = document.getElementById('forex-grisma-widget-archive-list');
+    if (!container) return;
+
+    const sourceLink = 'Source: <a href="https://forex.grisma.com.np" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">Forex by Grisma</a>, A NRB Realtime API Based Platform';
+    
+    const style = \`
+      <style>
+        #forex-grisma-widget-archive-list {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+          max-width: 400px;
+          min-width: 300px;
+          background: #ffffff;
+        }
+        .fgwal-header {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-bottom: 1px solid #e2e8f0;
+        }
+        .fgwal-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 0;
+        }
+        .fgwal-body {
+          max-height: 300px;
+          overflow-y: auto;
+          padding: 8px 0;
+        }
+        .fgwal-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+        .fgwal-list-item a {
+          display: block;
+          padding: 8px 16px;
+          font-size: 14px;
+          color: #1e293b;
+          text-decoration: none;
+        }
+        .fgwal-list-item a:hover {
+          background: #f1f5f9;
+        }
+        .fgwal-footer {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-top: 1px solid #e2e8f0;
+          font-size: 11px;
+          text-align: center;
+          color: #64748b;
+        }
+      </style>
+    \`;
+    document.head.insertAdjacentHTML('beforeend', style);
+
+    container.innerHTML = '<div style="padding: 20px; text-align: center; font-size: 14px; color: #64748b;">Loading Archive...</div>';
+
+    fetch('https://forex.grisma.com.np/api/archive/list?page=1&limit=20')
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          container.innerHTML = \`
+            <div class="fgwal-header">
+              <h3>Forex Archive</h3>
+            </div>
+            <div class="fgwal-body">
+              <ul class="fgwal-list">
+                \${data.dates.map(date => \`
+                  <li class="fgwal-list-item">
+                    <a href="https://forex.grisma.com.np/archive/\${date}" target="_blank" rel="noopener noreferrer">
+                      View Rates for \${date}
+                    </a>
+                  </li>
+                \`).join('')}
+              </ul>
+            </div>
+            <div class="fgwal-footer">
+              \${sourceLink}
+            </div>
+          \`;
+        } else {
+          throw new Error(data.error || 'Failed to load archive');
+        }
+      })
+      .catch(error => {
+        container.innerHTML = \`<div style="padding: 20px; text-align: center; font-size: 14px; color: #ef4444;">\${error.message}</div>\`;
+      });
+  })();
+</script>
+  `;
+
+  const archiveDetailEmbedCode = `
+<div id="forex-grisma-widget-archive-detail" data-date="2024-07-20"></div>
+<script>
+  (function() {
+    const container = document.getElementById('forex-grisma-widget-archive-detail');
+    if (!container) return;
+
+    // --- CONFIGURATION ---
+    // Get date from data attribute, or use yesterday
+    const getYesterday = () => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split('T')[0];
+    };
+    const date = container.dataset.date || getYesterday();
+    // --- END CONFIGURATION ---
+
+    const sourceLink = 'Source: <a href="https://forex.grisma.com.np" target="_blank" rel="noopener noreferrer" style="color: #007bff; text-decoration: none;">Forex by Grisma</a>, A NRB Realtime API Based Platform';
+    
+    const style = \`
+      <style>
+        #forex-grisma-widget-archive-detail {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          overflow: hidden;
+          max-width: 600px;
+          background: #ffffff;
+        }
+        .fgwad-header {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-bottom: 1px solid #e2e8f0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .fgwad-header h3 {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 0;
+        }
+        .fgwad-header p {
+          font-size: 12px;
+          color: #64748b;
+          margin: 0;
+        }
+        .fgwad-body {
+          padding: 16px;
+          font-size: 14px;
+          line-height: 1.6;
+          color: #334155;
+        }
+        .fgwad-body p {
+          margin: 0 0 12px;
+        }
+        .fgwad-body p:last-child {
+          margin-bottom: 0;
+        }
+        .fgwad-download-btn {
+          font-size: 12px;
+          padding: 4px 8px;
+          border: 1px solid #cbd5e1;
+          background: #fff;
+          border-radius: 4px;
+          cursor: pointer;
+          color: #475569;
+        }
+        .fgwad-download-btn:hover {
+          background: #f1f5f9;
+        }
+        .fgwad-footer {
+          padding: 12px 16px;
+          background: #f8f9fa;
+          border-top: 1px solid #e2e8f0;
+          font-size: 11px;
+          text-align: center;
+          color: #64748b;
+        }
+      </style>
+    \`;
+    document.head.insertAdjacentHTML('beforeend', style);
+
+    container.innerHTML = '<div style="padding: 20px; text-align: center; font-size: 14px; color: #64748b;">Loading News for ' + date + '...</div>';
+
+    fetch(\`https://forex.grisma.com.np/api/archive/detail/\${date}\`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          const { intro, summary, detail } = data.paragraphs;
+          container.innerHTML = \`
+            <div class="fgwad-header">
+              <div>
+                <h3>Forex News Summary</h3>
+                <p>Date: \${data.date}</p>
+              </div>
+              <button class="fgwad-download-btn" id="fgwad-download-\${date}">Download</button>
+            </div>
+            <div class="fgwad-body">
+              <p>\${intro}</p>
+              <p>\${summary}</p>
+              <p>\${detail}</p>
+            </div>
+            <div class="fgwad-footer">
+              \${sourceLink}
+            </div>
+          \`;
+          
+          document.getElementById(\`fgwad-download-\${date}\`).addEventListener('click', () => {
+            const content = [
+              \`Forex News Summary for \${data.date}\n\`,
+              \`Source: https://forex.grisma.com.np/archive/\${data.date}\n\n\`,
+              intro, \`\n\n\`, summary, \`\n\n\`, detail
+            ].join('');
+            const a = document.createElement('a');
+            const file = new Blob([content], {type: 'text/plain'});
+            a.href = URL.createObjectURL(file);
+            a.download = \`forex-summary-\${data.date}.txt\`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+          });
+          
+        } else {
+          throw new Error(data.error || 'Failed to load news');
+        }
+      })
+      .catch(error => {
+        container.innerHTML = \`<div style="padding: 20px; text-align: center; font-size: 14px; color: #ef4444;">\${error.message}</div>\`;
+      });
+  })();
+</script>
+  `;
+
+  const chartEmbedCode = `
+<iframe
+  src="https://forex.grisma.com.np/charts?currency=USD&from=2024-01-01&to=2024-07-01&embed=true"
+  width="100%"
+  height="450"
+  style="border: 1px solid #ccc; border-radius: 8px; min-width: 300px;"
+  frameborder="0"
+  loading="lazy"
+  title="Forex Historical Chart"
+></iframe>
+<p style="font-family: sans-serif; font-size: 11px; text-align: center; color: #64748b; margin-top: 8px;">
+  Source: <a href="https://forex.grisma.com.np" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;">Forex by Grisma</a>, A NRB Realtime API Based Platform
+</p>
+  `;
 
   return (
-    <Layout>
-      <div className="py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <Code className="h-12 w-12 mx-auto mb-4 text-primary" />
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">API Documentation</h1>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Access live and historical forex data directly via our simple JSON API.
-            </p>
-          </div>
+    <div className="container mx-auto max-w-4xl px-4 py-8">
+      <Helmet>
+        <title>API Documentation - Forex Nepal</title>
+        <meta name="description" content="Embeddable widgets and API documentation for Forex Nepal by Grisma." />
+      </Helmet>
 
-          <Accordion type="single" collapsible className="w-full" value={activeAccordion} onValueChange={setActiveAccordion}>
-            
-            {/* API 1: Live Forex Rates */}
-            <AccordionItem value="item-1">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Live Forex Rates (JSON)</span>
-                  <Badge variant="default">Live</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  Provides the latest available daily foreign exchange rates published by Nepal Rastra Bank.
-                  This endpoint automatically falls back to yesterday's data if today's rates are not yet published.
-                </p>
-                <Card className="mb-6">
-                  <CardContent className="pt-4">
-                    <div className="font-mono text-sm">
-                      <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/latest-rates</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <h4 className="font-semibold text-md mb-4">Frontend Code Examples</h4>
-                <p className="text-sm text-gray-700 mb-4">
-                  Here are full, copy-pasteable HTML/JS code snippets to consume this API and display the data.
-                  Select a design from the dropdown to see the code.
-                </p>
-
-                <div className="mb-4">
-                  <Select value={design} onValueChange={handleDesignChange}>
-                    <SelectTrigger className="w-[280px]">
-                      <SelectValue placeholder="Select a design snippet" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="table">Table Design</SelectItem>
-                      <SelectItem value="grid">Grid Card Design</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="w-full">
-                  <Tabs defaultValue="html-js">
-                    <TabsList>
-                      <TabsTrigger value="html-js">HTML + JavaScript</TabsTrigger>
-                      <TabsTrigger value="react" disabled>React / Next.js (Soon)</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="html-js">
-                      <pre className="bg-gray-900 text-white p-4 rounded-md overflow-x-auto text-sm max-h-[500px]">
-                        <code>
-                          {snippet}
-                        </code>
-                      </pre>
-                    </TabsContent>
-                  </Tabs>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-            
-            {/* API 2: Rates by Date */}
-            <AccordionItem value="item-2">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Rates by Date (JSON)</span>
-                  <Badge variant="default">Live</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  Returns forex rates for a specific past date.
-                </p>
-                <Card className="mb-6">
-                  <CardContent className="pt-4">
-                    <div className="font-mono text-sm">
-                      <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/rates/date/YYYY-MM-DD</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-            
-            {/* API 3: Historical Rates */}
-            <AccordionItem value="item-3">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Historical Range (JSON)</span>
-                  <Badge variant="default">Live</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  Returns historical data for a *single currency* over a date range.
-                </p>
-                <Card className="mb-6">
-                  <CardContent className="pt-4">
-                    <div className="font-mono text-sm">
-                      <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4 text-primary font-medium">/api/historical-rates?currency=USD&from=YYYY-MM-DD&to=YYYY-MM-DD</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-            
-            {/* API 4: Public Posts */}
-            <AccordionItem value="item-4">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Public Posts (JSON)</span>
-                  <Badge variant="default">Live</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  Returns a list of all published blog posts.
-                </p>
-                <Card className="mb-6">
-                  <CardContent className="pt-4">
-                    <div className="font-mono text-sm">
-                      <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/posts</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* API 5: Static Images */}
-            <AccordionItem value="item-5">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Static Image Links</span>
-                  <Badge variant="default">Live</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  These are not dynamic APIs, but direct links to static image assets used in the site.
-                </p>
-                <Card>
-                  <CardContent className="pt-4 space-y-2 font-mono text-sm">
-                    <div><a href="/og-image.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/og-image.png</a></div>
-                    <div><a href="/forexnepal-screenshot.jpg" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/forexnepal-screenshot.jpg</a></div>
-                    <div><a href="/icon-512.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/icon-512.png</a></div>
-                    <div><a href="/pwa-icon-512.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/pwa-icon-512.png</a></div>
-                  </CardContent>
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-
-            {/* API 6: Image API */}
-            <AccordionItem value="item-6">
-              <AccordionTrigger className="text-lg font-semibold">
-                <div className="flex items-center gap-4">
-                  <span>Live Rates Image (PNG)</span>
-                  <Badge variant="outline">Upcoming</Badge>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pt-4">
-                <p className="mb-4 text-muted-foreground">
-                  A future API that will dynamically generate and return a PNG image of the latest forex rates,
-                  styled similar to the homepage download.
-                </p>
-                <Card>
-                  <CardContent className="pt-4">
-                    <div className="font-mono text-sm">
-                      <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4 text-muted-foreground">/api/image/latest-rates.png</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </AccordionContent>
-            </AccordionItem>
-
-          </Accordion>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold tracking-tight">API Documentation</h1>
+        <p className="mt-2 text-lg text-muted-foreground">
+          Embed live Nepal Forex Rates on your website with our easy-to-use widgets and APIs.
+          All embeds are client-side and update automatically.
+        </p>
       </div>
-    </Layout>
+
+      <Accordion type="multiple" collapsible className="w-full">
+        
+        {/* === Live Rates Image/Widget API === */}
+        <AccordionItem value="item-1">
+          <AccordionTrigger className="text-xl font-semibold">
+            Live Rates Widget API
+          </AccordionTrigger>
+          <AccordionContent>
+            <Card className="border-none shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle>Embeddable Rates Widget</CardTitle>
+                <CardDescription>
+                  This is the most important API. It provides the data for our embeddable widgets.
+                  The endpoint returns JSON data for the latest rates, including trend information.
+                  <br />
+                  <strong>Endpoint:</strong> <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">/api/image/latest-rates</code>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="table-view">
+                  <TabsList>
+                    <TabsTrigger value="table-view">Table View Embed</TabsTrigger>
+                    <TabsTrigger value="grid-view">Grid View Embed</TabsTrigger>
+                    <TabsTrigger value="json">JSON Response</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="table-view">
+                    <p className="text-sm text-muted-foreground mt-2">
+                      A compact table view, ideal for sidebars or smaller content areas.
+                    </p>
+                    <CodeBlock code={imageTableEmbedCode} />
+                    <ApiEmbedPreview htmlContent={imageTableEmbedCode} />
+                  </TabsContent>
+                  
+                  <TabsContent value="grid-view">
+                    <p className="text-sm text-muted-foreground mt-2">
+                      A responsive grid view that fills the container width.
+                    </p>
+                    <CodeBlock code={imageGridEmbedCode} />
+                    <ApiEmbedPreview htmlContent={imageGridEmbedCode} />
+                  </TabsContent>
+
+                  <TabsContent value="json">
+                    <CodeBlock code={`
+{
+  "success": true,
+  "date": "2024-07-21",
+  "published_on": "2024-07-21 10:00:00",
+  "rates": [
+    {
+      "iso3": "USD",
+      "name": "U.S. Dollar",
+      "unit": 1,
+      "buy": 134.05,
+      "sell": 134.65,
+      "buyTrend": { "diff": 0.01, "trend": "increase" },
+      "sellTrend": { "diff": 0.01, "trend": "increase" }
+    },
+    {
+      "iso3": "EUR",
+      "name": "European Euro",
+      "unit": 1,
+      "buy": 145.50,
+      "sell": 146.15,
+      "buyTrend": { "diff": -0.25, "trend": "decrease" },
+      "sellTrend": { "diff": -0.25, "trend": "decrease" }
+    }
+    // ... more currencies
+  ]
+}
+                    `} />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </AccordionContent>
+        </AccordionItem>
+        
+        {/* === Archive Detail (News) API === */}
+        <AccordionItem value="item-2">
+          <AccordionTrigger className="text-xl font-semibold">
+            Archive Detail (News) API
+          </AccordionTrigger>
+          <AccordionContent>
+            <Card className="border-none shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle>Archive Detail Embed</CardTitle>
+                <CardDescription>
+                  Embeds the auto-generated "news" paragraphs for a specific date.
+                  Includes a download button.
+                  <br />
+                  <strong>Endpoint:</strong> <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">/api/archive/detail/:date</code>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="embed">
+                  <TabsList>
+                    <TabsTrigger value="embed">Embed Code</TabsTrigger>
+                    <TabsTrigger value="json">JSON Response</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="embed">
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Copy this code to embed the news summary. You can change the date in the
+                      <code className="font-mono text-xs bg-muted px-1 py-0.5 rounded">data-date="YYYY-MM-DD"</code> attribute.
+                    </p>
+                    <CodeBlock code={archiveDetailEmbedCode} />
+                    <ApiEmbedPreview htmlContent={archiveDetailEmbedCode} />
+                  </TabsContent>
+
+                  <TabsContent value="json">
+                    <CodeBlock code={`
+// GET /api/archive/detail/2024-07-20
+{
+  "success": true,
+  "date": "2024-07-20",
+  "paragraphs": {
+    "intro": "Nepal Rastra Bank (NRB) published the official foreign exchange rates for 2024-07-20. The U.S. Dollar settled at a buying rate of Rs. 134.05 and a selling rate of Rs. 134.65.",
+    "summary": "Today's market saw mixed movements. The European Euro was the top gainer, while the Japanese Yen saw the most significant decline. In total, 8 currencies gained value against the NPR, while 6 lost ground.",
+    "detail": "The Indian Rupee (INR) remained fixed at Rs. 160.00 (Buy) and Rs. 160.15 (Sell) per 100 units. Other major currencies like the European Euro and UK Pound Sterling also saw adjustments in line with global market trends."
+  }
+}
+                    `} />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* === Historical Chart API === */}
+        <AccordionItem value="item-3">
+          <AccordionTrigger className="text-xl font-semibold">
+            Historical Chart API
+          </AccordionTrigger>
+          <AccordionContent>
+            <Card className="border-none shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle>Historical Chart Embed</CardTitle>
+                <CardDescription>
+                  Embed the full historical chart page using an <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">&lt;iframe&gt;</code>.
+                  You can customize the currency and date range in the <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">src</code> URL.
+                  <br />
+                  <strong>Endpoint:</strong> <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">/api/historical-rates</code>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="embed">
+                  <TabsList>
+                    <TabsTrigger value="embed">Embed Code</TabsTrigger>
+                    <TabsTrigger value="json">JSON Response</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="embed">
+                    <CodeBlock code={chartEmbedCode} />
+                    <ApiEmbedPreview htmlContent={chartEmbedCode} />
+                  </TabsContent>
+
+                  <TabsContent value="json">
+                     <CodeBlock code={`
+// GET /api/historical-rates?currency=USD&from=2024-07-01&to=2024-07-05
+{
+  "success": true,
+  "data": [
+    { "date": "2024-07-01", "buy": 133.50, "sell": 134.10 },
+    { "date": "2024-07-02", "buy": 133.52, "sell": 134.12 },
+    { "date": "2024-07-03", "buy": 133.50, "sell": 134.10 },
+    { "date": "2024-07-04", "buy": 133.80, "sell": 134.40 },
+    { "date": "2024-07-05", "buy": 134.05, "sell": 134.65 }
+  ],
+  "currency": "USD"
+}
+                    `} />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* === Archive List API === */}
+        <AccordionItem value="item-4">
+          <AccordionTrigger className="text-xl font-semibold">
+            Archive List API
+          </AccordionTrigger>
+          <AccordionContent>
+            <Card className="border-none shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle>Archive List Embed</CardTitle>
+                <CardDescription>
+                  Embeds a list of recent archive dates, linking to your site's archive pages.
+                  <br />
+                  <strong>Endpoint:</strong> <code className="font-mono text-sm bg-muted px-1 py-0.5 rounded">/api/archive/list</code>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="embed">
+                  <TabsList>
+                    <TabsTrigger value="embed">Embed Code</TabsTrigger>
+                    <TabsTrigger value="json">JSON Response</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="embed">
+                    <CodeBlock code={archiveListEmbedCode} />
+                    <ApiEmbedPreview htmlContent={archiveListEmbedCode} />
+                  </TabsContent>
+
+                  <TabsContent value="json">
+                    <CodeBlock code={`
+// GET /api/archive/list?page=1&limit=3
+{
+  "success": true,
+  "pagination": {
+    "page": 1,
+    "limit": 3,
+    "total": 1200,
+    "totalPages": 400
+  },
+  "dates": [
+    "2024-07-21",
+    "2024-07-20",
+    "2024-07-19"
+  ]
+}
+                    `} />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </AccordionContent>
+        </AccordionItem>
+
+        {/* === Other JSON APIs === */}
+        <AccordionItem value="item-5">
+          <AccordionTrigger className="text-xl font-semibold">
+            Other JSON-Only APIs
+          </AccordionTrigger>
+          <AccordionContent>
+             <Card className="border-none shadow-none">
+              <CardHeader className="pb-4">
+                <CardTitle>Raw JSON Endpoints</CardTitle>
+                <CardDescription>
+                  These are the basic endpoints for fetching raw data. They do not have embeddable UIs,
+                  but are useful for developers.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <h4 className="font-semibold">Latest Rates (Raw)</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Gets the latest rates as a raw JSON object.
+                  </p>
+                  <CodeBlock code={`
+// GET /api/latest-rates
+{
+  "date": "2024-07-21",
+  "published_on": "2024-07-21 10:00:00",
+  "modified_on": "2024-07-21 10:00:00",
+  "rates": [
+    {
+      "currency": { "name": "U.S. Dollar", "unit": 1, "iso3": "USD" },
+      "buy": 134.05,
+      "sell": 134.65
+    },
+    // ... more currencies
+  ]
+}
+                  `} />
+                </div>
+                <div>
+                  <h4 className="font-semibold">Rates by Date (Raw)</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Gets rates for a specific date.
+                  </p>
+                  <CodeBlock code={`
+// GET /api/rates/date/2024-07-20
+{
+  "date": "2024-07-20",
+  "published_on": "2024-07-20 10:00:00",
+  "rates": [
+    // ...
+  ]
+}
+                  `} />
+                </div>
+              </CardContent>
+            </Card>
+          </AccordionContent>
+        </AccordionItem>
+
+      </Accordion>
+    </div>
   );
 };
 
