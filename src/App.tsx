@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-to-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'; // <-- This was the typo
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Index from './pages/Index';
 import About from './pages/About';
