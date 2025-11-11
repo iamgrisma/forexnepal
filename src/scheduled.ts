@@ -5,8 +5,9 @@ import { formatDate } from './worker-utils';
 
 /**
  * Processes raw NRB API data and prepares D1 batch statements.
+ * --- FIX: Added 'export' keyword ---
  */
-async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'replace'): Promise<number> {
+export async function processAndStoreApiData(data: any, env: Env, action: 'update' | 'replace'): Promise<number> {
     if (!data?.data?.payload || data.data.payload.length === 0) {
         console.log(`No payload data from NRB.`);
         return 0;
@@ -135,6 +136,7 @@ export async function handleScheduled(event: ScheduledEvent, env: Env): Promise<
 
         if (response.ok) {
             const data = await response.json();
+            // Use the exported function here
             const processedDates = await processAndStoreApiData(data, env, 'replace');
             console.log(`[cron ${event.cron}] Successfully stored ${processedDates} record(s) for ${todayNptStr}.`);
             return;
