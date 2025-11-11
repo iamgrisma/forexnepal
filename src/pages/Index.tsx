@@ -154,7 +154,7 @@ const Index = () => {
 
   // --- 
   // --- 
-  // --- START: RESTORED FUNCTION ---
+  // --- START: CORRECTED FUNCTION ---
   // --- 
   // --- 
   const downloadContentAsImage = async () => {
@@ -187,7 +187,7 @@ const Index = () => {
 
     // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    // --- UPDATED: Set width to 2400px ---
+    // --- FIX: Set explicit width for wrapper in BOTH modes ---
     wrapper.style.width = '2400px'; 
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
@@ -201,14 +201,12 @@ const Index = () => {
     // 3. Add High-Contrast Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    // --- UPDATED: Smaller font size for one line ---
     titleEl.style.fontSize = '60px'; 
     titleEl.style.fontWeight = '700';
     titleEl.style.marginBottom = '40px';
     titleEl.style.color = '#111827'; // Dark text
     titleEl.style.lineHeight = '1.2';
     const displayDate = displayData ? new Date(displayData.date) : selectedDate;
-    // --- UPDATED: Title on one line ---
     titleEl.innerHTML = `Foreign Exchange Rate by NRB for ${formatDateLong(displayDate)}`;
     wrapper.appendChild(titleEl);
 
@@ -239,7 +237,6 @@ const Index = () => {
         headers.forEach(headerText => {
           const th = document.createElement('th');
           th.textContent = headerText;
-          // --- UPDATED: Larger fonts ---
           th.style.padding = '20px';
           th.style.fontSize = '22px';
           th.style.fontWeight = '600';
@@ -266,7 +263,6 @@ const Index = () => {
           
           // Currency
           const tdCurrency = document.createElement('td');
-          // --- UPDATED: Use emoji for reliability in canvas ---
           tdCurrency.innerHTML = `<span style="font-size: 32px; margin-right: 16px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
           tdCurrency.style.fontWeight = '600';
           tdCurrency.style.color = '#111827';
@@ -311,7 +307,6 @@ const Index = () => {
           });
 
           [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
-              // --- UPDATED: Larger fonts/padding ---
               td.style.padding = '18px 20px';
               td.style.borderBottom = '1px solid #E5E7EB';
               td.style.fontSize = '22px';
@@ -334,38 +329,41 @@ const Index = () => {
       gridContainer.style.display = 'flex'; // Use flex column to stack rows
       gridContainer.style.flexDirection = 'column';
       gridContainer.style.gap = '24px';
-      gridContainer.style.width = '100%';
+      gridContainer.style.width = '100%'; // Will be 100% of 2400px wrapper
       gridContainer.style.boxSizing = 'border-box';
       
-      const ratesPerColumn = 6;
-      const numColumns = 6; // Standard row size
+      const numColumns = 6;
+      const gap = 24;
+      // --- FIX: Calculate explicit pixel width based on 2400px wrapper ---
+      const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
+      const cardWidthPx = (2400 - totalGapWidth) / numColumns; // (2400 - 120) / 6 = 380px
+      // ---
 
       // --- Helper to build a single card ---
       const buildGridCard = (rate: Rate) => {
         const card = document.createElement('div');
         card.style.border = '2px solid #E5E7EB';
-        card.style.borderRadius = '16px'; // --- Slightly larger radius ---
-        card.style.padding = '24px'; // --- Increased padding ---
+        card.style.borderRadius = '16px'; 
+        card.style.padding = '24px'; 
         card.style.backgroundColor = '#FFFFFF';
         card.style.display = 'flex';
         card.style.flexDirection = 'column';
-        card.style.gap = '20px'; // --- Increased gap ---
+        card.style.gap = '20px'; 
         card.style.boxSizing = 'border-box';
-        // --- UPDATED: Increased height ---
         card.style.height = '280px'; 
         card.style.justifyContent = 'space-between'; 
-        card.style.flexBasis = `calc(100% / ${numColumns} - 20px)`; // (gap * (cols-1) / cols) = 24 * 5 / 6 = 20px
-        card.style.flexGrow = '1';
+        // --- FIX: Use explicit pixel width ---
+        card.style.flexBasis = `${cardWidthPx}px`;
+        card.style.flexGrow = '0';
+        card.style.flexShrink = '0';
+        // ---
 
         // Card Header
         const cardHeader = document.createElement('div');
         cardHeader.style.display = 'flex';
         cardHeader.style.alignItems = 'center';
-        cardHeader.style.gap = '12px'; // --- Decreased gap for more text space ---
+        cardHeader.style.gap = '12px'; 
         
-        const changeRate = (rate.buy / (rate.currency.unit || 1)) - (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.buy / (previousDayRates.find(pr => pr.currency.iso3 === rate.currency.iso3)?.currency.unit || 1) || 0);
-
-        // --- UPDATED: Use emoji, allow text wrap, slightly smaller font ---
         cardHeader.innerHTML = `
           <span style="font-size: 48px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
           <div style="display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0;">
@@ -466,18 +464,17 @@ const Index = () => {
       infoBox.style.lineHeight = '1.6';
       infoBox.style.height = '280px'; // --- Match card height ---
       infoBox.style.boxSizing = 'border-box';
-      // --- UPDATED: flexBasis math to account for 5 gaps (24px * 4 = 96) ---
-      const cardWidth = `calc((100% - (24px * ${numColumns - 1})) / ${numColumns})`;
-      const infoBoxWidth = `calc((${cardWidth} * 2) + 24px)`; // 2 cards + 1 gap
-      infoBox.style.flexBasis = infoBoxWidth;
+      // --- FIX: Calculate explicit pixel width for info box ---
+      const infoBoxWidthPx = (cardWidthPx * 2) + gap; // (380 * 2) + 24 = 784px
+      infoBox.style.flexBasis = `${infoBoxWidthPx}px`;
       infoBox.style.flexShrink = '0';
+      // ---
       
       infoBox.style.display = 'flex';
       infoBox.style.flexDirection = 'column';
       infoBox.style.justifyContent = 'center';
       infoBox.style.alignItems = 'center';
       
-      // --- UPDATED: Info block text ---
       infoBox.innerHTML = `
         <p style="font-weight: 700; font-size: 26px; margin: 0; color: #111827; line-height: 1.3;">Foreign Exchange Rate for Nepal Published by Nepal Rastra Bank for ${formatDateLong(displayDate)}</p>
         <p style="font-size: 18px; margin: 12px 0 0 0; color: #4B5563; line-height: 1.5;">This data is generated using Nepal Rastra Bank ForexAPI. Data presentation, extraction and designed by Grisma | visit forex.grisma.com.np for more information.</p>
@@ -500,7 +497,6 @@ const Index = () => {
     footer.style.padding = '20px';
     footer.style.borderTop = '2px solid #E5E7EB';
 
-    // --- UPDATED: Footer text matches info block text ---
     const line1 = document.createElement('p');
     line1.style.fontWeight = '700';
     line1.style.fontSize = '26px';
@@ -511,7 +507,7 @@ const Index = () => {
     footer.appendChild(line1);
 
     const line2 = document.createElement('p');
-    line2.style.fontSize = '20px'; // "slightly small font"
+    line2.style.fontSize = '20px'; 
     line2.style.margin = '12px 0 0 0';
     line2.style.color = '#4B5563';
     line2.style.lineHeight = '1.5';
@@ -533,12 +529,11 @@ const Index = () => {
       });
 
       const canvas = await html2canvas(wrapper, {
-        // --- UPDATED: Use scale 1 for 2400px width ---
+        // --- FIX: Use explicit 2400px width and remove height ---
         scale: 1, 
-        backgroundColor: '#ffffff', // Explicit white background
-        width: wrapper.offsetWidth,
-        height: wrapper.offsetHeight,
-        useCORS: true, // For loading external assets
+        backgroundColor: '#ffffff', 
+        width: 2400,
+        useCORS: true,
       });
 
       const link = document.createElement('a');
@@ -563,7 +558,7 @@ const Index = () => {
   };
   // --- 
   // --- 
-  // --- END: RESTORED FUNCTION ---
+  // --- END: CORRECTED FUNCTION ---
   // --- 
   // --- 
 
@@ -619,7 +614,7 @@ const Index = () => {
                 className="group relative"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
-                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
+                <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowDrap">
                   Previous Day
                 </span>
               </Button>
