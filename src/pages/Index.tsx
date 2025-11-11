@@ -197,14 +197,19 @@ const Index = () => {
 
     // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    wrapper.style.width = '2400px'; 
+    // --- 
+    // --- THIS IS THE FIX ---
+    // --- Set width to 2480px (2400px content + 80px padding)
+    wrapper.style.width = '2480px'; 
+    // ---
+    // ---
     wrapper.style.padding = '40px';
     wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     wrapper.style.display = 'flex';
     wrapper.style.flexDirection = 'column';
     wrapper.style.alignItems = 'center';
-    wrapper.style.boxSizing = 'border-box';
+    wrapper.style.boxSizing = 'border-box'; // This makes the 2480px include the 80px padding
 
 
     // 3. Add High-Contrast Title
@@ -230,7 +235,7 @@ const Index = () => {
       tableContainer.style.display = 'flex';
       tableContainer.style.flexDirection = 'row';
       tableContainer.style.gap = '20px';
-      tableContainer.style.width = '100%';
+      tableContainer.style.width = '100%'; // 100% of the 2400px content area
 
       const buildTable = (ratesList: Rate[], snOffset: number) => {
         const table = document.createElement('table');
@@ -283,7 +288,6 @@ const Index = () => {
 
           // Buy Rate
           const tdBuy = document.createElement('td');
-          // --- FIX: Wrap in Number() with fallback to 0 ---
           tdBuy.textContent = Number(rate.buy || 0).toFixed(2);
           tdBuy.style.color = '#15803D'; // Dark green
           tdBuy.style.fontWeight = '700';
@@ -291,7 +295,6 @@ const Index = () => {
           
           // Sell Rate
           const tdSell = document.createElement('td');
-          // --- FIX: Wrap in Number() with fallback to 0 ---
           tdSell.textContent = Number(rate.sell || 0).toFixed(2);
           tdSell.style.color = '#B91C1C'; // Dark red
           tdSell.style.fontWeight = '700';
@@ -340,12 +343,13 @@ const Index = () => {
       gridContainer.style.display = 'flex'; // Use flex column to stack rows
       gridContainer.style.flexDirection = 'column';
       gridContainer.style.gap = '24px';
-      gridContainer.style.width = '100%'; // Will be 100% of 2400px wrapper
+      gridContainer.style.width = '100%'; // 100% of the 2400px content area
       gridContainer.style.boxSizing = 'border-box';
       
       const numColumns = 6;
       const gap = 24;
       const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
+      // This math is now correct, as the content area IS 2400px
       const cardWidthPx = (2400 - totalGapWidth) / numColumns; // (2400 - 120) / 6 = 380px
 
       // --- Helper to build a single card ---
@@ -497,7 +501,7 @@ const Index = () => {
     const footer = document.createElement('div');
     footer.style.marginTop = '40px';
     footer.style.textAlign = 'center';
-    footer.style.width = '100%';
+    footer.style.width = '100%'; // 100% of the 2400px content area
     footer.style.boxSizing = 'border-box';
     footer.style.padding = '20px';
     footer.style.borderTop = '2px solid #E5E7EB';
@@ -533,19 +537,13 @@ const Index = () => {
         description: "This may take a few seconds for high resolution.",
       });
 
-      // --- 
-      // --- THIS IS THE FIX ---
-      // --- 
       const canvas = await html2canvas(wrapper, {
         scale: 1, 
         backgroundColor: '#ffffff', 
-        width: wrapper.offsetWidth,  // Use the element's full calculated width (2480px)
-        height: wrapper.offsetHeight, // Use the element's full calculated height
+        width: wrapper.offsetWidth,  // This will now correctly be 2480
+        height: wrapper.offsetHeight, // This will be the full calculated height
         useCORS: true, 
       });
-      // --- 
-      // --- END OF FIX ---
-      // --- 
 
       const link = document.createElement('a');
       link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.png`;
@@ -634,7 +632,6 @@ const Index = () => {
                 className="group relative"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
-                {/* --- FIX: Corrected whitespace-nowrap --- */}
                 <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                   Previous Day
                 </span>
