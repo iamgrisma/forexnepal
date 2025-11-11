@@ -1,9 +1,45 @@
 // src/api-helpers.ts
-import { Env, ApiAccessSetting, ExecutionContext } from './worker-types';
+import { Env, ApiAccessSetting, ExecutionContext, D1Database, SiteSettings } from './worker-types';
 import { corsHeaders } from './constants';
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 const API_SETTINGS_CACHE_TTL = 300; // 5 minutes
+
+// --- NEW (BUT WAS MISSING) ---
+/**
+ * Fetches all site settings from D1 and formats them as an object.
+ */
+export async function getAllSettings(db: D1Database): Promise<SiteSettings> {
+    const defaultSettings: SiteSettings = {
+        ticker_enabled: true,
+        adsense_enabled: false,
+        adsense_exclusions: '/admin,/login',
+    };
+    
+    try {
+        const { results } = await db.prepare("SELECT key, value FROM site_settings").all<{ key: string, value: string }>();
+        
+        if (!results) {
+            return defaultSettings;
+        }
+
+        const settings = results.reduce((acc, row) => {
+            if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
+                acc[row.key] = row.value === 'true';
+            } else if (row.key === 'adsense_exclusions') {
+                acc[row.key] = row.value;
+            }
+            return acc;
+        }, {} as any);
+
+        return { ...defaultSettings, ...settings };
+    } catch (e: any) {
+        console.error("Failed to fetch settings from D1:", e.message);
+        return defaultSettings;
+    }
+}
+// --- END NEW FUNCTION ---
+
 
 /**
  * Fetches API access rules, using cache first, then falling back to D1.
@@ -36,8 +72,8 @@ async function getApiSettings(env: Env): Promise<Map<string, ApiAccessSetting>> 
         });
 
         return settingsMap;
-    } catch (e) {
-        console.error('Failed to fetch API settings from D1:', e);
+    } catch (e: { message: any }) {
+        console.error('Failed to fetch API settings from D1:', e.message);
         return new Map(); // Return empty map on failure
     }
 }
@@ -70,8 +106,8 @@ export async function pruneApiUsageLogs(db: D1Database): Promise<void> {
         const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
         await db.prepare("DELETE FROM api_usage_logs WHERE request_time < ?").bind(twoHoursAgo).run();
         console.log('Pruned old API usage logs.');
-    } catch (e) {
-        console.error('Error pruning API logs:', e);
+    } catch (e: any) {
+        console.error('Error pruning API logs:', e.message);
     }
 }
 
@@ -99,7 +135,8 @@ export async function checkApiAccess(
 
     if (!setting) {
         console.warn(`No API access setting found for endpoint: ${matchedEndpoint}`);
-        return new Response(JSON.stringify({ error: 'API endpoint not configured' }), { status: 404, headers: corsHeaders });
+        // Default to public if not configured, but log it.
+        return null;
     }
 
     // 1. Check Access Level
@@ -108,7 +145,15 @@ export async function checkApiAccess(
     }
 
     if (setting.access_level === 'public') {
-        return null; // Public, no further checks needed (for now, quota could be added)
+        // Check for public quota
+        const quota = setting.quota_per_hour;
+        if (quota === -1) {
+            return null; // Public and unlimited
+        }
+        
+        // Public quota is IP-based
+        const ip = request.headers.get('CF-Connecting-IP') || 'public_ip';
+        return checkQuota(env, ctx, ip, matchedEndpoint, quota);
     }
 
     // 2. Check Restricted Access (IP or Referer)
@@ -137,28 +182,42 @@ export async function checkApiAccess(
         if (quota === -1) {
             return null; // Unlimited quota
         }
-
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        const { results } = await env.FOREX_DB.prepare(
-            "SELECT COUNT(*) as count FROM api_usage_logs WHERE identifier = ? AND endpoint = ? AND request_time > ?"
-        ).bind(identifier, matchedEndpoint, oneHourAgo).all<{ count: number }>();
         
-        const usageCount = results?.[0]?.count || 0;
-
-        if (usageCount >= quota) {
-            return new Response(JSON.stringify({ error: `Quota exceeded (${quota}/hr). Please try again later.` }), { status: 429, headers: corsHeaders });
-        }
-
-        // 4. Log this request (don't await)
-        ctx.waitUntil(
-            env.FOREX_DB.prepare("INSERT INTO api_usage_logs (identifier, endpoint) VALUES (?, ?)")
-                .bind(identifier, matchedEndpoint)
-                .run()
-                .catch(e => console.error('Failed to log API usage:', e))
-        );
-
-        return null; // Access granted
+        return checkQuota(env, ctx, identifier, matchedEndpoint, quota);
     }
 
     return null; // Default grant if somehow missed
+}
+
+/**
+ * Helper function to check quota for a given identifier.
+ */
+async function checkQuota(
+    env: Env,
+    ctx: ExecutionContext,
+    identifier: string,
+    endpoint: string,
+    quota: number
+): Promise<Response | null> {
+    
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { results } = await env.FOREX_DB.prepare(
+        "SELECT COUNT(*) as count FROM api_usage_logs WHERE identifier = ? AND endpoint = ? AND request_time > ?"
+    ).bind(identifier, endpoint, oneHourAgo).all<{ count: number }>();
+    
+    const usageCount = results?.[0]?.count || 0;
+
+    if (usageCount >= quota) {
+        return new Response(JSON.stringify({ error: `Quota exceeded (${quota}/hr). Please try again later.` }), { status: 429, headers: corsHeaders });
+    }
+
+    // Log this request (don't await)
+    ctx.waitUntil(
+        env.FOREX_DB.prepare("INSERT INTO api_usage_logs (identifier, endpoint) VALUES (?, ?)")
+            .bind(identifier, endpoint)
+            .run()
+            .catch(e => console.error('Failed to log API usage:', e))
+    );
+
+    return null; // Access granted
 }
