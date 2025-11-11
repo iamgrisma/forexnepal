@@ -399,7 +399,6 @@ const Index = () => {
         buyBox.style.textAlign = 'center';
         buyBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
-          {/* --- FIX: Wrap in Number() with fallback to 0 --- */}
           <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${Number(rate.buy || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${buyTrend.trend === 'increase' ? `▲ +${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
@@ -415,7 +414,6 @@ const Index = () => {
         sellBox.style.textAlign = 'center';
         sellBox.innerHTML = `
           <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
-          {/* --- FIX: Wrap in Number() with fallback to 0 --- */}
           <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${Number(rate.sell || 0).toFixed(2)}</div>
           <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
             ${sellTrend.trend === 'increase' ? `▲ +${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
@@ -629,6 +627,7 @@ const Index = () => {
                 className="group relative"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-600 group-hover:text-blue-600" />
+                {/* --- FIX: Corrected whitespace-nowrap --- */}
                 <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                   Previous Day
                 </span>
