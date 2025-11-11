@@ -1,73 +1,65 @@
 // src/auth.ts
-import { JWT_SECRET } from './constants';
+import { SignJWT, jwtVerify } from 'jose';
 
 /**
- * Hashes a password using SHA-256.
+ * Verifies a JWT token.
+ * Now requires the secret to be passed from env.
+ */
+export async function verifyToken(token: string, secret: string): Promise<boolean> {
+  if (!secret) {
+    console.error('JWT_SECRET is not set. Token verification failed.');
+    return false;
+  }
+  
+  try {
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+      issuer: 'forex-nepal',
+      audience: 'forex-nepal-users',
+    });
+    return !!payload.sub; // Check if 'sub' (username) exists
+  } catch (e) {
+    console.error('Token verification failed:', e);
+    return false;
+  }
+}
+
+/**
+ * Generates a new JWT token.
+ * Now requires the secret to be passed from env.
+ */
+export async function generateToken(username: string, secret: string): Promise<string> {
+  if (!secret) {
+    console.error('JWT_SECRET is not set. Token generation failed.');
+    throw new Error('Server configuration error.');
+  }
+
+  const encodedSecret = new TextEncoder().encode(secret);
+  const token = await new SignJWT({ 'username': username })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(username)
+    .setIssuedAt()
+    .setIssuer('forex-nepal')
+    .setAudience('forex-nepal-users')
+    .setExpirationTime('24h') // Token expires in 24 hours
+    .sign(encodedSecret);
+  return token;
+}
+
+/**
+ * Simple hash function (remains unchanged)
  */
 export async function simpleHash(password: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(password + JWT_SECRET);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Compares a plaintext password to a stored hash.
+ * Simple hash comparison (remains unchanged)
  */
-export async function simpleHashCompare(password: string, storedHash: string | null): Promise<boolean> {
-    if (!storedHash) {
-        return false;
-    }
-    const inputHash = await simpleHash(password);
-    return inputHash === storedHash;
-}
-
-/**
- * Generates a new JWT token for a user.
- */
-export async function generateToken(username: string): Promise<string> {
-    const header = { alg: 'HS256', typ: 'JWT' };
-    const payload = {
-        username,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 hours validity
-    };
-    const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    const signatureInput = `${encodedHeader}.${encodedPayload}`;
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey('raw', encoder.encode(JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-    const signatureBuffer = await crypto.subtle.sign('HMAC', key, encoder.encode(signatureInput));
-    let base64Signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer))).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-    return `${signatureInput}.${base64Signature}`;
-}
-
-/**
- * Verifies the integrity and expiration of a JWT token.
- */
-export async function verifyToken(token: string): Promise<boolean> {
-    if (!token || typeof token !== 'string') return false;
-    const parts = token.split('.');
-    if (parts.length !== 3) return false;
-    const [encodedHeader, encodedPayload, signature] = parts;
-    const signatureInput = `${encodedHeader}.${encodedPayload}`;
-    try {
-        const decodedPayload = atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/'));
-        const payload = JSON.parse(decodedPayload);
-        const now = Math.floor(Date.now() / 1000);
-        if (payload.exp && payload.exp < now) {
-            console.log("Token expired");
-            return false;
-        }
-        const encoder = new TextEncoder();
-        const key = await crypto.subtle.importKey('raw', encoder.encode(JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
-        let base64 = signature.replace(/-/g, '+').replace(/_/g, '/');
-        while (base64.length % 4) { base64 += '='; }
-        const signatureBytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
-        return await crypto.subtle.verify('HMAC', key, signatureBytes, encoder.encode(signatureInput));
-    } catch (error) {
-        console.error('Token verification error:', error);
-        return false;
-    }
+export async function simpleHashCompare(password: string, hash: string): Promise<boolean> {
+  const passwordHash = await simpleHash(password);
+  return passwordHash === hash;
 }
