@@ -26,6 +26,10 @@ export default {
             if (pathname === '/api/settings') {
                 return api.handlePublicSettings(request, env);
             }
+            // --- NEW: Add /api/latest-rates route ---
+            if (pathname === '/api/latest-rates') {
+                return api.handleLatestRates(request, env);
+            }
             if (pathname === '/api/historical-rates') {
                 return api.handleHistoricalRates(request, env);
             }
