@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 // Import icons
-import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard } from 'lucide-react';
+import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard, Code } from 'lucide-react'; // <-- NEW: Imported Code icon
 
 const Navigation = () => {
   const location = useLocation();
@@ -45,6 +45,11 @@ const Navigation = () => {
                 <NavLink to="/converter" active={location.pathname === '/converter'}>
                   <ArrowRightLeft className="h-4 w-4 mr-2" />
                   Converter
+                </NavLink>
+                {/* --- NEW: Added API Link --- */}
+                <NavLink to="/api" active={location.pathname === '/api'}>
+                  <Code className="h-4 w-4 mr-2" />
+                  API
                 </NavLink>
                 <NavLink to="/about" active={location.pathname === '/about'}>
                   <User className="h-4 w-4 mr-2" />
