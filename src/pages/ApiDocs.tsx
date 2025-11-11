@@ -15,14 +15,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { Code } from 'lucide-react';
 
 // --- Code Snippets ---
 
 const tableSnippet = `
-// This is a basic HTML/JavaScript example.
-// You can paste this into any .html file and run it.
-
 <div id="forex-table-container"></div>
 
 <style>
@@ -58,12 +56,18 @@ const tableSnippet = `
     color: #dc2626;
     font-weight: 500;
   }
+  .loading-text {
+    text-align: center;
+    padding: 2rem;
+    font-size: 1.2rem;
+    color: #555;
+  }
 </style>
 
 <script>
   async function fetchForexData() {
     const container = document.getElementById('forex-table-container');
-    container.innerHTML = '<p>Loading forex data...</p>';
+    container.innerHTML = '<p class="loading-text">Loading forex data...</p>';
 
     try {
       // 1. Fetch data from the API
@@ -74,7 +78,7 @@ const tableSnippet = `
       const data = await response.json();
 
       if (!data.rates || data.rates.length === 0) {
-        container.innerHTML = '<p>No rates available.</p>';
+        container.innerHTML = '<p class="loading-text">No rates available.</p>';
         return;
       }
 
@@ -117,7 +121,7 @@ const tableSnippet = `
 
     } catch (error) {
       console.error('Fetch error:', error);
-      container.innerHTML = '<p style="color: red;">Failed to load data.</p>';
+      container.innerHTML = '<p style="color: red; text-align: center;">Failed to load data.</p>';
     }
   }
 
@@ -127,9 +131,6 @@ const tableSnippet = `
 `;
 
 const gridSnippet = `
-// This is a basic HTML/JavaScript example.
-// You can paste this into any .html file and run it.
-
 <div id="forex-grid-container"></div>
 
 <style>
@@ -191,12 +192,19 @@ const gridSnippet = `
   }
   .rate-box-buy .rate-value { color: #15803d; }
   .rate-box-sell .rate-value { color: #b91c1c; }
+  .loading-text {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2rem;
+    font-size: 1.2rem;
+    color: #555;
+  }
 </style>
 
 <script>
   async function fetchForexData() {
     const container = document.getElementById('forex-grid-container');
-    container.innerHTML = '<p>Loading forex data...</p>';
+    container.innerHTML = '<p class="loading-text">Loading forex data...</p>';
 
     try {
       // 1. Fetch data from the API
@@ -207,7 +215,7 @@ const gridSnippet = `
       const data = await response.json();
 
       if (!data.rates || data.rates.length === 0) {
-        container.innerHTML = '<p>No rates available.</p>';
+        container.innerHTML = '<p class="loading-text">No rates available.</p>';
         return;
       }
 
@@ -240,7 +248,7 @@ const gridSnippet = `
 
     } catch (error) {
       console.error('Fetch error:', error);
-      container.innerHTML = '<p style="color: red;">Failed to load data.</p>';
+      container.innerHTML = '<p style="color: red; text-align: center;">Failed to load data.</p>';
     }
   }
 
@@ -252,6 +260,7 @@ const gridSnippet = `
 const ApiDocs = () => {
   const [snippet, setSnippet] = useState(tableSnippet);
   const [design, setDesign] = useState('table');
+  const [activeAccordion, setActiveAccordion] = useState('item-1');
 
   const handleDesignChange = (value: string) => {
     setDesign(value);
@@ -267,13 +276,14 @@ const ApiDocs = () => {
       <div className="py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
+            <Code className="h-12 w-12 mx-auto mb-4 text-primary" />
             <h1 className="text-4xl font-bold text-gray-900 mb-4">API Documentation</h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Access live and historical forex data directly via our simple JSON API.
             </p>
           </div>
 
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="single" collapsible className="w-full" value={activeAccordion} onValueChange={setActiveAccordion}>
             
             {/* API 1: Live Forex Rates */}
             <AccordionItem value="item-1">
@@ -284,14 +294,15 @@ const ApiDocs = () => {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4">
-                <p className="mb-4">
+                <p className="mb-4 text-muted-foreground">
                   Provides the latest available daily foreign exchange rates published by Nepal Rastra Bank.
+                  This endpoint automatically falls back to yesterday's data if today's rates are not yet published.
                 </p>
                 <Card className="mb-6">
                   <CardContent className="pt-4">
                     <div className="font-mono text-sm">
                       <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4">https://forex.grisma.com.np/api/latest-rates</span>
+                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/latest-rates</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -321,7 +332,7 @@ const ApiDocs = () => {
                       <TabsTrigger value="react" disabled>React / Next.js (Soon)</TabsTrigger>
                     </TabsList>
                     <TabsContent value="html-js">
-                      <pre className="bg-gray-900 text-white p-4 rounded-md overflow-x-auto text-sm">
+                      <pre className="bg-gray-900 text-white p-4 rounded-md overflow-x-auto text-sm max-h-[500px]">
                         <code>
                           {snippet}
                         </code>
@@ -331,71 +342,117 @@ const ApiDocs = () => {
                 </div>
               </AccordionContent>
             </AccordionItem>
-
-            {/* API 2: Historical Rates */}
+            
+            {/* API 2: Rates by Date */}
             <AccordionItem value="item-2">
               <AccordionTrigger className="text-lg font-semibold">
                 <div className="flex items-center gap-4">
-                  <span>Historical Rates (JSON)</span>
-                  <Badge variant="outline">Upcoming</Badge>
+                  <span>Rates by Date (JSON)</span>
+                  <Badge variant="default">Live</Badge>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4">
-                <p className="mb-4">
+                <p className="mb-4 text-muted-foreground">
                   Returns forex rates for a specific past date.
                 </p>
-                <Card>
+                <Card className="mb-6">
                   <CardContent className="pt-4">
                     <div className="font-mono text-sm">
                       <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4">/api/historical?date=YYYY-MM-DD</span>
+                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/rates/date/YYYY-MM-DD</span>
                     </div>
                   </CardContent>
                 </Card>
               </AccordionContent>
             </AccordionItem>
-
-            {/* API 3: Currency List */}
+            
+            {/* API 3: Historical Rates */}
             <AccordionItem value="item-3">
               <AccordionTrigger className="text-lg font-semibold">
                 <div className="flex items-center gap-4">
-                  <span>Currency List (JSON)</span>
-                  <Badge variant="outline">Upcoming</Badge>
+                  <span>Historical Range (JSON)</span>
+                  <Badge variant="default">Live</Badge>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4">
-                <p className="mb-4">
-                  Returns a list of all supported currencies, their ISO codes, and full names.
+                <p className="mb-4 text-muted-foreground">
+                  Returns historical data for a *single currency* over a date range.
                 </p>
-                <Card>
+                <Card className="mb-6">
                   <CardContent className="pt-4">
                     <div className="font-mono text-sm">
                       <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4">/api/currencies</span>
+                      <span className="ml-4 text-primary font-medium">/api/historical-rates?currency=USD&from=YYYY-MM-DD&to=YYYY-MM-DD</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </AccordionContent>
+            </AccordionItem>
+            
+            {/* API 4: Public Posts */}
+            <AccordionItem value="item-4">
+              <AccordionTrigger className="text-lg font-semibold">
+                <div className="flex items-center gap-4">
+                  <span>Public Posts (JSON)</span>
+                  <Badge variant="default">Live</Badge>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-4">
+                <p className="mb-4 text-muted-foreground">
+                  Returns a list of all published blog posts.
+                </p>
+                <Card className="mb-6">
+                  <CardContent className="pt-4">
+                    <div className="font-mono text-sm">
+                      <span className="text-green-600 font-semibold">GET</span>
+                      <span className="ml-4 text-primary font-medium">https://forex.grisma.com.np/api/posts</span>
                     </div>
                   </CardContent>
                 </Card>
               </AccordionContent>
             </AccordionItem>
 
-            {/* API 4: Image API */}
-            <AccordionItem value="item-4">
+            {/* API 5: Static Images */}
+            <AccordionItem value="item-5">
               <AccordionTrigger className="text-lg font-semibold">
                 <div className="flex items-center gap-4">
-                  <span>Live Rates Image (PNG)</span>
-                  <Badge variant="destructive">Advanced / Upcoming</Badge>
+                  <span>Static Image Links</span>
+                  <Badge variant="default">Live</Badge>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4">
-                <p className="mb-4">
-                  Generates and returns a PNG image of the latest forex rates, styled similar to the homepage download.
-                  This is a server-side task and is in development.
+                <p className="mb-4 text-muted-foreground">
+                  These are not dynamic APIs, but direct links to static image assets used in the site.
+                </p>
+                <Card>
+                  <CardContent className="pt-4 space-y-2 font-mono text-sm">
+                    <div><a href="/og-image.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/og-image.png</a></div>
+                    <div><a href="/forexnepal-screenshot.jpg" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/forexnepal-screenshot.jpg</a></div>
+                    <div><a href="/icon-512.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/icon-512.png</a></div>
+                    <div><a href="/pwa-icon-512.png" target="_blank" rel="noopener noreferrer" className="text-primary font-medium hover:underline">/pwa-icon-512.png</a></div>
+                  </CardContent>
+                </Card>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* API 6: Image API */}
+            <AccordionItem value="item-6">
+              <AccordionTrigger className="text-lg font-semibold">
+                <div className="flex items-center gap-4">
+                  <span>Live Rates Image (PNG)</span>
+                  <Badge variant="outline">Upcoming</Badge>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-4">
+                <p className="mb-4 text-muted-foreground">
+                  A future API that will dynamically generate and return a PNG image of the latest forex rates,
+                  styled similar to the homepage download.
                 </p>
                 <Card>
                   <CardContent className="pt-4">
                     <div className="font-mono text-sm">
                       <span className="text-green-600 font-semibold">GET</span>
-                      <span className="ml-4">/api/image/latest-rates.png</span>
+                      <span className="ml-4 text-muted-foreground">/api/image/latest-rates.png</span>
                     </div>
                   </CardContent>
                 </Card>
