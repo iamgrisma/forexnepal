@@ -26,14 +26,14 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     
     if (!fromDate || !toDate) {
            // --- SYNTAX ERROR FIX ---
-           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: corsHeaders });
+           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
         const { action } = (await request.json()) as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
             // --- SYNTAX ERROR FIX ---
-            return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDate}&to=${toDate}`;
@@ -41,7 +41,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
 
         if (!response.ok) {
             if (response.status === 404) {
-                 return new Response(JSON.stringify({ success: true, stored: 0, message: 'No data available from NRB.' }), { headers: corsHeaders });
+                 return new Response(JSON.stringify({ success: true, stored: 0, message: 'No data available from NRB.' }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
             throw new Error(`NRB API error: ${response.status}`);
         }
@@ -52,7 +52,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
         return new Response(JSON.stringify({ success: true, stored: processedDates, fromDate, toDate }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } catch (error: any) {
-        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
 
@@ -734,7 +734,7 @@ export async function handleGetApiSettings(request: Request, env: Env): Promise<
         return new Response(JSON.stringify({ success: true, settings: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } catch (e: any) {
         console.error('Failed to fetch API settings:', e);
-        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
 
@@ -786,7 +786,7 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
         return new Response(JSON.stringify({ success: true, message: `${stmts.length} settings updated` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } catch (e: any) {
         console.error('Failed to update API settings:', e);
-        return new Response(JSON.stringify({ success: false, error: 'Database update failed' }), { status: 500, headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, error: 'Database update failed' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
 
@@ -798,13 +798,15 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
  */
 export async function handleOneTimeLogin(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
+        // --- FIX: Added 'Content-Type' header ---
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
         const { code } = await request.json();
         if (!code) {
-            return new Response(JSON.stringify({ success: false, error: 'One-time code is required' }), { status: 400, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'One-time code is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         // Find the code
@@ -813,16 +815,19 @@ export async function handleOneTimeLogin(request: Request, env: Env): Promise<Re
         ).bind(code).first<{ id: number; username: string; expires_at: string; used: number }>();
 
         if (!accessRecord) {
-            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired code' }), { status: 403, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired code' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         if (accessRecord.used === 1) {
-            return new Response(JSON.stringify({ success: false, error: 'This code has already been used' }), { status: 403, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'This code has already been used' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         const expiresAt = new Date(accessRecord.expires_at);
         if (expiresAt < new Date()) {
-            return new Response(JSON.stringify({ success: false, error: 'This code has expired' }), { status: 403, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'This code has expired' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         // Mark code as used
@@ -830,16 +835,19 @@ export async function handleOneTimeLogin(request: Request, env: Env): Promise<Re
 
         // Log the user in
         const token = await generateToken(accessRecord.username, env.JWT_SECRET);
+        
+        // --- FIX: Added 'Content-Type' header ---
         return new Response(JSON.stringify({
             success: true,
             token,
             username: accessRecord.username,
             mustChangePassword: false // One-time login assumes they are trusted
-        }), { headers: corsHeaders });
+        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
         console.error('One-time login error:', error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: corsHeaders });
+        // --- FIX: Added 'Content-Type' header ---
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
 
@@ -850,19 +858,22 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
     if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+        // --- FIX: Added 'Content-Type' header ---
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
         const { username } = await request.json();
         if (!username) {
-            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         // Check if user exists
         const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
         if (!user) {
-            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: corsHeaders });
+            // --- FIX: Added 'Content-Type' header ---
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         // Generate a simple 8-digit code
@@ -873,10 +884,12 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
             `INSERT INTO one_time_access (username, access_code, expires_at, code_type) VALUES (?, ?, ?, 'login')`
         ).bind(username, accessCode, expiresAt).run();
 
-        return new Response(JSON.stringify({ success: true, username: username, code: accessCode, expires_at: expiresAt }), { headers: corsHeaders });
+        // --- FIX: Added 'Content-Type' header ---
+        return new Response(JSON.stringify({ success: true, username: username, code: accessCode, expires_at: expiresAt }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
         console.error('Error generating one-time login code:', error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: corsHeaders });
+        // --- FIX: Added 'Content-Type' header ---
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
