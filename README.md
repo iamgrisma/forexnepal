@@ -1,6 +1,6 @@
 # Welcome to your Lovable project
 
-## Project info
+## Project info:
 
 **URL**: [Forex Nepal](https://forex.grisma.com.np/)
 
