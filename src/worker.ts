@@ -183,15 +183,49 @@ export default {
 
         // --- Serve Static Assets (from KV) ---
         try {
-            return env.__STATIC_CONTENT.fetch(request);
-        } catch (e) {
-            // Fallback: Serve index.html for SPA routing
-            try {
-                const indexHtml = await env.__STATIC_CONTENT.get('index.html');
-                return new Response(indexHtml, { headers: { ...corsHeaders, 'Content-Type': 'text/html' } });
-            } catch (err) {
-                return new Response('Not found', { status: 404, headers: corsHeaders });
+            const assetKey = pathname === '/' ? 'index.html' : pathname.slice(1);
+            const asset = await env.__STATIC_CONTENT.get(assetKey, 'arrayBuffer');
+            
+            if (asset) {
+                const contentType = getContentType(pathname);
+                return new Response(asset, {
+                    headers: {
+                        'Content-Type': contentType,
+                        ...corsHeaders
+                    }
+                });
             }
+            
+            // If asset not found, fall through to index.html
+            const indexHtml = await env.__STATIC_CONTENT.get('index.html', 'text');
+            return new Response(indexHtml, { 
+                headers: { ...corsHeaders, 'Content-Type': 'text/html' } 
+            });
+        } catch (e) {
+            return new Response('Not found', { status: 404, headers: corsHeaders });
         }
     },
 };
+
+// Helper function to determine content type
+function getContentType(pathname: string): string {
+    const ext = pathname.split('.').pop()?.toLowerCase();
+    const types: Record<string, string> = {
+        'html': 'text/html',
+        'js': 'application/javascript',
+        'css': 'text/css',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'ico': 'image/x-icon',
+        'woff': 'font/woff',
+        'woff2': 'font/woff2',
+        'ttf': 'font/ttf',
+        'xml': 'application/xml',
+        'txt': 'text/plain',
+    };
+    return types[ext || ''] || 'application/octet-stream';
+}

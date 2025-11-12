@@ -72,7 +72,7 @@ async function getApiSettings(env: Env): Promise<Map<string, ApiAccessSetting>> 
         });
 
         return settingsMap;
-    } catch (e: { message: any }) {
+    } catch (e: any) {
         console.error('Failed to fetch API settings from D1:', e.message);
         return new Map(); // Return empty map on failure
     }

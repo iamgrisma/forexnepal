@@ -50,7 +50,7 @@ const ProtectedRoute = () => {
 
       try {
         // Use apiClient which has base URL
-        const response = await apiClient.get('/admin/settings', {
+        const response = await apiClient.get<any>('/admin/settings', {
           headers: { Authorization: `Bearer ${token}` },
         });
 

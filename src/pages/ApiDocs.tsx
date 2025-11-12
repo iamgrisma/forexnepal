@@ -648,7 +648,7 @@ const ApiDocs = () => {
           </p>
         </div>
 
-        <Accordion type="multiple" collapsible className="w-full" defaultValue={['item-1']}>
+        <Accordion type="multiple" className="w-full" defaultValue={['item-1']}>
           
           {/* === Live Rates Image/Widget API === */}
           <AccordionItem value="item-1">

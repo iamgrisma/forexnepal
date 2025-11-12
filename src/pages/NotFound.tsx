@@ -523,7 +523,7 @@ const NotFound = () => {
              </p>
            </div>
 
-           <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
+           <AdSense adClient="ca-pub-XXXXXXXXXXXXXXXX" adSlot="XXXXXXXXXX" />
 
         </div>
       </div>

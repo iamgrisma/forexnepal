@@ -1,5 +1,5 @@
 // src/scheduled.ts
-import { Env, ExecutionContext, ScheduledEvent, D1Database } from './worker-types';
+import { Env, ExecutionContext, ScheduledEvent, D1Database, D1PreparedStatement } from './worker-types';
 import { CURRENCIES, CURRENCY_MAP } from './constants';
 import { formatDate } from './worker-utils';
 import { handleSitemap } from './sitemapGenerator';
@@ -125,7 +125,7 @@ export async function handleScheduled(event: ScheduledEvent, env: Env, ctx: Exec
                 throw new Error(`NRB API request failed with status ${response.status}`);
             }
         } else {
-            const data = await response.json<NrbApiResponse>();
+            const data = await response.json() as NrbApiResponse;
             await processAndStoreApiData(data, env, 'replace'); // Use 'replace' to ensure today's data is updated
         }
     } catch (error: any) {

@@ -78,7 +78,7 @@ export const ApiSettings: React.FC = () => {
   const fetchSettings = async () => {
     setIsLoading(true);
     try {
-      const response = await apiClient.get('/admin/api-settings', {
+      const response = await apiClient.get<any>('/admin/api-settings', {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.data.success) {
@@ -116,7 +116,7 @@ export const ApiSettings: React.FC = () => {
   const handleSaveChanges = async () => {
     setIsSaving(true);
     try {
-      const response = await apiClient.post('/admin/api-settings', settings, {
+      const response = await apiClient.post<any>('/admin/api-settings', settings, {
         headers: { Authorization: `Bearer ${token}` },
       });
 

@@ -363,7 +363,7 @@ const Converter = () => {
 
           {/* AdSense */}
           <div className="mt-8">
-            <AdSense client="ca-pub-XXXXXXXXXXXXXXXX" slot="XXXXXXXXXX" />
+            <AdSense adClient="ca-pub-XXXXXXXXXXXXXXXX" adSlot="XXXXXXXXXX" />
           </div>
         </div>
       </div>

@@ -321,7 +321,7 @@ export async function handlePublicPostBySlug(request: Request, env: Env): Promis
 export async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -365,7 +365,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
 export async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -506,7 +506,7 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const token = await generateToken(username);
+        const token = await generateToken(username, env.JWT_SECRET);
         return new Response(JSON.stringify({
             success: true,
             token,
@@ -551,7 +551,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     }
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -793,7 +793,7 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
 export async function handleUsers(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -835,7 +835,7 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
 export async function handleUserById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -861,7 +861,7 @@ export async function handleUserById(request: Request, env: Env): Promise<Respon
 export async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -900,7 +900,7 @@ export async function handlePosts(request: Request, env: Env): Promise<Response>
 export async function handlePostById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     const url = new URL(request.url);
@@ -953,7 +953,7 @@ export async function handlePostById(request: Request, env: Env): Promise<Respon
 export async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token))) {
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
