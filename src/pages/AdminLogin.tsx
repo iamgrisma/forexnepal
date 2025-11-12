@@ -13,9 +13,32 @@ import { toast as sonnerToast } from "sonner"; // Import sonner
 // Define the steps for the multi-stage login
 type LoginStep = 'redirecting' | 'username' | 'password' | 'blocked' | 'error';
 
+// --- FIX: Add keys for session storage ---
+const STEP_STORAGE_KEY = 'loginStep';
+const USERNAME_STORAGE_KEY = 'loginUsername';
+
 const AdminLogin = () => {
-  const [step, setStep] = useState<LoginStep>('redirecting');
-  const [username, setUsername] = useState('');
+  // --- FIX: Read initial step from sessionStorage ---
+  const getInitialStep = (): LoginStep => {
+    try {
+      const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
+      if (storedStep === 'username' || storedStep === 'password') {
+        return storedStep as LoginStep;
+      }
+    } catch (e) {}
+    return 'redirecting'; // Default
+  };
+  const [step, setStep] = useState<LoginStep>(getInitialStep());
+
+  // --- FIX: Read initial username from sessionStorage ---
+  const [username, setUsername] = useState(() => {
+    try {
+      return sessionStorage.getItem(USERNAME_STORAGE_KEY) || '';
+    } catch (e) {
+      return '';
+    }
+  });
+
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(5); // Visual countdown
@@ -50,6 +73,12 @@ const AdminLogin = () => {
   // --- 2. Start Timers on 'redirecting' step ---
   useEffect(() => {
     if (step === 'redirecting') {
+      // --- FIX: Clear session storage on redirect step ---
+      try {
+        sessionStorage.removeItem(STEP_STORAGE_KEY);
+        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+      } catch (e) {}
+      
       // Start the main 7-second redirect timer
       redirectTimerRef.current = window.setTimeout(() => {
         window.location.href = REDIRECT_URL;
@@ -75,6 +104,21 @@ const AdminLogin = () => {
     };
   }, [step]); // Only run when step changes to 'redirecting'
 
+  // --- FIX: Save step to session storage whenever it changes ---
+  useEffect(() => {
+    try {
+      if (step === 'username' || step === 'password') {
+        sessionStorage.setItem(STEP_STORAGE_KEY, step);
+      } else if (step !== 'redirecting') {
+        // Clear storage on block, error, or success
+        sessionStorage.removeItem(STEP_STORAGE_KEY);
+        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.error('Failed to write to session storage', e);
+    }
+  }, [step]);
+  
   // --- 3. Click Handler to Stop Redirect ---
   const handleCircleClick = () => {
     if (step !== 'redirecting') return;
@@ -83,7 +127,7 @@ const AdminLogin = () => {
     if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
-    // Move to next step
+    // Move to next step (the useEffect above will save this)
     setStep('username');
     sonnerToast.success("Redirect cancelled. Please authenticate.", { duration: 2000 });
   };
@@ -104,16 +148,19 @@ const AdminLogin = () => {
         sessionId: sessionIdRef.current,
       });
 
-      // If successful (user exists), move to password step
+      // --- FIX: Save username to session storage on success ---
+      sessionStorage.setItem(USERNAME_STORAGE_KEY, username);
       setStep('password');
     } catch (error: any) {
       console.error('Username check failed:', error.message);
-      // Handle custom error responses from the worker
+      // --- FIX: Clear storage on error ---
+      sessionStorage.removeItem(STEP_STORAGE_KEY);
+      sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+
       if (error.message.includes('Bro, get out')) {
         setStep('blocked');
         setErrorMessage(error.message);
       } else if (error.message.includes('Redirect')) {
-        // Worker randomly chose to redirect
         window.location.href = REDIRECT_URL;
       } else if (error.message.includes('User not found')) {
         toast({ title: "Error", description: "Invalid username.", variant: "destructive" });
@@ -149,6 +196,10 @@ const AdminLogin = () => {
       });
 
       if (data.success) {
+        // --- FIX: Clear session storage on successful login ---
+        sessionStorage.removeItem(STEP_STORAGE_KEY);
+        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('username', data.username);
         toast({ title: "Login Successful", description: `Welcome, ${data.username}!` });
@@ -161,7 +212,6 @@ const AdminLogin = () => {
 
         navigate('/admin/dashboard', { replace: true });
       } else {
-        // This case should be rare if check-user passed, but handles password failure
         toast({ title: "Login Failed", description: data?.error || 'Invalid credentials', variant: "destructive" });
       }
     } catch (error: any) {
@@ -172,7 +222,7 @@ const AdminLogin = () => {
     }
   };
 
-  // --- RENDER LOGIC ---
+  // --- RENDER LOGIC (No changes needed here) ---
 
   const renderStep = () => {
     switch (step) {
@@ -183,7 +233,6 @@ const AdminLogin = () => {
             <CardDescription>
               You are being redirected for login in secured environment please wait...
             </CardDescription>
-            {/* The Clickable Countdown Circle */}
             <div
               className="relative w-32 h-32 rounded-full flex items-center justify-center bg-muted/50 border-4 border-dashed border-primary/20 cursor-pointer group transition-all hover:bg-muted"
               onClick={handleCircleClick}
