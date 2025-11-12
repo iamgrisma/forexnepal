@@ -34,7 +34,10 @@ import {
     handlePostById,
     handleForexData,
     handleGetApiSettings,
-    handleUpdateApiSettings
+    handleUpdateApiSettings,
+    // --- IMPORT NEW HANDLERS ---
+    handleOneTimeLogin,
+    handleGenerateOneTimeLoginCode
 } from './api-admin';
 
 export default {
@@ -120,6 +123,10 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
+            // --- ADD NEW ONE-TIME LOGIN ROUTE ---
+            if (pathname === '/api/admin/login-one-time' && method === 'POST') {
+                return handleOneTimeLogin(request, env); // env contains JWT_SECRET
+            }
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
@@ -170,6 +177,10 @@ export default {
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
+                }
+                // --- ADD NEW GENERATE CODE ROUTE ---
+                if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
+                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
                 }
             }
 
