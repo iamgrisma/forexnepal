@@ -289,23 +289,22 @@ export async function handlePublicPostBySlug(request: Request, env: Env): Promis
 
 /**
  * (PUBLIC) API for Image Embed
- * Returns JSON data needed for the client-side image render.
- * This API returns the data, the client builds the HTML/image.
+ * Returns HTML that renders the forex table on client side.
  */
 export async function handleImageApi(request: Request, env: Env): Promise<Response> {
     try {
         const row = await getLatestForexRow(env);
         if (!row) {
-            return new Response(JSON.stringify({ error: 'No forex data found' }), { 
+            return new Response('<html><body><p>No forex data found</p></body></html>', { 
                 status: 404, 
-                headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+                headers: {...corsHeaders, 'Content-Type': 'text/html'} 
             });
         }
         
         const yesterdayStr = formatDate(new Date(new Date(row.date).getTime() - 86400000));
         const prevRow = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(yesterdayStr).first<any>();
 
-        const rates: any[] = [];
+        let tableRows = '';
         CURRENCIES.forEach(code => {
             const buyRate = row[`${code}_buy`];
             const sellRate = row[`${code}_sell`];
@@ -314,48 +313,151 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
                 const currencyInfo = CURRENCY_MAP[code];
                 const unit = currencyInfo?.unit || 1;
                 
-                let buyTrend = { diff: 0, trend: 'stable' };
-                let sellTrend = { diff: 0, trend: 'stable' };
+                let buyTrend = '●';
+                let sellTrend = '●';
+                let buyColor = '#9ca3af';
+                let sellColor = '#9ca3af';
 
                 if (prevRow) {
-                    const prevBuy = (prevRow[`${code}_buy`] || 0) / (CURRENCY_MAP[code]?.unit || 1);
-                    const prevSell = (prevRow[`${code}_sell`] || 0) / (CURRENCY_MAP[code]?.unit || 1);
+                    const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
+                    const prevSell = (prevRow[`${code}_sell`] || 0) / unit;
                     const currentBuy = (buyRate || 0) / unit;
                     const currentSell = (sellRate || 0) / unit;
                     
                     const buyDiff = currentBuy - prevBuy;
                     const sellDiff = currentSell - prevSell;
 
-                    buyTrend = { diff: buyDiff, trend: buyDiff > 0.0001 ? 'increase' : (buyDiff < -0.0001 ? 'decrease' : 'stable') };
-                    sellTrend = { diff: sellDiff, trend: sellDiff > 0.0001 ? 'increase' : (sellDiff < -0.0001 ? 'decrease' : 'stable') };
+                    if (buyDiff > 0.0001) {
+                        buyTrend = '▲';
+                        buyColor = '#10b981';
+                    } else if (buyDiff < -0.0001) {
+                        buyTrend = '▼';
+                        buyColor = '#ef4444';
+                    }
+
+                    if (sellDiff > 0.0001) {
+                        sellTrend = '▲';
+                        sellColor = '#10b981';
+                    } else if (sellDiff < -0.0001) {
+                        sellTrend = '▼';
+                        sellColor = '#ef4444';
+                    }
                 }
 
-                rates.push({
-                    iso3: code,
-                    name: currencyInfo?.name || 'Unknown',
-                    unit: unit,
-                    buy: buyRate ?? 0,
-                    sell: sellRate ?? 0,
-                    buyTrend: buyTrend,
-                    sellTrend: sellTrend,
-                });
+                const countryCode = code === 'EUR' ? 'EU' : code.substring(0, 2);
+                tableRows += `
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center;">
+                            <img src="https://flagsapi.com/${countryCode}/flat/32.png" 
+                                 alt="${code}" 
+                                 style="width: 24px; height: 18px; margin-right: 8px; border: 1px solid #e5e7eb;">
+                            <strong>${code}</strong> (${unit})
+                        </div>
+                    </td>
+                    <td>${buyRate.toFixed(2)} <span style="color: ${buyColor}">${buyTrend}</span></td>
+                    <td>${sellRate.toFixed(2)} <span style="color: ${sellColor}">${sellTrend}</span></td>
+                </tr>`;
             }
         });
 
-        const responseData = {
-            success: true,
-            date: row.date,
-            published_on: row.updated_at || row.date,
-            rates: rates
-        };
+        const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nepal Forex Rates - ${row.date}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f9fafb;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 8px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 16px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            font-size: 14px;
+            color: #4b5563;
+        }
+        td {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        tr:hover { background: #f9fafb; }
+        .footer {
+            text-align: center;
+            padding: 16px;
+            background: #f9fafb;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .footer a { color: #2563eb; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Nepal Forex Exchange Rates</h1>
+            <p>Published on ${row.date}</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Currency</th>
+                    <th>Buy (NPR)</th>
+                    <th>Sell (NPR)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+        </table>
+        <div class="footer">
+            Source: <a href="https://forex.grisma.com.np" target="_blank">Forex by Grisma</a> | 
+            Powered by NRB Real-time API
+        </div>
+    </div>
+</body>
+</html>`;
 
-        return new Response(JSON.stringify(responseData), { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        return new Response(html, { 
+            headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } 
         });
 
     } catch (error: any) {
         console.error(`Error in handleImageApi:`, error.message, error.cause);
-        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+        return new Response('<html><body><p>Error loading data</p></body></html>', { 
+            status: 500, 
+            headers: {...corsHeaders, 'Content-Type': 'text/html'} 
+        });
     }
 }
 

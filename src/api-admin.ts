@@ -358,7 +358,7 @@ async function sendPasswordResetEmail(
                     <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
                     <p>Alternatively, use this reset code:</p>
                     <p style="text-align: center;" class="token">${resetToken}</p>
-                    <p><strong>This link and code will expire in 1 hour.</strong></p>
+                    <p><strong>This link and code will expire in 15 minutes.</strong></p>
                     <p>If you didn't request a password reset, please ignore this email or contact support if you're concerned about your account security.</p>
                   </div>
                   <div class="footer">
@@ -408,7 +408,7 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
         }
 
         const resetToken = crypto.randomUUID().replace(/-/g, '');
-        const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+        const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
 
         await env.FOREX_DB.prepare(
             `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`

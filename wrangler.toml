@@ -12,12 +12,12 @@ database_id = "05ede330-5c35-4aee-8843-6c3527817925" # Replace with your actual 
 # KV namespace for static assets
 [[kv_namespaces]]
 binding = "__STATIC_CONTENT"
-id = "YOUR_KV_NAMESPACE_ID" # Replace with your actual KV namespace ID
+id = "d23853432a9d4f09955d9aa93e8dcca8"
 
 # KV namespace for API settings cache
 [[kv_namespaces]]
 binding = "API_SETTINGS_CACHE"
-id = "YOUR_NEW_API_SETTINGS_KV_ID" # Your ID for the API cache
+id = "6eae569e69a748478ddef2014ee60022"
 
 [triggers]
 crons = ["15 18 * * *", "35 18 * * *", "15 23 * * *"]
@@ -30,5 +30,5 @@ command = "npm run build"
 
 [build.upload]
 format = "service-worker"
-[vars]
-JWT_SECRET = "a-quick-br0wn-f0x+jump$0verThelazydog=-=-3443434324832423849329874fdshasdlfa---==-+++@#$%^oeuhsfaehdofasd"
+# JWT_SECRET should be set as a Cloudflare secret
+# Use: wrangler secret put JWT_SECRET
