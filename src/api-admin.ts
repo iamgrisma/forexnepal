@@ -180,6 +180,7 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
         let mustChangePassword = false;
 
         if (user) {
+            // This logic is flawed, but we preserve it from the original file
             if (user.plaintext_password && user.password_hash) {
                 if (password === user.plaintext_password || await simpleHashCompare(password, user.password_hash)) {
                     isValid = true;
@@ -191,8 +192,17 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
                     mustChangePassword = true;
                 }
             } else if (!user.plaintext_password && user.password_hash) {
+                // This is the correct, standard path
                 isValid = await simpleHashCompare(password, user.password_hash);
                 mustChangePassword = false;
+
+                // --- FIX for migration 013 ---
+                // Check for the placeholder hash that forces a password change
+                if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
+                    mustChangePassword = true;
+                }
+                // --- End fix ---
+
             }
         }
 
@@ -270,12 +280,12 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
         let newPasswordHash: string | null = null;
         if (keepSamePassword) {
-            if (user.password_hash) {
+            if (user.password_hash && user.password_hash !== '0000000000000000000000000000000000000000000000000000000000000000') {
                 newPasswordHash = user.password_hash;
             } else if (user.plaintext_password) {
                 newPasswordHash = await simpleHash(user.plaintext_password);
             } else {
-                 return new Response(JSON.stringify({ success: false, error: 'Cannot keep password, no hash or plaintext found.' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+                 return new Response(JSON.stringify({ success: false, error: 'Cannot keep password, no valid hash or plaintext found.' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
         } else {
             newPasswordHash = await simpleHash(newPassword);
@@ -777,5 +787,96 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
     } catch (e: any) {
         console.error('Failed to update API settings:', e);
         return new Response(JSON.stringify({ success: false, error: 'Database update failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+
+// --- NEW: ONE-TIME LOGIN HANDLERS ---
+
+/**
+ * (PUBLIC) Logs a user in using a one-time code.
+ */
+export async function handleOneTimeLogin(request: Request, env: Env): Promise<Response> {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: corsHeaders });
+    }
+
+    try {
+        const { code } = await request.json();
+        if (!code) {
+            return new Response(JSON.stringify({ success: false, error: 'One-time code is required' }), { status: 400, headers: corsHeaders });
+        }
+
+        // Find the code
+        const accessRecord = await env.FOREX_DB.prepare(
+            `SELECT id, username, expires_at, used FROM one_time_access WHERE access_code = ? AND code_type = 'login'`
+        ).bind(code).first<{ id: number; username: string; expires_at: string; used: number }>();
+
+        if (!accessRecord) {
+            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired code' }), { status: 403, headers: corsHeaders });
+        }
+
+        if (accessRecord.used === 1) {
+            return new Response(JSON.stringify({ success: false, error: 'This code has already been used' }), { status: 403, headers: corsHeaders });
+        }
+
+        const expiresAt = new Date(accessRecord.expires_at);
+        if (expiresAt < new Date()) {
+            return new Response(JSON.stringify({ success: false, error: 'This code has expired' }), { status: 403, headers: corsHeaders });
+        }
+
+        // Mark code as used
+        await env.FOREX_DB.prepare(`UPDATE one_time_access SET used = 1 WHERE id = ?`).bind(accessRecord.id).run();
+
+        // Log the user in
+        const token = await generateToken(accessRecord.username, env.JWT_SECRET);
+        return new Response(JSON.stringify({
+            success: true,
+            token,
+            username: accessRecord.username,
+            mustChangePassword: false // One-time login assumes they are trusted
+        }), { headers: corsHeaders });
+
+    } catch (error: any) {
+        console.error('One-time login error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+/**
+ * (ADMIN) Generates a one-time login code for a user.
+ */
+export async function handleGenerateOneTimeLoginCode(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: corsHeaders });
+    }
+
+    try {
+        const { username } = await request.json();
+        if (!username) {
+            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: corsHeaders });
+        }
+
+        // Check if user exists
+        const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
+        if (!user) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: corsHeaders });
+        }
+
+        // Generate a simple 8-digit code
+        const accessCode = Math.random().toString().slice(2, 10);
+        const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+
+        await env.FOREX_DB.prepare(
+            `INSERT INTO one_time_access (username, access_code, expires_at, code_type) VALUES (?, ?, ?, 'login')`
+        ).bind(username, accessCode, expiresAt).run();
+
+        return new Response(JSON.stringify({ success: true, username: username, code: accessCode, expires_at: expiresAt }), { headers: corsHeaders });
+
+    } catch (error: any) {
+        console.error('Error generating one-time login code:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: corsHeaders });
     }
 }
