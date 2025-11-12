@@ -6,23 +6,24 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound } from 'lucide-react';
+import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react'; // Added QrCode
 import { apiClient } from '@/services/apiClient'; // Import the API client
 import { toast as sonnerToast } from "sonner"; // Import sonner
 
-// Define the steps for the multi-stage login
-type LoginStep = 'redirecting' | 'username' | 'password' | 'blocked' | 'error';
+// --- UPDATED: Add 'oneTimeCode' step ---
+type LoginStep = 'redirecting' | 'username' | 'password' | 'oneTimeCode' | 'blocked' | 'error';
 
-// --- FIX: Add keys for session storage ---
+// Add keys for session storage
 const STEP_STORAGE_KEY = 'loginStep';
 const USERNAME_STORAGE_KEY = 'loginUsername';
 
 const AdminLogin = () => {
-  // --- FIX: Read initial step from sessionStorage ---
+  // Read initial step from sessionStorage
   const getInitialStep = (): LoginStep => {
     try {
       const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
-      if (storedStep === 'username' || storedStep === 'password') {
+      // --- UPDATED: Allow 'oneTimeCode' to be stored ---
+      if (storedStep === 'username' || storedStep === 'password' || storedStep === 'oneTimeCode') {
         return storedStep as LoginStep;
       }
     } catch (e) {}
@@ -30,7 +31,7 @@ const AdminLogin = () => {
   };
   const [step, setStep] = useState<LoginStep>(getInitialStep());
 
-  // --- FIX: Read initial username from sessionStorage ---
+  // Read initial username from sessionStorage
   const [username, setUsername] = useState(() => {
     try {
       return sessionStorage.getItem(USERNAME_STORAGE_KEY) || '';
@@ -40,6 +41,7 @@ const AdminLogin = () => {
   });
 
   const [password, setPassword] = useState('');
+  const [oneTimeCode, setOneTimeCode] = useState(''); // --- NEW: State for the code ---
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(5); // Visual countdown
   const [ipAddress, setIpAddress] = useState('');
@@ -55,7 +57,7 @@ const AdminLogin = () => {
   const REDIRECT_TIME_MS = 7000; // 7 seconds total
   const COUNTDOWN_INTERVAL_MS = REDIRECT_TIME_MS / 6; // ~1166ms per number
 
-  // --- 1. Get IP Address on Load ---
+  // 1. Get IP Address on Load
   useEffect(() => {
     const fetchIp = async () => {
       try {
@@ -70,10 +72,10 @@ const AdminLogin = () => {
     fetchIp();
   }, []);
 
-  // --- 2. Start Timers on 'redirecting' step ---
+  // 2. Start Timers on 'redirecting' step
   useEffect(() => {
     if (step === 'redirecting') {
-      // --- FIX: Clear session storage on redirect step ---
+      // Clear session storage on redirect step
       try {
         sessionStorage.removeItem(STEP_STORAGE_KEY);
         sessionStorage.removeItem(USERNAME_STORAGE_KEY);
@@ -102,12 +104,13 @@ const AdminLogin = () => {
       if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
     };
-  }, [step]); // Only run when step changes to 'redirecting'
+  }, [step]);
 
-  // --- FIX: Save step to session storage whenever it changes ---
+  // Save step to session storage whenever it changes
   useEffect(() => {
     try {
-      if (step === 'username' || step === 'password') {
+      // --- UPDATED: Save 'oneTimeCode' step as well ---
+      if (step === 'username' || step === 'password' || step === 'oneTimeCode') {
         sessionStorage.setItem(STEP_STORAGE_KEY, step);
       } else if (step !== 'redirecting') {
         // Clear storage on block, error, or success
@@ -119,7 +122,7 @@ const AdminLogin = () => {
     }
   }, [step]);
   
-  // --- 3. Click Handler to Stop Redirect ---
+  // 3. Click Handler to Stop Redirect
   const handleCircleClick = () => {
     if (step !== 'redirecting') return;
     
@@ -132,7 +135,7 @@ const AdminLogin = () => {
     sonnerToast.success("Redirect cancelled. Please authenticate.", { duration: 2000 });
   };
 
-  // --- 4. Username Submit Handler ---
+  // 4. Username Submit Handler
   const handleUsernameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || loading || !ipAddress) return;
@@ -148,12 +151,12 @@ const AdminLogin = () => {
         sessionId: sessionIdRef.current,
       });
 
-      // --- FIX: Save username to session storage on success ---
+      // Save username to session storage on success
       sessionStorage.setItem(USERNAME_STORAGE_KEY, username);
       setStep('password');
     } catch (error: any) {
       console.error('Username check failed:', error.message);
-      // --- FIX: Clear storage on error ---
+      // Clear storage on error
       sessionStorage.removeItem(STEP_STORAGE_KEY);
       sessionStorage.removeItem(USERNAME_STORAGE_KEY);
 
@@ -172,7 +175,7 @@ const AdminLogin = () => {
     }
   };
 
-  // --- 5. Final Login (Password) Submit Handler ---
+  // 5. Final Login (Password) Submit Handler
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password || loading || !ipAddress) return;
@@ -196,7 +199,7 @@ const AdminLogin = () => {
       });
 
       if (data.success) {
-        // --- FIX: Clear session storage on successful login ---
+        // Clear session storage on successful login
         sessionStorage.removeItem(STEP_STORAGE_KEY);
         sessionStorage.removeItem(USERNAME_STORAGE_KEY);
 
@@ -222,7 +225,50 @@ const AdminLogin = () => {
     }
   };
 
-  // --- RENDER LOGIC (No changes needed here) ---
+  // --- NEW 6. One-Time Code Login Handler ---
+  const handleOneTimeLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oneTimeCode || loading) return;
+
+    setLoading(true);
+    setErrorMessage('');
+
+    try {
+      const data = await apiClient.post<{ 
+        success: boolean; 
+        token: string; 
+        username: string; 
+        mustChangePassword?: boolean;
+        error?: string;
+      }>('/admin/login-one-time', {
+        code: oneTimeCode,
+      });
+
+      if (data.success) {
+        // Clear session storage on successful login
+        sessionStorage.removeItem(STEP_STORAGE_KEY);
+        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+
+        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('username', data.username);
+        toast({ title: "Login Successful", description: `Welcome, ${data.username}!` });
+        
+        // One-time code login skips password change
+        navigate('/admin/dashboard', { replace: true });
+      } else {
+        toast({ title: "Login Failed", description: data?.error || 'Invalid code', variant: "destructive" });
+      }
+    } catch (error: any)
+    {
+      console.error(error);
+      toast({ title: "Login Failed", description: error.message || "Invalid or expired code.", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  // --- RENDER LOGIC ---
 
   const renderStep = () => {
     switch (step) {
@@ -273,14 +319,24 @@ const AdminLogin = () => {
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Next
               </Button>
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => navigate('/admin/forgot-password')}
-                className="w-full text-sm"
-              >
-                Forgot Password?
-              </Button>
+              <div className="flex justify-between">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => navigate('/admin/forgot-password')}
+                  className="text-sm px-0"
+                >
+                  Forgot Password?
+                </Button>
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setStep('oneTimeCode')}
+                  className="text-sm px-0"
+                >
+                  Login with one-time code
+                </Button>
+              </div>
             </form>
           </CardContent>
         );
@@ -312,13 +368,64 @@ const AdminLogin = () => {
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Login
               </Button>
+              <div className="flex justify-between">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => navigate('/admin/forgot-password')}
+                  className="text-sm px-0"
+                >
+                  Forgot Password?
+                </Button>
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setStep('oneTimeCode')}
+                  className="text-sm px-0"
+                >
+                  Login with one-time code
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        );
+
+      // --- NEW RENDER CASE ---
+      case 'oneTimeCode':
+        return (
+          <CardContent>
+            <form onSubmit={handleOneTimeLoginSubmit} className="space-y-4">
+              <QrCode className="h-10 w-10 text-primary mx-auto" />
+              <CardTitle className="text-center">One-Time Login</CardTitle>
+              <CardDescription className="text-center pb-2">
+                Enter the 8-digit code provided by your administrator.
+              </CardDescription>
+              <div>
+                <label className="text-sm font-medium mb-1 block text-left" htmlFor="oneTimeCode">One-Time Code</label>
+                <Input
+                  id="oneTimeCode"
+                  type="text"
+                  value={oneTimeCode}
+                  onChange={(e) => setOneTimeCode(e.target.value.replace(/\D/g, ''))} // Only allow digits
+                  placeholder="Enter 8-digit code"
+                  required
+                  disabled={loading}
+                  autoComplete="one-time-code"
+                  maxLength={8}
+                  autoFocus
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading || oneTimeCode.length < 8}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Login with Code
+              </Button>
               <Button
                 type="button"
                 variant="link"
-                onClick={() => navigate('/admin/forgot-password')}
+                onClick={() => setStep('username')} // Go back to username step
                 className="w-full text-sm"
               >
-                Forgot Password?
+                Back to password login
               </Button>
             </form>
           </CardContent>
