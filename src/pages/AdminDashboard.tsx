@@ -1,149 +1,138 @@
 // src/pages/AdminDashboard.tsx
-import React, { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/services/apiClient';
-import { UserProfile } from '@/worker-types';
+import React, { lazy, Suspense } from 'react';
 import Layout from '@/components/Layout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Mail, Phone, User, Shield, Edit, X } from 'lucide-react';
-import ProfileForm from '@/components/admin/ProfileForm'; // The new edit form
+import { useAuth } from '@/components/ProtectedRoute';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Loader2 } from 'lucide-react';
 
-const fetchProfile = async (): Promise<UserProfile> => {
-  const data = await apiClient.get<{ success: boolean; profile: UserProfile }>('/admin/profile');
-  return data.profile;
-};
+// Lazy load admin components for better performance
+const DataUpdateControl = lazy(() => import('@/components/admin/DataUpdateControl'));
+const SiteSettings = lazy(() => import('@/components/admin/SiteSettings'));
+const PostsManagement = lazy(() => import('@/components/admin/PostsManagement'));
+const UserManagement = lazy(() => import('@/components/admin/UserManagement'));
+const ApiSettings = lazy(() => import('@/components/admin/ApiSettings'));
+const ForexDataManagement = lazy(() => import('@/components/admin/ForexDataManagement'));
+const ProfileForm = lazy(() => import('@/components/admin/ProfileForm'));
+
+const AdminFallback = () => (
+  <div className="flex justify-center items-center h-64">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+  </div>
+);
 
 const AdminDashboard = () => {
-  const queryClient = useQueryClient();
-  const [isEditing, setIsEditing] = useState(false);
-
-  const { data: profile, isLoading, error } = useQuery({
-    queryKey: ['userProfile'],
-    queryFn: fetchProfile,
-  });
-
-  const getInitials = (name: string | null | undefined) => {
-    if (!name) return 'FN'; // Forex Nepal
-    const names = name.split(' ');
-    if (names.length > 1) {
-      return (names[0][0] + names[names.length - 1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  };
-
-  const handleEditSuccess = (updatedProfile: UserProfile) => {
-    queryClient.setQueryData(['userProfile'], updatedProfile);
-    setIsEditing(false);
-  };
-
-  const renderProfileView = () => (
-    <Card className="max-w-3xl mx-auto">
-      <CardHeader className="flex flex-col items-center text-center relative">
-        <Button 
-          variant="outline" 
-          size="icon" 
-          className="absolute top-4 right-4"
-          onClick={() => setIsEditing(true)}
-        >
-          <Edit className="h-4 w-4" />
-        </Button>
-        <Avatar className="h-24 w-24 text-3xl">
-          <AvatarImage src={profile?.profile_pic_url || undefined} alt={profile?.full_name || profile?.username} />
-          <AvatarFallback>{getInitials(profile?.full_name || profile?.username)}</AvatarFallback>
-        </Avatar>
-        <CardTitle className="mt-4 text-2xl">
-          {profile?.full_name || 'N/A'}
-        </CardTitle>
-        <CardDescription>@{profile?.username}</CardDescription>
-      </CardHeader>
-      <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Contact Information</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center">
-              <Mail className="h-5 w-5 mr-3 text-muted-foreground" />
-              <span>{profile?.email || 'No email provided'}</span>
-            </div>
-            <div className="flex items-center">
-              <Phone className="h-5 w-5 mr-3 text-muted-foreground" />
-              <span>{profile?.mobile_number || 'No mobile provided'}</span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Access & Role</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center">
-              <User className="h-5 w-5 mr-3 text-muted-foreground" />
-              <span>Username: <strong>{profile?.username}</strong></span>
-            </div>
-            <div className="flex items-center">
-              <Shield className="h-5 w-5 mr-3 text-muted-foreground" />
-              <span>Role: <strong className="capitalize">{profile?.role}</strong></span>
-            </div>
-          </CardContent>
-        </Card>
-      </CardContent>
-    </Card>
-  );
-
-  const renderEditView = () => (
-    <Card className="max-w-3xl mx-auto">
-      <CardHeader>
-        <div className="flex justify-between items-center">
-          <div>
-            <CardTitle>Edit Profile</CardTitle>
-            <CardDescription>Update your personal and security information.</CardDescription>
-          </div>
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={() => setIsEditing(false)}
-          >
-            <X className="h-5 w-5" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent>
-        {profile && <ProfileForm profile={profile} onSave={handleEditSuccess} />}
-      </CardContent>
-    </Card>
-  );
+  const { username } = useAuth();
 
   return (
     <Layout>
-      <div className="p-4 md:p-8">
-        {isLoading && (
-          <div className="max-w-3xl mx-auto space-y-4">
-            <div className="flex flex-col items-center space-y-4">
-              <Skeleton className="h-24 w-24 rounded-full" />
-              <Skeleton className="h-8 w-48" />
-              <Skeleton className="h-6 w-32" />
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Skeleton className="h-40 w-full" />
-              <Skeleton className="h-40 w-full" />
-            </div>
-          </div>
-        )}
-        {error && (
-          <Card className="max-w-3xl mx-auto bg-destructive/10 border-destructive">
-            <CardHeader>
-              <CardTitle>Error</CardTitle>
-              <CardDescription>{(error as Error).message || 'Failed to load profile.'}</CardDescription>
-            </CardHeader>
-          </Card>
-        )}
-        {!isLoading && !error && profile && (
-          isEditing ? renderEditView() : renderProfileView()
-        )}
+      <div className="container max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
+            Admin Dashboard
+          </h1>
+          <p className="text-lg text-muted-foreground">
+            Welcome, {username}! Manage your site content and settings here.
+          </p>
+        </header>
+
+        <Tabs defaultValue="profile" className="w-full">
+          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 h-auto">
+            <TabsTrigger value="profile">Profile</TabsTrigger>
+            <TabsTrigger value="data-update">Data Update</TabsTrigger>
+            <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
+            <TabsTrigger value="manage-posts">Manage Posts</TabsTrigger>
+            <TabsTrigger value="manage-users">Manage Users</TabsTrigger>
+            <TabsTrigger value="api-settings">API Settings</TabsTrigger>
+            <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
+          </TabsList>
+
+          <Suspense fallback={<AdminFallback />}>
+            {/* 1. Profile Tab (The new tab) */}
+            <TabsContent value="profile">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profile</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ProfileForm />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* 2. Data Update Tab (Restored) */}
+            <TabsContent value="data-update">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Data Update Control</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <DataUpdateControl />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* 3. Site Settings Tab (Restored) */}
+            <TabsContent value="site-settings">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Site Settings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SiteSettings />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* 4. Manage Posts Tab (Restored) */}
+            <TabsContent value="manage-posts">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Manage Posts</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <PostsManagement />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* 5. Manage Users Tab (Restored) */}
+            <TabsContent value="manage-users">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Manage Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <UserManagement />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* 6. API Settings Tab (Restored) */}
+            <TabsContent value="api-settings">
+              <Card>
+                <CardHeader>
+                  <CardTitle>API Access Settings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ApiSettings />
+                </CardContent>
+              </Card>
+            </TabsContent>
+            
+            {/* 7. Forex Data Tab (Restored) */}
+            <TabsContent value="forex-data">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Forex Data Management</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ForexDataManagement />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Suspense>
+        </Tabs>
       </div>
     </Layout>
   );
