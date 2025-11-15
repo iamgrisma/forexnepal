@@ -37,9 +37,10 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 interface ProfileFormProps {
   profile: UserProfile;
   onSave: (updatedProfile: UserProfile) => void;
+  onCancel: () => void; // --- NEW: Cancel prop ---
 }
 
-const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave }) => {
+const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) => {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSendingCode, setIsSendingCode] = useState(false);
@@ -68,14 +69,8 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave }) => {
 
       if (result.success) {
         sonnerToast.success('Profile updated successfully!');
-        onSave(result.user); // Pass updated profile back to parent
-        form.reset({
-          ...values,
-          password: '', // Clear password field
-          email_verification_code: '', // Clear code field
-        });
-        setCurrentEmail(result.user.email);
-        setShowVerification(false);
+        onSave(result.user); // Pass updated profile back to parent (this now also hides the form)
+        // No need to reset form, as the component will unmount/re-render
       } else {
         throw new Error(result.error || 'Failed to update profile.');
       }
@@ -106,8 +101,14 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave }) => {
       setIsSendingCode(false);
     }
   };
+  
+  // Reset verification state if user changes email back to original
+  const watchedEmail = form.watch('email');
+  if (watchedEmail === currentEmail && showVerification) {
+    setShowVerification(false);
+  }
+  const emailChanged = watchedEmail !== currentEmail;
 
-  const emailChanged = form.watch('email') !== currentEmail;
 
   return (
     <Form {...form}>
@@ -239,10 +240,25 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave }) => {
           />
         </div>
 
-        <Button type="submit" disabled={isSubmitting || (emailChanged && !showVerification)} className="w-full">
-          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Changes
-        </Button>
+        {/* --- NEW: Button Group with Cancel --- */}
+        <div className="flex flex-col-reverse sm:flex-row gap-2">
+          <Button 
+            type="button" 
+            variant="outline" 
+            onClick={onCancel} // Calls the new prop
+            disabled={isSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            type="submit" 
+            disabled={isSubmitting || (emailChanged && !form.getValues('email_verification_code'))} 
+            className="flex-1"
+          >
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Changes
+          </Button>
+        </div>
       </form>
     </Form>
   );
