@@ -1,6 +1,7 @@
-// src/api-helpers.ts
-import { Env, ApiAccessSetting, ExecutionContext, D1Database, SiteSettings } from './worker-types';
+// iamgrisma/forexnepal/forexnepal-14bb7e1f6fc54805aef98994ccc7f5b19d0b7417/src/api-helpers.ts
+import { Env, ApiAccessSetting, ExecutionContext, D1Database, SiteSettings, User } from './worker-types';
 import { corsHeaders } from './constants';
+import { getUsernameFromToken } from './auth'; // <-- IMPORT NEW HELPER
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 const API_SETTINGS_CACHE_TTL = 300; // 5 minutes
@@ -220,4 +221,33 @@ async function checkQuota(
     );
 
     return null; // Access granted
+}
+
+/**
+ * --- THIS IS THE NEW, MISSING FUNCTION ---
+ * Verifies a JWT token from a request and returns the full user object from the DB.
+ */
+export async function getUserFromToken(request: Request, env: Env): Promise<User | null> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) {
+        return null;
+    }
+
+    const username = await getUsernameFromToken(token, env.JWT_SECRET);
+    if (!username) {
+        return null;
+    }
+
+    // Now fetch the user from D1
+    try {
+        const user = await env.FOREX_DB.prepare(
+            `SELECT * FROM users WHERE username = ? AND is_active = 1`
+        ).bind(username).first<User>();
+        
+        return user; // Will be null if not found
+    } catch (e: any) {
+        console.error('Failed to fetch user from token:', e.message);
+        return null;
+    }
 }
