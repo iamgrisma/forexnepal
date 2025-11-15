@@ -191,6 +191,23 @@ export default {
             return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
 
+        // --- ADDED: Handle OAuth Callback for HashRouter ---
+        // This intercepts the non-hash URL from the OAuth provider
+        // and redirects to the correct hash-based URL for the React app.
+        if (pathname === '/admin/auth/google/callback') {
+            const newUrl = new URL(request.url);
+            // Reconstruct the URL to include the hash
+            // e.g., https://.../admin/auth/google/callback?code=...
+            // becomes: https://.../#/admin/auth/google/callback?code=...
+            newUrl.pathname = '/';
+            newUrl.hash = `/admin/auth/google/callback${url.search}`; // url.search includes the '?'
+            
+            // Issue the redirect
+            return Response.redirect(newUrl.toString(), 302);
+        }
+        // --- END: OAuth Callback Fix ---
+
+
         // --- Sitemap ---
         if (pathname === '/sitemap.xml' || pathname === '/sitemap_index.xml') {
             return handleSitemap(request, env);
