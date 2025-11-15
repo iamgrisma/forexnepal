@@ -11,7 +11,7 @@ import { getAllSettings } from './api-helpers';
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
 // --- [NO CHANGES TO EXISTING FUNCTIONS ABOVE THIS LINE] ---
-// ... (handleFetchAndStore, handleSiteSettings, handleCheckUser, etc. remain the same) ...
+// ... (all other functions like handleFetchAndStore, handleSiteSettings, etc. are identical) ...
 
 /**
  * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
@@ -324,7 +324,7 @@ async function sendPasswordResetEmail(
               <html>
               <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="viewport" content="width=device-width, initial-scale: 1.0">
                 <style>
                   body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
                   .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -890,11 +890,19 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Authorization code is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // --- MODIFIED: Split checks for secrets vs. vars ---
     // Check for required secrets
-    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) {
-      console.error('Missing Google OAuth or JWT secrets in worker environment.');
-      return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.JWT_SECRET) {
+      console.error('Missing one or more required secrets (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET).');
+      return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing secrets' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+    
+    // Check for required redirect URI variable
+    if (!env.GOOGLE_REDIRECT_URI) {
+      console.error('Missing GOOGLE_REDIRECT_URI variable in wrangler.toml.');
+      return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing redirect URI' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    // --- END MODIFICATION ---
 
     // 1. Exchange code for access token
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -906,7 +914,7 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
         code: code,
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: env.GOOGLE_REDIRECT_URI,
+        redirect_uri: env.GOOGLE_REDIRECT_URI, // This will correctly read from [vars]
         grant_type: 'authorization_code',
       }),
     });
