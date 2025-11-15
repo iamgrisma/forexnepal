@@ -188,24 +188,32 @@ export default {
                 }
             }
 
-            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status 404, headers: corsHeaders });
         }
 
-        // --- ADDED: Handle OAuth Callback for HashRouter ---
+        // --- START: MODIFIED OAuth Callback Fix ---
         // This intercepts the non-hash URL from the OAuth provider
         // and redirects to the correct hash-based URL for the React app.
         if (pathname === '/admin/auth/google/callback') {
             const newUrl = new URL(request.url);
-            // Reconstruct the URL to include the hash
-            // e.g., https://.../admin/auth/google/callback?code=...
-            // becomes: https://.../#/admin/auth/google/callback?code=...
-            newUrl.pathname = '/';
-            newUrl.hash = `/admin/auth/google/callback${url.search}`; // url.search includes the '?'
             
+            // Get the query string (e.g., ?code=...&scope=...)
+            const searchParams = url.search;
+            
+            // Set the path to the root, where index.html is served
+            newUrl.pathname = '/';
+            
+            // Set the hash to point to the React route AND pass the params
+            newUrl.hash = `/admin/auth/google/callback${searchParams}`;
+            
+            // *** THIS IS THE FIX ***
+            // Clear the search params from the main URL to prevent duplication
+            newUrl.search = '';
+
             // Issue the redirect
             return Response.redirect(newUrl.toString(), 302);
         }
-        // --- END: OAuth Callback Fix ---
+        // --- END: MODIFIED OAuth Callback Fix ---
 
 
         // --- Sitemap ---
