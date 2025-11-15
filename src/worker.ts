@@ -35,10 +35,11 @@ import {
     handleForexData,
     handleGetApiSettings,
     handleUpdateApiSettings,
-    // --- IMPORT NEW HANDLERS ---
-    handleOneTimeLogin,
-    handleGenerateOneTimeLoginCode,
-    handleGoogleLoginCallback // --- ADD THIS IMPORT ---
+    // --- IMPORT NEW/REMOVED HANDLERS ---
+    handleLoginWithToken, // <-- ADD THIS
+    // handleOneTimeLogin, // <-- REMOVE THIS
+    // handleGenerateOneTimeLoginCode, // <-- REMOVE THIS
+    handleGoogleLoginCallback
 } from './api-admin';
 
 export default {
@@ -124,9 +125,11 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
-            if (pathname === '/api/admin/login-one-time' && method === 'POST') {
-                return handleOneTimeLogin(request, env); // env contains JWT_SECRET
-            }
+            // --- REMOVED /api/admin/login-one-time ---
+            // if (pathname === '/api/admin/login-one-time' && method === 'POST') {
+            //     return handleOneTimeLogin(request, env); // env contains JWT_SECRET
+            // }
+
             // --- ADD NEW GOOGLE CALLBACK ROUTE ---
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
                 return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
@@ -141,6 +144,12 @@ export default {
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
+            // --- ADDED: NEW LOGIN WITH TOKEN ROUTE ---
+            if (pathname === '/api/admin/login-with-token' && method === 'POST') {
+                return handleLoginWithToken(request, env); // env contains JWT_SECRET
+            }
+            // --- END NEW ROUTE ---
+
 
             // --- Admin Protected Routes (Token required) ---
             if (pathname.startsWith('/api/admin/')) {
@@ -183,9 +192,11 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
-                if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
-                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
-                }
+                
+                // --- REMOVED /api/admin/generate-login-code ---
+                // if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
+                //     return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
+                // }
             }
 
             return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
