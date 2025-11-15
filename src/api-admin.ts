@@ -1,4 +1,4 @@
-// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/api-admin.ts
+// src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
 import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement, UserProfile } from './worker-types';
@@ -18,52 +18,13 @@ function getAuthToken(request: Request): string | null {
 }
 
 
-/**
- * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
- */
-export async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
-    // This handler is already protected by the 'verifyToken' check in worker.ts
-    // No username is needed, so it's fine.
-    
-    const url = new URL(request.url);
-    const fromDate = url.searchParams.get('from');
-    const toDate = url.searchParams.get('to');
-    
-    if (!fromDate || !toDate) {
-           return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+// --- REMOVED: Redundant handleFetchAndStore function ---
 
-    try {
-        const { action } = (await request.json()) as { action: 'update' | 'replace' };
-        if (action !== 'update' && action !== 'replace') {
-            return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        const apiUrl = `https://www.nrb.org.np/api/forex/v1/rates?page=1&per_page=100&from=${fromDate}&to=${toDate}`;
-        const response = await fetch(apiUrl);
-
-        if (!response.ok) {
-            if (response.status === 404) {
-                 return new Response(JSON.stringify({ success: true, stored: 0, message: 'No data available from NRB.' }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-            }
-            throw new Error(`NRB API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const processedDates = await processAndStoreApiData(data, env, action);
-
-        return new Response(JSON.stringify({ success: true, stored: processedDates, fromDate, toDate }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    } catch (error: any) {
-        return new Response(JSON.stringify({ success: false, error: 'Failed to fetch and store data' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-}
 
 /**
  * (ADMIN) GET/POST site settings.
  */
 export async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
-    // This handler is also fine, as it's protected and doesn't depend on a specific user.
     try {
         if (request.method === 'GET') {
             const settings = await getAllSettings(env.FOREX_DB);
@@ -84,11 +45,8 @@ export async function handleSiteSettings(request: Request, env: Env): Promise<Re
             const stmt3 = env.FOREX_DB.prepare("INSERT OR REPLACE INTO site_settings (key, value) VALUES ('adsense_exclusions', ?)")
                 .bind(settings.adsense_exclusions || '/admin,/login');
 
-
             await env.FOREX_DB.batch([stmt1, stmt2, stmt3]);
-            
             await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY); 
-
             const updatedSettings = await getAllSettings(env.FOREX_DB);
             return new Response(JSON.stringify(updatedSettings), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
@@ -104,7 +62,6 @@ export async function handleSiteSettings(request: Request, env: Env): Promise<Re
  * (PUBLIC) Check if a user exists before asking for a password.
  */
 export async function handleCheckUser(request: Request, env: Env): Promise<Response> {
-    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -153,7 +110,6 @@ export async function handleCheckUser(request: Request, env: Env): Promise<Respo
  * (PUBLIC) Login handler.
  */
 export async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
-    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -180,9 +136,7 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
         let mustChangePassword = false;
 
         if (user && user.password_hash) {
-            // Standard path: compare against stored hash
             isValid = await simpleHashCompare(password, user.password_hash);
-            // Force password change if placeholder hash is present
             if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
                 mustChangePassword = true;
             }
@@ -214,7 +168,6 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
  * (PUBLIC) Check login attempt count.
  */
 export async function handleCheckAttempts(request: Request, env: Env): Promise<Response> {
-    // This is a public route, no auth changes needed.
     const url = new URL(request.url);
     const ipAddress = url.searchParams.get('ip');
     const sessionId = url.searchParams.get('session');
@@ -234,7 +187,7 @@ export async function handleCheckAttempts(request: Request, env: Env): Promise<R
 }
 
 /**
- * (ADMIN) Change password handler.
+ * (ADMIN) Change password handler (for password-forcing).
  * --- SECURITY FIX APPLIED ---
  */
 export async function handleChangePassword(request: Request, env: Env): Promise<Response> {
@@ -242,7 +195,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
-    // --- SECURITY FIX: Get username from token, not from body ---
+    // --- SECURITY FIX: Get username from token ---
     const token = getAuthToken(request);
     const username = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
     
@@ -252,14 +205,12 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
     // --- END SECURITY FIX ---
 
     try {
-        // We still get the password from the body
         const { newPassword, keepSamePassword } = await request.json();
         
         if (!keepSamePassword && (!newPassword || newPassword.length < 8)) {
              return new Response(JSON.stringify({ success: false, error: 'New password must be >= 8 chars.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // We use the SECURE username from the token
         const user = await env.FOREX_DB.prepare(
             `SELECT username, password_hash FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; password_hash: string | null }>();
@@ -280,9 +231,8 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?`
-        ).bind(newPasswordHash, username).run(); // Secure username
+        ).bind(newPasswordHash, username).run(); 
 
-        // This table is deprecated but we'll clear it for legacy support.
         await env.FOREX_DB.prepare(`DELETE FROM user_recovery`).run();
 
         return new Response(JSON.stringify({ success: true, message: "Password updated." }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
@@ -436,7 +386,6 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
  * (PUBLIC) Reset password using a token.
  */
 export async function handleResetPassword(request: Request, env: Env): Promise<Response> {
-    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -490,7 +439,6 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
  * (PUBLIC) Logs a user in using a password reset token without changing password.
  */
 export async function handleLoginWithResetToken(request: Request, env: Env): Promise<Response> {
-    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -501,7 +449,6 @@ export async function handleLoginWithResetToken(request: Request, env: Env): Pro
             return new Response(JSON.stringify({ success: false, error: 'Token is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Find the token
         const resetRecord = await env.FOREX_DB.prepare(
             `SELECT username, expires_at, used FROM password_reset_tokens WHERE token = ?`
         ).bind(token).first<{ username: string; expires_at: string; used: number }>();
@@ -542,11 +489,9 @@ export async function handleLoginWithResetToken(request: Request, env: Env): Pro
 
 /**
  * (ADMIN) Generates a password reset token for a user *without* sending an email.
- * Returns the token for the admin to copy.
  * --- SECURITY FIX APPLIED ---
  */
 export async function handleGenerateResetToken(request: Request, env: Env): Promise<Response> {
-    // This handler is already protected by worker.ts, but we check again.
     const token = getAuthToken(request);
     const adminUsername = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
     
@@ -560,14 +505,12 @@ export async function handleGenerateResetToken(request: Request, env: Env): Prom
             return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // Check if user exists
         const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
         if (!user) {
             return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
         const resetToken = crypto.randomUUID().replace(/-/g, '');
-        // Make this one valid for 1 hour, since it's admin-generated
         const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
 
         await env.FOREX_DB.prepare(
@@ -577,7 +520,7 @@ export async function handleGenerateResetToken(request: Request, env: Env): Prom
         return new Response(JSON.stringify({ 
             success: true, 
             username: username, 
-            token: resetToken, // Changed from 'code' to 'token' for consistency
+            token: resetToken,
             expires_at: expiresAt 
         }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
 
@@ -590,9 +533,9 @@ export async function handleGenerateResetToken(request: Request, env: Env): Prom
 
 /**
  * (ADMIN) GET all users or POST a new user.
+ * --- MODIFIED: Selects new profile columns ---
  */
 export async function handleUsers(request: Request, env: Env): Promise<Response> {
-    // This handler is protected by worker.ts, no username logic needed.
     try {
         if (request.method === 'GET') {
             const { results } = await env.FOREX_DB.prepare(
@@ -627,10 +570,9 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
 
 /**
  * (ADMIN) DELETE a user by username.
+ * --- SECURITY FIX APPLIED ---
  */
 export async function handleUserById(request: Request, env: Env): Promise<Response> {
-    // This handler is protected by worker.ts.
-    // We also need to get the *admin's* username to prevent self-deletion.
     const token = getAuthToken(request);
     const adminUsername = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
     
@@ -662,7 +604,6 @@ export async function handleUserById(request: Request, env: Env): Promise<Respon
  * (ADMIN) GET all posts or POST a new post.
  */
 export async function handlePosts(request: Request, env: Env): Promise<Response> {
-    // Protected by worker.ts
     try {
         if (request.method === 'GET') {
             const { results } = await env.FOREX_DB.prepare(`SELECT id, title, slug, status, published_at, created_at, updated_at FROM posts ORDER BY created_at DESC`).all();
@@ -697,7 +638,6 @@ export async function handlePosts(request: Request, env: Env): Promise<Response>
  * (ADMIN) GET, PUT, or DELETE a single post by its ID.
  */
 export async function handlePostById(request: Request, env: Env): Promise<Response> {
-    // Protected by worker.ts
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop();
     const postId = parseInt(id || '', 10);
@@ -746,7 +686,6 @@ export async function handlePostById(request: Request, env: Env): Promise<Respon
  * (ADMIN) GET or POST manual forex data.
  */
 export async function handleForexData(request: Request, env: Env): Promise<Response> {
-    // Protected by worker.ts
     try {
         if (request.method === 'GET') {
             const url = new URL(request.url);
@@ -804,7 +743,6 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
  * (ADMIN) GET all API access settings.
  */
 export async function handleGetApiSettings(request: Request, env: Env): Promise<Response> {
-    // Protected by worker.ts
     try {
         const { results } = await env.FOREX_DB.prepare("SELECT * FROM api_access_settings ORDER BY endpoint ASC").all<ApiAccessSetting>();
         return new Response(JSON.stringify({ success: true, settings: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -818,7 +756,6 @@ export async function handleGetApiSettings(request: Request, env: Env): Promise<
  * (ADMIN) POST (update) API access settings.
  */
 export async function handleUpdateApiSettings(request: Request, env: Env): Promise<Response> {
-    // Protected by worker.ts
     try {
         const settings: ApiAccessSetting[] = await request.json();
         
@@ -862,9 +799,9 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
 
 /**
  * (PUBLIC) Handles the Google OAuth callback.
+ * --- MODIFIED: Now updates user profile on login ---
  */
 export async function handleGoogleLoginCallback(request: Request, env: Env): Promise<Response> {
-  // This is a public route, no auth changes needed.
   try {
     const { code } = await request.json();
     if (!code) {
@@ -916,7 +853,8 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Failed to fetch user info' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const googleUser: { email: string, name: string, verified_email: boolean } = userInfoData as any;
+    // --- MODIFIED: Added `picture` ---
+    const googleUser: { email: string, name: string, verified_email: boolean, picture?: string } = userInfoData as any;
 
     if (!googleUser.email || !googleUser.verified_email) {
       return new Response(JSON.stringify({ success: false, error: 'Google account must have a verified email' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -935,6 +873,17 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Your account is inactive. Please contact support.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // --- NEW: Update profile on login ---
+    // This is how the profile pic and full name get into the DB, as you said.
+    await env.FOREX_DB.prepare(
+      `UPDATE users SET full_name = ?, profile_pic_url = ?, updated_at = datetime('now') WHERE username = ?`
+    ).bind(
+      googleUser.name || null,
+      googleUser.picture || null,
+      user.username
+    ).run();
+    // --- END: Update profile ---
+
     // 4. Issue JWT
     const jwtToken = await generateToken(user.username, env.JWT_SECRET);
     
@@ -946,7 +895,7 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
 
   } catch (error: any) {
     console.error('Google callback handler error:', error);
-    return new Response(JSON.stringify({ success: false, error: 'An internal server error occurred' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: false, error: 'An internal server error occurred' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
   }
 }
 
@@ -1009,6 +958,7 @@ async function sendEmailVerificationEmail(
 
 /**
  * (ADMIN) GET the logged-in user's profile.
+ * This is the new endpoint for the dashboard.
  */
 export async function handleGetProfile(request: Request, env: Env): Promise<Response> {
     const token = getAuthToken(request);
@@ -1020,7 +970,7 @@ export async function handleGetProfile(request: Request, env: Env): Promise<Resp
 
     try {
         const user = await env.FOREX_DB.prepare(
-            `SELECT username, email, full_name, mobile_number, profile_pic_url FROM users WHERE username = ?`
+            `SELECT username, email, full_name, mobile_number, profile_pic_url, role FROM users WHERE username = ?`
         ).bind(username).first<UserProfile>();
         
         if (!user) {
@@ -1079,6 +1029,7 @@ export async function handleSendVerificationCode(request: Request, env: Env, ctx
 
 /**
  * (ADMIN) POST to update the user's profile.
+ * This is called by ProfileForm.tsx
  */
 export async function handleUpdateProfile(request: Request, env: Env): Promise<Response> {
     const token = getAuthToken(request);
@@ -1107,7 +1058,7 @@ export async function handleUpdateProfile(request: Request, env: Env): Promise<R
         }
 
         let newEmail = currentUser.email;
-        const emailChanged = values.email.toLowerCase() !== currentUser.email.toLowerCase();
+        const emailChanged = values.email && values.email.toLowerCase() !== (currentUser.email || '').toLowerCase();
 
         if (emailChanged) {
             if (!values.email_verification_code) {
@@ -1136,7 +1087,7 @@ export async function handleUpdateProfile(request: Request, env: Env): Promise<R
             newEmail = values.email;
         }
         
-        // Handle password change
+        // Handle password change (this is the logic you wanted)
         let newPasswordHash: string | null = null;
         if (values.password && values.password.length > 0) {
             if (values.password.length < 8) {
@@ -1150,7 +1101,7 @@ export async function handleUpdateProfile(request: Request, env: Env): Promise<R
             await env.FOREX_DB.prepare(
                 `UPDATE users SET full_name = ?, mobile_number = ?, profile_pic_url = ?, email = ?, password_hash = ?, updated_at = datetime('now') WHERE username = ?`
             ).bind(
-                values.full_name,
+                values.full_name || null,
                 values.mobile_number || null,
                 values.profile_pic_url || null,
                 newEmail,
@@ -1158,10 +1109,11 @@ export async function handleUpdateProfile(request: Request, env: Env): Promise<R
                 username
             ).run();
         } else {
+            // No password change
             await env.FOREX_DB.prepare(
                 `UPDATE users SET full_name = ?, mobile_number = ?, profile_pic_url = ?, email = ?, updated_at = datetime('now') WHERE username = ?`
             ).bind(
-                values.full_name,
+                values.full_name || null,
                 values.mobile_number || null,
                 values.profile_pic_url || null,
                 newEmail,
@@ -1171,7 +1123,7 @@ export async function handleUpdateProfile(request: Request, env: Env): Promise<R
 
         // Return the updated profile
         const updatedProfile = await env.FOREX_DB.prepare(
-            `SELECT username, email, full_name, mobile_number, profile_pic_url FROM users WHERE username = ?`
+            `SELECT username, email, full_name, mobile_number, profile_pic_url, role FROM users WHERE username = ?`
         ).bind(username).first<UserProfile>();
 
         return new Response(JSON.stringify({ success: true, user: updatedProfile }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
