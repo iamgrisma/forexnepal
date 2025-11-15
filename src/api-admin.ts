@@ -1,4 +1,4 @@
-// src/api-admin.ts
+// iamgrisma/forexnepal/forexnepal-3a6e83ee59906891a05be1ef38aac80d81ccf17d/src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
 import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement, UserProfile } from './worker-types';
