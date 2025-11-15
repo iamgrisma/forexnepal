@@ -5,6 +5,7 @@ import { useAuth } from '@/components/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 // Lazy load admin components for better performance
 const DataUpdateControl = lazy(() => import('@/components/admin/DataUpdateControl'));
@@ -13,6 +14,7 @@ const PostsManagement = lazy(() => import('@/components/admin/PostsManagement'))
 const UserManagement = lazy(() => import('@/components/admin/UserManagement'));
 const ApiSettings = lazy(() => import('@/components/admin/ApiSettings'));
 const ForexDataManagement = lazy(() => import('@/components/admin/ForexDataManagement'));
+// --- This is the new component you added ---
 const ProfileForm = lazy(() => import('@/components/admin/ProfileForm'));
 
 const AdminFallback = () => (
@@ -23,6 +25,12 @@ const AdminFallback = () => (
 
 const AdminDashboard = () => {
   const { username } = useAuth();
+  const navigate = useNavigate();
+
+  // Handle navigation to the PostEditor
+  const handleNewPost = () => {
+    navigate('/admin/posts/new');
+  };
 
   return (
     <Layout>
@@ -37,7 +45,8 @@ const AdminDashboard = () => {
         </header>
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 h-auto">
+          {/* --- Restored all tabs --- */}
+          <TabsList className="h-auto flex-wrap justify-start">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="data-update">Data Update</TabsTrigger>
             <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
@@ -48,7 +57,7 @@ const AdminDashboard = () => {
           </TabsList>
 
           <Suspense fallback={<AdminFallback />}>
-            {/* 1. Profile Tab (The new tab) */}
+            {/* 1. Profile Tab (Your new tab) */}
             <TabsContent value="profile">
               <Card>
                 <CardHeader>
@@ -91,7 +100,7 @@ const AdminDashboard = () => {
                   <CardTitle>Manage Posts</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <PostsManagement />
+                  <PostsManagement onNewPost={handleNewPost} />
                 </CardContent>
               </Card>
             </TabsContent>
