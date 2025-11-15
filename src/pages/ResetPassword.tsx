@@ -1,4 +1,4 @@
-// src/pages/ResetPassword.tsx
+// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/pages/ResetPassword.tsx
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, KeyRound, LogIn } from 'lucide-react'; // <-- Added LogIn
+import { Loader2, Terminal, ShieldAlert, KeyRound, LogIn } from 'lucide-react';
 import { apiClient } from '@/services/apiClient';
-import { Separator } from '@/components/ui/separator'; // <-- Added Separator
+import { Separator } from '@/components/ui/separator';
 import { toast as sonnerToast } from "sonner";
 
 type ResetStep = 'loading' | 'form' | 'success' | 'error';
@@ -24,8 +24,8 @@ const ResetPassword = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   
   const [step, setStep] = useState<ResetStep>('loading');
-  const [loading, setLoading] = useState(false);
-  const [isLoginLoading, setIsLoginLoading] = useState(false); // <-- NEW: State for direct login button
+  const [loading, setLoading] = useState(false); // For password reset
+  const [isLoginLoading, setIsLoginLoading] = useState(false); // For direct login
   const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
@@ -83,7 +83,7 @@ const ResetPassword = () => {
     }
   };
 
-  // --- NEW: Direct Login Handler ---
+  // --- Direct Login Handler ---
   const handleDirectLogin = async () => {
     if (loading || isLoginLoading) return;
 
@@ -130,7 +130,6 @@ const ResetPassword = () => {
       setIsLoginLoading(false);
     }
   };
-  // --- END: New Handler ---
 
 
   const renderContent = () => {
@@ -184,7 +183,7 @@ const ResetPassword = () => {
           </div>
           <div>
             <label className="text-sm font-medium mb-1 block text-left" htmlFor="password">
-              New Password
+              New Password (Optional)
             </label>
             <Input
               id="password"
@@ -192,7 +191,7 @@ const ResetPassword = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter new password (min 8 chars)"
-              required
+              // required is removed, it's optional now
               disabled={loading || isLoginLoading}
             />
           </div>
@@ -206,11 +205,21 @@ const ResetPassword = () => {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               placeholder="Confirm new password"
-              required
+              required={password.length > 0} // Only required if password is being set
               disabled={loading || isLoginLoading}
             />
           </div>
-          <Button type="submit" className="w-full" disabled={loading || isLoginLoading || !password || !confirmPassword || !token}>
+          <Button 
+            type="submit" 
+            className="w-full" 
+            disabled={
+              loading || 
+              isLoginLoading || 
+              !token || 
+              password.length < 8 || // must be 8+ chars if provided
+              password !== confirmPassword // must match if provided
+            }
+          >
             {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Change Password
           </Button>
@@ -244,9 +253,9 @@ const ResetPassword = () => {
           <Card className="shadow-md">
             <CardHeader className="text-center">
               <KeyRound className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle>Reset Your Password</CardTitle>
+              <CardTitle>Login / Reset Password</CardTitle>
               <CardDescription>
-                Enter your reset token and a new password.
+                You can use your token to log in directly or to set a new password.
               </CardDescription>
             </CardHeader>
             {renderContent()}
