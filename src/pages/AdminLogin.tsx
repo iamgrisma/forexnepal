@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react';
+import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react'; // Added QrCode
 import { apiClient } from '@/services/apiClient'; // Import the API client
 import { toast as sonnerToast } from "sonner"; // Import sonner
 import { Separator } from '@/components/ui/separator'; // --- ADD IMPORT ---
@@ -23,7 +23,7 @@ const GoogleIcon = () => (
   </svg>
 );
 
-// --- Login steps ---
+// --- UPDATED: Add 'oneTimeCode' step ---
 type LoginStep = 'redirecting' | 'username' | 'password' | 'oneTimeCode' | 'blocked' | 'error';
 
 // Add keys for session storage
@@ -35,6 +35,7 @@ const AdminLogin = () => {
   const getInitialStep = (): LoginStep => {
     try {
       const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
+      // --- UPDATED: Allow 'oneTimeCode' to be stored ---
       if (storedStep === 'username' || storedStep === 'password' || storedStep === 'oneTimeCode') {
         return storedStep as LoginStep;
       }
@@ -53,7 +54,7 @@ const AdminLogin = () => {
   });
 
   const [password, setPassword] = useState('');
-  const [oneTimeCode, setOneTimeCode] = useState(''); // State for the code
+  const [oneTimeCode, setOneTimeCode] = useState(''); // --- NEW: State for the code ---
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(5); // Visual countdown
   const [ipAddress, setIpAddress] = useState('');
@@ -121,6 +122,7 @@ const AdminLogin = () => {
   // Save step to session storage whenever it changes
   useEffect(() => {
     try {
+      // --- UPDATED: Save 'oneTimeCode' step as well ---
       if (step === 'username' || step === 'password' || step === 'oneTimeCode') {
         sessionStorage.setItem(STEP_STORAGE_KEY, step);
       } else if (step !== 'redirecting') {
@@ -155,7 +157,7 @@ const AdminLogin = () => {
     setErrorMessage('');
 
     try {
-      // Call the 'check-user' endpoint
+      // Call the new 'check-user' endpoint
       await apiClient.post('/admin/check-user', {
         username,
         ipAddress,
@@ -236,7 +238,7 @@ const AdminLogin = () => {
     }
   };
 
-  // 6. One-Time Code Login Handler
+  // --- NEW 6. One-Time Code Login Handler ---
   const handleOneTimeLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oneTimeCode || loading) return;
@@ -280,7 +282,7 @@ const AdminLogin = () => {
 
   // --- NEW 7. Google Login Click Handler ---
   const handleGoogleLoginClick = () => {
-    setLoading(true);
+    setLoading(true); // Set loading while redirecting
     // Construct the Google OAuth URL
     const params = new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID,
@@ -350,9 +352,9 @@ const AdminLogin = () => {
               </Button>
 
               {/* --- ADDED GOOGLE LOGIN BUTTON --- */}
-              <div className="relative">
+              <div className="relative pt-2">
                 <Separator />
-                <span className="absolute left-1/2 -translate-x-1/2 -top-3 bg-card px-2 text-xs text-muted-foreground">OR</span>
+                <span className="absolute left-1/2 -translate-x-1/2 -top-1 bg-card px-2 text-xs text-muted-foreground">OR</span>
               </div>
               <Button type="button" variant="outline" className="w-full" onClick={handleGoogleLoginClick} disabled={loading}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon />}
@@ -431,6 +433,7 @@ const AdminLogin = () => {
           </CardContent>
         );
 
+      // --- NEW RENDER CASE ---
       case 'oneTimeCode':
         return (
           <CardContent>
