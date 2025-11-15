@@ -10,6 +10,9 @@ import { getAllSettings } from './api-helpers';
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
+// --- [NO CHANGES TO EXISTING FUNCTIONS ABOVE THIS LINE] ---
+// ... (handleFetchAndStore, handleSiteSettings, handleCheckUser, etc. remain the same) ...
+
 /**
  * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
  */
@@ -173,27 +176,18 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
         }
 
         const user = await env.FOREX_DB.prepare(
-            `SELECT username, password_hash, plaintext_password FROM users WHERE username = ? AND is_active = 1`
-        ).bind(username).first<{ username: string; password_hash: string | null; plaintext_password: string | null }>();
+            `SELECT username, password_hash FROM users WHERE username = ? AND is_active = 1`
+        ).bind(username).first<{ username: string; password_hash: string | null }>();
 
         let isValid = false;
         let mustChangePassword = false;
 
-        if (user) {
-            if (user.password_hash) {
-                // Standard path: compare against stored hash
-                isValid = await simpleHashCompare(password, user.password_hash);
-                // Force password change if placeholder hash is present
-                if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
-                    mustChangePassword = true;
-                }
-            } 
-            else if (user.plaintext_password) {
-                // First-time login path (from migration)
-                isValid = (password === user.plaintext_password);
-                if (isValid) {
-                    mustChangePassword = true; // Force password change
-                }
+        if (user && user.password_hash) {
+            // Standard path: compare against stored hash
+            isValid = await simpleHashCompare(password, user.password_hash);
+            // Force password change if placeholder hash is present
+            if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
+                mustChangePassword = true;
             }
         }
 
@@ -281,7 +275,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
         }
 
         await env.FOREX_DB.prepare(
-            `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
+            `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
 
         // This table is deprecated but we'll clear it for legacy support.
@@ -321,7 +315,7 @@ async function sendPasswordResetEmail(
         body: JSON.stringify({
             sender: {
                 name: 'Forex Nepal Admin',
-                email: 'admin@grisma.com.np',
+                email: 'cadmin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
             subject: 'Password Reset Request - Forex Nepal Admin',
@@ -884,93 +878,91 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
 }
 
 
-// --- NEW GOOGLE LOGIN HANDLER ---
+// --- START: NEW GoogleAuthCallback Function ---
 /**
  * (PUBLIC) Handles the Google OAuth callback.
- * Exchanges the code for an access token, gets user email,
- * and logs in if the email exists in the DB.
+ * Exchanges the code for a token, gets user info, and issues a JWT.
  */
 export async function handleGoogleLoginCallback(request: Request, env: Env): Promise<Response> {
-    if (request.method !== 'POST') {
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
+  try {
     const { code } = await request.json();
     if (!code) {
-        return new Response(JSON.stringify({ success: false, error: 'Authorization code is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+      return new Response(JSON.stringify({ success: false, error: 'Authorization code is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
-        console.error('Google OAuth secrets not set in worker environment');
-        return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    // Check for required secrets
+    if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.GOOGLE_REDIRECT_URI || !env.JWT_SECRET) {
+      console.error('Missing Google OAuth or JWT secrets in worker environment.');
+      return new Response(JSON.stringify({ success: false, error: 'Server configuration error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // This MUST match the URI in your Google Cloud Console
-    const REDIRECT_URI = 'https://forex.grisma.com.np/#/admin/auth/google/callback';
+    // 1. Exchange code for access token
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        code: code,
+        client_id: env.GOOGLE_CLIENT_ID,
+        client_secret: env.GOOGLE_CLIENT_SECRET,
+        redirect_uri: env.GOOGLE_REDIRECT_URI,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.json();
+      console.error('Google token exchange failed:', errorData);
+      return new Response(JSON.stringify({ success: false, error: 'Failed to exchange Google token' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const { access_token } = await tokenResponse.json();
+
+    // 2. Get user info from Google
+    const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+      },
+    });
+
+    if (!userInfoResponse.ok) {
+      const errorData = await userInfoResponse.json();
+      console.error('Google user info fetch failed:', errorData);
+      return new Response(JSON.stringify({ success: false, error: 'Failed to fetch user info' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const googleUser: { email: string, name: string, verified_email: boolean } = await userInfoResponse.json();
+
+    if (!googleUser.email || !googleUser.verified_email) {
+      return new Response(JSON.stringify({ success: false, error: 'Google account must have a verified email' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // 3. Check if user exists in D1 and is active
+    const user = await env.FOREX_DB.prepare(
+      `SELECT username, is_active FROM users WHERE email = ?`
+    ).bind(googleUser.email).first<{ username: string; is_active: number }>();
+
+    if (!user) {
+      return new Response(JSON.stringify({ success: false, error: 'Access denied. Your email is not registered as an admin.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (!user.is_active) {
+      return new Response(JSON.stringify({ success: false, error: 'Your account is inactive. Please contact support.' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // 4. Issue JWT
+    const token = await generateToken(user.username, env.JWT_SECRET);
     
-    try {
-        // 1. Exchange code for access token
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                code: code as string,
-                client_id: env.GOOGLE_CLIENT_ID,
-                client_secret: env.GOOGLE_CLIENT_SECRET,
-                redirect_uri: REDIRECT_URI,
-                grant_type: 'authorization_code',
-            }),
-        });
+    return new Response(JSON.stringify({
+      success: true,
+      token,
+      username: user.username,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-        if (!tokenResponse.ok) {
-            const errorData = await tokenResponse.json();
-            console.error('Google token exchange failed:', errorData);
-            return new Response(JSON.stringify({ success: false, error: 'Failed to verify Google token' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        const { access_token } = await tokenResponse.json();
-
-        // 2. Get user info with access token
-        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-            headers: {
-                'Authorization': `Bearer ${access_token}`,
-            },
-        });
-
-        if (!userInfoResponse.ok) {
-            console.error('Failed to fetch Google user info');
-            return new Response(JSON.stringify({ success: false, error: 'Failed to get user info from Google' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        const googleUser = await userInfoResponse.json() as { email: string; email_verified: boolean };
-
-        if (!googleUser.email || !googleUser.email_verified) {
-            return new Response(JSON.stringify({ success: false, error: 'Google account must have a verified email' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // 3. Find user in *your* database by email (as requested: "just login")
-        const user = await env.FOREX_DB.prepare(
-            `SELECT username FROM users WHERE email = ? AND is_active = 1`
-        ).bind(googleUser.email).first<{ username: string }>();
-
-        if (!user) {
-            return new Response(JSON.stringify({ success: false, error: 'No admin account is associated with this Google email.' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // 4. User exists! Generate your app's JWT token and log them in.
-        const token = await generateToken(user.username, env.JWT_SECRET);
-        
-        return new Response(JSON.stringify({
-            success: true,
-            token,
-            username: user.username,
-            mustChangePassword: false // Google login is trusted
-        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-
-    } catch (error: any) {
-        console.error('Google callback error:', error.message, error.cause);
-        return new Response(JSON.stringify({ success: false, error: 'Server error during Google login' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+  } catch (error: any) {
+    console.error('Google callback handler error:', error);
+    return new Response(JSON.stringify({ success: false, error: 'An internal server error occurred' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
 }
+// --- END: NEW GoogleAuthCallback Function ---
