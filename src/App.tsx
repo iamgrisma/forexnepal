@@ -1,6 +1,6 @@
-// src/App.tsx
+// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/App.tsx
 import React, { lazy, Suspense } from 'react';
-// Import Routes and Route, but remove HashRouter
+// Import Routes and Route
 import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
@@ -44,7 +44,6 @@ const SuspenseFallback = () => (
 
 function App() {
   return (
-    // <--- REMOVED THE REDUNDANT <HashRouter> WRAPPER FROM HERE --->
     <>
       <Suspense fallback={<SuspenseFallback />}>
         <Routes>
@@ -52,8 +51,15 @@ function App() {
           <Route path="/" element={<Index />} />
           <Route path="/about" element={<About />} />
           <Route path="/api-docs" element={<ApiDocs />} />
+          
+          {/* --- FIX: Corrected Archive Routing --- */}
           <Route path="/archive" element={<Archive />} />
+          <Route path="/archive/page/:page" element={<Archive />} />
           <Route path="/archive/:date" element={<ArchiveDetail />} />
+          {/* Fallback for old links, pointing to the correct component */}
+          <Route path="/daily-update/forex-for/*" element={<ArchiveDetail />} />
+          {/* --- END FIX --- */}
+
           <Route path="/contact" element={<Contact />} />
           <Route path="/converter" element={<Converter />} />
           <Route path="/historical-data/:currency" element={<CurrencyHistoricalData />} />
