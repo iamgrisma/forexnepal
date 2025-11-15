@@ -1,7 +1,3 @@
--- === CONSOLIDATED MIGRATIONS (001 - 015) ===
--- This single file represents the final schema for the database.
-
--- From 002: Final forex_rates table
 CREATE TABLE IF NOT EXISTS forex_rates (
   date TEXT PRIMARY KEY NOT NULL,
   INR_buy REAL,
@@ -52,36 +48,32 @@ CREATE TABLE IF NOT EXISTS forex_rates (
 );
 CREATE INDEX IF NOT EXISTS idx_date ON forex_rates(date);
 
-
--- From 003 & 013: Final 'users' table schema + 015 profile fields
--- This combines all 'ALTER TABLE' statements from 010, 011, 013, and 015
+-- Table: users (Final combined schema)
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT,
-  email TEXT UNIQUE, -- Added from 010, made UNIQUE
-  is_active INTEGER DEFAULT 1 NOT NULL, -- From 011
-  role TEXT DEFAULT 'admin' NOT NULL, -- From 011
+  email TEXT UNIQUE,
+  is_active INTEGER DEFAULT 1 NOT NULL,
+  role TEXT DEFAULT 'admin' NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  full_name TEXT, -- From 015
-  mobile_number TEXT, -- From 015
-  profile_pic_url TEXT -- From 015
+  full_name TEXT,
+  mobile_number TEXT,
+  profile_pic_url TEXT
 );
 -- Insert default admin (username: admin, password: admin)
--- The app logic will force a password change on first login
 INSERT OR IGNORE INTO users (username, password_hash, full_name)
 VALUES ('admin', '0000000000000000000000000000000000000000000000000000000000000000', 'Default Admin');
 
-
--- From 003: user_recovery table
+-- Table: user_recovery
 CREATE TABLE IF NOT EXISTS user_recovery (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   recovery_token TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- From 003 & 009: login_attempts table
+-- Table: login_attempts
 CREATE TABLE IF NOT EXISTS login_attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ip_address TEXT NOT NULL,
@@ -89,15 +81,14 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   username TEXT NOT NULL,
   attempt_time TEXT NOT NULL DEFAULT (datetime('now')),
   success INTEGER NOT NULL DEFAULT 0,
-  type TEXT -- From 009
+  type TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_session
 ON login_attempts(ip_address, session_id, attempt_time);
 CREATE INDEX IF NOT EXISTS idx_login_attempts_user_type_time
 ON login_attempts(username, type, attempt_time);
 
-
--- From 003: posts table
+-- Table: posts
 CREATE TABLE IF NOT EXISTS posts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   title TEXT NOT NULL,
@@ -118,19 +109,17 @@ CREATE TABLE IF NOT EXISTS posts (
 CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug);
 CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
 
-
--- From 008: Final site_settings table
+-- Table: site_settings
 CREATE TABLE IF NOT EXISTS site_settings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    key TEXT UNIQUE NOT NULL,
-    value TEXT
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  value TEXT
 );
-INSERT OR IGNORE INTO site_settings (key, value) VALUES ('ticker_enabled', 'true');
+INSERT OR IGIGNORE INTO site_settings (key, value) VALUES ('ticker_enabled', 'true');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('adsense_enabled', 'false');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('adsense_exclusions', '/admin,/login');
 
-
--- From 010: password_reset_tokens table
+-- Table: password_reset_tokens
 CREATE TABLE IF NOT EXISTS password_reset_tokens (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL,
@@ -142,8 +131,7 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
 CREATE INDEX IF NOT EXISTS idx_reset_token ON password_reset_tokens(token);
 CREATE INDEX IF NOT EXISTS idx_reset_username ON password_reset_tokens(username);
 
-
--- From 012: API access tables
+-- Table: api_access_settings
 CREATE TABLE IF NOT EXISTS api_access_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   endpoint TEXT UNIQUE NOT NULL,
@@ -164,6 +152,7 @@ VALUES
   ('/api/archive/list', 'public', -1),
   ('/api/archive/detail/:date', 'public', -1);
 
+-- Table: api_usage_logs
 CREATE TABLE IF NOT EXISTS api_usage_logs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   identifier TEXT NOT NULL,
@@ -175,5 +164,16 @@ ON api_usage_logs(identifier, endpoint, request_time);
 CREATE INDEX IF NOT EXISTS idx_api_usage_time
 ON api_usage_logs(request_time);
 
--- From 014: Drop the old insecure table (this is implicit by not including it)
--- DROP TABLE IF EXISTS one_time_access;
+-- Table: email_verification_tokens (from the second file)
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL,
+    new_email TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (username) REFERENCES users (username) ON DELETE CASCADE
+);
+-- Create an index for faster token lookups
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_token ON email_verification_tokens (token);
