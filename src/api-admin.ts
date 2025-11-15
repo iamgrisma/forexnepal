@@ -1,4 +1,4 @@
-// src/api-admin.ts
+// iamgrisma/forexnepal/forexnepal-0ed54d6e1ffdb6635c35b2a4b5207ea13e61be6e/src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
 import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement } from './worker-types';
@@ -12,6 +12,8 @@ const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
 // --- [NO CHANGES TO EXISTING FUNCTIONS ABOVE THIS LINE] ---
 // ... (all other functions like handleFetchAndStore, handleSiteSettings, etc. are identical) ...
+// [THIS FILE IS LONG, SO I AM SKIPPING TO THE FUNCTION THAT NEEDS THE FIX]
+// [ALL FUNCTIONS FROM handleFetchAndStore to handleGenerateOneTimeLoginCode ARE UNCHANGED]
 
 /**
  * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
@@ -896,11 +898,11 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing secrets' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    // Check for required redirect URI variable
-    if (!env.GOOGLE_REDIRECT_URI) {
-      console.error('Missing GOOGLE_REDIRECT_URI variable in wrangler.toml.');
-      return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing redirect URI' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    // --- THIS IS THE FIX (Part 1 of 2) ---
+    // We REMOVED the check for env.GOOGLE_REDIRECT_URI.
+    // We will hard-code the value below, just like in the frontend.
+    const REDIRECT_URI = "https://forex.grisma.com.np/admin/auth/google/callback";
+    // --- END FIX ---
 
     // --- ROBUSTNESS FIX: START ---
     
@@ -914,7 +916,10 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
         code: code,
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: env.GOOGLE_REDIRECT_URI,
+        // --- THIS IS THE FIX (Part 2 of 2) ---
+        // Changed from env.GOOGLE_REDIRECT_URI to the hard-coded string.
+        redirect_uri: REDIRECT_URI,
+        // --- END FIX ---
         grant_type: 'authorization_code',
       }),
     });
