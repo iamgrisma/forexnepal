@@ -15,10 +15,10 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { LogOut, Home, Loader2 } from 'lucide-react'; // Added Loader2
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // Added query imports
-import { apiClient } from '@/services/apiClient'; // Added apiClient
-import { UserProfile } from '@/worker-types'; // Added UserProfile import
+import { LogOut, Home, Loader2 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/services/apiClient';
+import { UserProfile } from '@/worker-types';
 
 // Import Admin Components
 import DataUpdateControl from '@/components/admin/DataUpdateControl';
@@ -27,14 +27,16 @@ import PostsManagement from '@/components/admin/PostsManagement';
 import UserManagement from '@/components/admin/UserManagement';
 import SiteSettingsComponent from '@/components/admin/SiteSettings';
 import ApiSettings from '@/components/admin/ApiSettings';
-// --- NEW: Import ProfileForm ---
-// (Assuming you place ProfileForm.tsx in 'src/components/admin/')
-import ProfileForm from '@/components/admin/ProfileForm'; 
+// --- THIS IS THE FIX ---
+// Changed the import path to be relative, assuming it's in the same /pages directory
+import ProfileForm from './ProfileForm'; 
+// --- END OF FIX ---
 import { Skeleton } from '@/components/ui/skeleton';
 
-// --- NEW: Function to fetch the user's own profile ---
+// Function to fetch the user's own profile
 const fetchProfile = async (): Promise<UserProfile> => {
   // This assumes you have a GET endpoint at /api/admin/profile
+  // You will need to build this endpoint in your worker
   return await apiClient.get<UserProfile>('/api/admin/profile');
 };
 
@@ -43,7 +45,7 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  // --- NEW: Query to fetch the admin's profile data ---
+  // Query to fetch the admin's profile data
   const { 
     data: userProfile, 
     isLoading: isProfileLoading 
@@ -62,7 +64,7 @@ const AdminDashboard = () => {
     navigate('/');
   };
 
-  // --- NEW: Save handler to update query cache on successful save ---
+  // Save handler to update query cache on successful save
   const handleSaveProfile = (updatedProfile: UserProfile) => {
     // The ProfileForm component handles the mutation,
     // this callback updates the local cache to show changes instantly.
@@ -96,7 +98,6 @@ const AdminDashboard = () => {
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
               <TabsTrigger value="api-settings">API Settings</TabsTrigger>
-              {/* --- NEW: Profile Tab --- */}
               <TabsTrigger value="profile">My Profile</TabsTrigger>
             </TabsList>
 
@@ -150,7 +151,7 @@ const AdminDashboard = () => {
                 </Card>
             </TabsContent>
 
-            {/* --- NEW: Profile Tab Content --- */}
+            {/* --- Profile Tab Content --- */}
             <TabsContent value="profile">
               <Card>
                 <CardHeader>
@@ -172,7 +173,15 @@ const AdminDashboard = () => {
                     <ProfileForm profile={userProfile} onSave={handleSaveProfile} />
                   )}
                   {!isProfileLoading && !userProfile && (
-                    <p>Error: Could not load user profile.</p>
+                    <p className="text-destructive">
+                      Error: Could not load user profile.
+                      <br />
+                      <span className="text-sm text-muted-foreground">
+                        (You still need to build the
+                        <code className="mx-1 px-1 bg-muted rounded">GET /api/admin/profile</code>
+                        endpoint in your worker)
+                      </span>
+                    </p>
                   )}
                 </CardContent>
               </Card>
