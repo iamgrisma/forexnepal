@@ -1,4 +1,4 @@
-// src/pages/ProfileForm.tsx
+// iamgrisma/forexnepal/forexnepal-3a6e83ee59906891a05be1ef38aac80d81ccf17d/src/pages/ProfileForm.tsx
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -63,8 +63,9 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) 
   const onSubmit = async (values: ProfileFormValues) => {
     setIsSubmitting(true);
     try {
+      // --- THIS IS THE FIX: Removed the redundant /api prefix ---
       const result = await apiClient.post<{ success: boolean; user: UserProfile; error?: string }>(
-        '/api/admin/profile/update-details',
+        '/admin/profile/update-details',
         values
       );
 
@@ -85,8 +86,9 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) 
     setIsSendingCode(true);
     const email = form.getValues('email');
     try {
+      // --- THIS IS THE FIX: Removed the redundant /api prefix ---
       const result = await apiClient.post<{ success: boolean; error?: string }>(
-        '/api/admin/profile/send-verification-code',
+        '/admin/profile/send-verification-code',
         { email }
       );
       if (result.success) {
