@@ -4,167 +4,137 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, ShieldAlert, KeyRound, CheckCircle } from 'lucide-react';
-import { apiClient } from '@/services/apiClient';
-import { toast as sonnerToast } from "sonner";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/input-otp"
-
-
-type Step = 'email' | 'code' | 'success';
+import { Loader2, Mail, ArrowLeft } from 'lucide-react';
+import { apiClient } from '@/services/apiClient'; // Import apiClient
 
 const ForgotPassword = () => {
-  const [step, setStep] = useState<Step>('email');
   const [username, setUsername] = useState('');
-  const [generatedCode, setGeneratedCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
-
+  const [emailSent, setEmailSent] = useState(false);
   const navigate = useNavigate();
+  const { toast } = useToast();
 
-  // Handler for requesting a password reset email
-  const handleRequestReset = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading || !username) return;
+    if (!username) return;
 
     setLoading(true);
-    setErrorMessage('');
-    setGeneratedCode(''); // Clear any old generated code
 
     try {
-      // This is the primary method: request an email
-      await apiClient.post('/admin/request-password-reset', { username });
-      setStep('success'); // Show success message
-    } catch (error: any) {
-      console.error(error);
-      setErrorMessage(error.message || "An unknown error occurred.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      // Use apiClient now
+      const data = await apiClient.post('/admin/request-password-reset', { username });
 
-  // Handler for generating an on-demand code (for admins already logged in, conceptually)
-  // This is now a protected route, so this UI part might be better placed inside the admin panel.
-  // For now, we'll keep the logic but de-emphasize it.
-  const handleGenerateCode = async () => {
-    if (loading || !username) return;
-
-    setLoading(true);
-    setErrorMessage('');
-
-    try {
-      // This endpoint is protected, so it will fail if not logged in.
-      // This button is for an admin to generate a code for *another* user.
-      // This UI might be in the wrong place, but the logic is here.
-      const data = await apiClient.post<{ success: boolean; code: string; error?: string }>(
-        '/api/admin/generate-login-code', 
-        { username }
-      );
-      
       if (data.success) {
-        setGeneratedCode(data.code);
-        setStep('code');
+        setEmailSent(true);
+        toast({
+          title: "Email Sent",
+          description: "If an account with that username exists, you'll receive a login/reset email.",
+        });
       } else {
-        throw new Error(data.error || 'Could not generate code.');
+        // For security, always show success
+        setEmailSent(true);
+        toast({
+          title: "Request Sent",
+          description: "If an account with that username exists, you'll receive a login/reset email.",
+        });
       }
-    } catch (error: any) {
-      console.error(error);
-      setErrorMessage("You must be an admin to generate a code. Use 'Send Reset Link' instead.");
+    } catch (error) {
+      console.error('Password reset request error:', error);
+      // Even on error, show success for security to prevent username fishing
+      setEmailSent(true); 
+      toast({
+        title: "Request Sent",
+        description: "If an account with that username exists, you'll receive a login/reset email.",
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  if (emailSent) {
+    return (
+      <Layout>
+        <div className="py-8 px-4 sm:px-6 lg:px-8">
+          <div className="max-w-md mx-auto">
+            <Card className="shadow-md">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Mail className="h-6 w-6 text-green-600" />
+                  <CardTitle>Check Your Email</CardTitle>
+                </div>
+                <CardDescription>
+                  If an account with username "{username}" exists, we've sent login/reset instructions to the associated email address.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  The email may take a few minutes to arrive. Please check your spam folder if you don't see it in your inbox.
+                </p>
+                <div className="flex gap-2">
+                  <Button onClick={() => navigate('/admin/login')} className="flex-1">
+                    Return to Login
+                  </Button>
+                  <Button onClick={() => navigate('/admin/reset-password')} variant="outline" className="flex-1">
+                    I have a token
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
       <div className="py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md mx-auto">
           <Card className="shadow-md">
-            <CardHeader className="text-center">
-              <KeyRound className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle>Forgot Password</CardTitle>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Mail className="h-6 w-6 text-primary" />
+                <CardTitle>Forgot Password?</CardTitle>
+              </div>
+              <CardDescription>
+                Enter your username and we'll send you a link to log in or reset your password.
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              {step === 'email' && (
-                <form onSubmit={handleRequestReset} className="space-y-4">
-                  <CardDescription className="text-center">
-                    Enter your username to receive a password reset link via email.
-                  </CardDescription>
-                  <div>
-                    <label className="text-sm font-medium mb-1 block text-left" htmlFor="username">Username</label>
-                    <Input
-                      id="username"
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Enter your username"
-                      required
-                      disabled={loading}
-                      autoCapitalize="none"
-                      autoComplete="username"
-                      autoFocus
-                    />
-                  </div>
-                  {errorMessage && (
-                    <Alert variant="destructive" className="mt-4">
-                      <ShieldAlert className="h-4 w-4" />
-                      <AlertTitle>Error</AlertTitle>
-                      <AlertDescription>{errorMessage}</AlertDescription>
-                    </Alert>
-                  )}
-                  <Button type="submit" className="w-full" disabled={loading || !username}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Send Reset Link
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-1 block" htmlFor="username">
+                    Username
+                  </label>
+                  <Input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Enter your username"
+                    required
+                    disabled={loading}
+                    autoFocus
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Button type="submit" disabled={loading || !username} className="w-full">
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {loading ? 'Sending...' : 'Send Login/Reset Link'}
                   </Button>
-                  <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/admin/login')}>
-                    Back to Login
-                  </Button>
-                </form>
-              )}
-
-              {step === 'success' && (
-                <div className="space-y-4 text-center">
-                  <CheckCircle className="h-12 w-12 text-green-600 mx-auto" />
-                  <AlertTitle className="text-lg font-medium">Check Your Email</AlertTitle>
-                  <AlertDescription>
-                    If an account with that username exists, a password reset link has been sent to the associated email.
-                  </AlertDescription>
-                  <Button type="button" variant="outline" className="w-full" onClick={() => navigate('/admin/login')}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => navigate('/admin/login')}
+                    className="w-full"
+                  >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
                     Back to Login
                   </Button>
                 </div>
-              )}
-
-              {/* This step is likely unused now, but left for completeness */ }
-              {step === 'code' && (
-                <div className="space-y-6 text-center">
-                   <AlertTitle className="text-lg font-medium">Login Code Generated</AlertTitle>
-                  <AlertDescription>
-                    Provide this one-time login code to the user. It expires in 6 minutes.
-                  </AlertDescription>
-                  <InputOTP maxLength={8} value={generatedCode}>
-                    <InputOTPGroup className="mx-auto">
-                      <InputOTPSlot index={0} />
-                      <InputOTPSlot index={1} />
-                      <InputOTPSlot index={2} />
-                      <InputOTPSlot index={3} />
-                      <InputOTPSlot index={4} />
-                      <InputOTPSlot index={5} />
-                      <InputOTPSlot index={6} />
-                      <InputOTPSlot index={7} />
-                    </InputOTPGroup>
-                  </InputOTP>
-                  <Button type="button" variant="outline" className="w-full" onClick={() => setStep('email')}>
-                    Back
-                  </Button>
-                </div>
-              )}
+              </form>
             </CardContent>
           </Card>
         </div>
