@@ -324,7 +324,8 @@ async function sendPasswordResetEmail(
                 email: 'admin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
-            subject: 'Password Reset Request - Forex Nepal Admin',
+            // --- UPDATED: Email content reflects both options ---
+            subject: 'Login Code / Password Reset Request - Forex Nepal Admin',
             htmlContent: `
               <!DOCTYPE html>
               <html>
@@ -344,21 +345,21 @@ async function sendPasswordResetEmail(
               <body>
                 <div class="container">
                   <div class="header">
-                    <h1>Password Reset Request</h1>
+                    <h1>Account Access Request</h1>
                   </div>
                   <div class="content">
                     <p>Hello <strong>${username}</strong>,</p>
-                    <p>We received a request to reset your password for the Forex Nepal Admin Dashboard.</p>
-                    <p>Click the button below to reset your password:</p>
+                    <p>We received a request for a one-time login or password reset for your Forex Nepal Admin account.</p>
+                    <p>Click the button below to log in or reset your password:</p>
                     <p style="text-align: center;">
-                      <a href="${resetUrl}" class="button">Reset Password</a>
+                      <a href="${resetUrl}" class="button">Access Your Account</a>
                     </p>
                     <p>Or copy and paste this link into your browser:</p>
                     <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
-                    <p>Alternatively, use this reset code:</p>
+                    <p>Alternatively, you can use this code on the login page:</p>
                     <p style="text-align: center;" class="token">${resetToken}</p>
                     <p><strong>This link and code will expire in 15 minutes.</strong></p>
-                    <p>If you didn't request a password reset, please ignore this email or contact support if you're concerned about your account security.</p>
+                    <p>If you didn't request this, please ignore this email.</p>
                   </div>
                   <div class="footer">
                     <p>Forex Nepal Admin Dashboard | Powered by Grisma</p>
@@ -374,7 +375,7 @@ async function sendPasswordResetEmail(
             const errorText = await emailResponse.text();
             console.error('Brevo API error:', errorText);
         } else {
-            console.log('Password reset email sent successfully via Brevo.');
+            console.log('Password reset/login email sent successfully via Brevo.');
         }
     }).catch(emailError => {
         console.error('Email sending error:', emailError);
@@ -401,11 +402,14 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
             `SELECT username, email FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; email: string | null }>();
 
-        if (!user || !user.email) {
-            console.log(`Password reset request for "${username}", but user or email not found. Sending success for security.`);
+        // --- UPDATED: Always find the user to check if they exist ---
+        // But only send an email if one is present
+        if (!user) {
+            console.log(`Password reset request for "${username}", but user not found. Sending success for security.`);
             return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
-
+        
+        // --- This function now generates the token for BOTH use cases ---
         const resetToken = crypto.randomUUID().replace(/-/g, '');
         const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
 
@@ -415,14 +419,17 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
 
         const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
-        sendPasswordResetEmail(
-            env,
-            user.email,
-            user.username,
-            resetToken,
-            resetUrl,
-            ctx
-        );
+        // Only send the email if the user has one
+        if (user.email) {
+            sendPasswordResetEmail(
+                env,
+                user.email,
+                user.username,
+                resetToken,
+                resetUrl,
+                ctx
+            );
+        }
 
         return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
 
@@ -472,6 +479,7 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
             `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, resetRecord.username).run();
 
+        // --- Mark token as used ---
         await env.FOREX_DB.prepare(
             `UPDATE password_reset_tokens SET used = 1 WHERE token = ?`
         ).bind(token).run();
@@ -483,6 +491,59 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+
+// --- NEW: ONE-TIME LOGIN WITH TOKEN HANDLER ---
+/**
+ * (PUBLIC) Logs a user in using a password reset token without changing the password.
+ */
+export async function handleLoginWithToken(request: Request, env: Env): Promise<Response> {
+    if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { token } = await request.json();
+        if (!token) {
+            return new Response(JSON.stringify({ success: false, error: 'Token is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Find the token
+        const resetRecord = await env.FOREX_DB.prepare(
+            `SELECT username, expires_at, used FROM password_reset_tokens WHERE token = ?`
+        ).bind(token).first<{ username: string; expires_at: string; used: number }>();
+
+        if (!resetRecord) {
+            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired token' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        if (resetRecord.used === 1) {
+            return new Response(JSON.stringify({ success: false, error: 'This token has already been used' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        const expiresAt = new Date(resetRecord.expires_at);
+        if (expiresAt < new Date()) {
+            return new Response(JSON.stringify({ success: false, error: 'This token has expired' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Mark code as used
+        await env.FOREX_DB.prepare(`UPDATE password_reset_tokens SET used = 1 WHERE token = ?`).bind(token).run();
+
+        // Log the user in
+        const authToken = await generateToken(resetRecord.username, env.JWT_SECRET);
+        
+        return new Response(JSON.stringify({
+            success: true,
+            token: authToken,
+            username: resetRecord.username,
+            mustChangePassword: false // One-time login assumes they are trusted
+        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('One-time login error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
 
 /**
  * (ADMIN) GET all users or POST a new user.
@@ -780,108 +841,9 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
 }
 
 
-// --- NEW: ONE-TIME LOGIN HANDLERS ---
-
-/**
- * (PUBLIC) Logs a user in using a one-time code.
- */
-export async function handleOneTimeLogin(request: Request, env: Env): Promise<Response> {
-    if (request.method !== 'POST') {
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
-    try {
-        const { code } = await request.json();
-        if (!code) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'One-time code is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // Find the code
-        const accessRecord = await env.FOREX_DB.prepare(
-            `SELECT id, username, expires_at, used FROM one_time_access WHERE access_code = ? AND code_type = 'login'`
-        ).bind(code).first<{ id: number; username: string; expires_at: string; used: number }>();
-
-        if (!accessRecord) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'Invalid or expired code' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        if (accessRecord.used === 1) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'This code has already been used' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        const expiresAt = new Date(accessRecord.expires_at);
-        if (expiresAt < new Date()) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'This code has expired' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // Mark code as used
-        await env.FOREX_DB.prepare(`UPDATE one_time_access SET used = 1 WHERE id = ?`).bind(accessRecord.id).run();
-
-        // Log the user in
-        const token = await generateToken(accessRecord.username, env.JWT_SECRET);
-        
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({
-            success: true,
-            token,
-            username: accessRecord.username,
-            mustChangePassword: false // One-time login assumes they are trusted
-        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-
-    } catch (error: any) {
-        console.error('One-time login error:', error.message, error.cause);
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-}
-
-/**
- * (ADMIN) Generates a one-time login code for a user.
- */
-export async function handleGenerateOneTimeLoginCode(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
-    try {
-        const { username } = await request.json();
-        if (!username) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // Check if user exists
-        const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
-        if (!user) {
-            // --- FIX: Added 'Content-Type' header ---
-            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
-
-        // Generate a simple 8-digit code
-        const accessCode = Math.random().toString().slice(2, 10);
-        const expiresAt = new Date(Date.now() + 360000).toISOString(); // 6 minutes
-
-        await env.FOREX_DB.prepare(
-            `INSERT INTO one_time_access (username, access_code, expires_at, code_type) VALUES (?, ?, ?, 'login')`
-        ).bind(username, accessCode, expiresAt).run();
-
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({ success: true, username: username, code: accessCode, expires_at: expiresAt }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-
-    } catch (error: any) {
-        console.error('Error generating one-time login code:', error.message, error.cause);
-        // --- FIX: Added 'Content-Type' header ---
-        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-}
+// --- REMOVED: ONE-TIME LOGIN HANDLERS ---
+// --- Removed handleOneTimeLogin ---
+// --- Removed handleGenerateOneTimeLoginCode ---
 
 
 // --- NEW GOOGLE LOGIN HANDLER ---
