@@ -2,7 +2,7 @@
 import React, { lazy, Suspense } from 'react';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/ProtectedRoute';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -31,6 +31,11 @@ const AdminDashboard = () => {
   const handleNewPost = () => {
     navigate('/admin/posts/new');
   };
+  
+  // Handle navigation to edit a post
+  const handleEditPost = (postId: number) => {
+    navigate(`/admin/posts/edit/${postId}`);
+  };
 
   return (
     <Layout>
@@ -46,22 +51,25 @@ const AdminDashboard = () => {
 
         <Tabs defaultValue="profile" className="w-full">
           {/* --- Restored all tabs --- */}
-          <TabsList className="h-auto flex-wrap justify-start">
-            <TabsTrigger value="profile">Profile</TabsTrigger>
-            <TabsTrigger value="data-update">Data Update</TabsTrigger>
-            <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
-            <TabsTrigger value="manage-posts">Manage Posts</TabsTrigger>
-            <TabsTrigger value="manage-users">Manage Users</TabsTrigger>
-            <TabsTrigger value="api-settings">API Settings</TabsTrigger>
-            <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto scrollbar-hide border-b">
+            <TabsList className="flex-nowrap w-max">
+              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="data-update">Data Update</TabsTrigger>
+              <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
+              <TabsTrigger value="manage-posts">Manage Posts</TabsTrigger>
+              <TabsTrigger value="manage-users">Manage Users</TabsTrigger>
+              <TabsTrigger value="api-settings">API Settings</TabsTrigger>
+              <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
+            </TabsList>
+          </div>
 
           <Suspense fallback={<AdminFallback />}>
             {/* 1. Profile Tab (Your new tab) */}
-            <TabsContent value="profile">
+            <TabsContent value="profile" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Profile</CardTitle>
+                  <CardDescription>Manage your admin account details and password.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ProfileForm />
@@ -70,10 +78,11 @@ const AdminDashboard = () => {
             </TabsContent>
 
             {/* 2. Data Update Tab (Restored) */}
-            <TabsContent value="data-update">
+            <TabsContent value="data-update" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Data Update Control</CardTitle>
+                  <CardDescription>Manually fetch data from NRB API and update the database.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <DataUpdateControl />
@@ -82,10 +91,11 @@ const AdminDashboard = () => {
             </TabsContent>
 
             {/* 3. Site Settings Tab (Restored) */}
-            <TabsContent value="site-settings">
+            <TabsContent value="site-settings" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Site Settings</CardTitle>
+                  <CardDescription>Manage global site settings like ticker and ads.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <SiteSettings />
@@ -94,22 +104,24 @@ const AdminDashboard = () => {
             </TabsContent>
 
             {/* 4. Manage Posts Tab (Restored) */}
-            <TabsContent value="manage-posts">
+            <TabsContent value="manage-posts" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Manage Posts</CardTitle>
+                  <CardDescription>Create, edit, and delete blog posts.</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <PostsManagement onNewPost={handleNewPost} />
+                  <PostsManagement onNewPost={handleNewPost} onEditPost={handleEditPost} />
                 </CardContent>
               </Card>
             </TabsContent>
 
             {/* 5. Manage Users Tab (Restored) */}
-            <TabsContent value="manage-users">
+            <TabsContent value="manage-users" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Manage Users</CardTitle>
+                  <CardDescription>Add or remove admin users.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <UserManagement />
@@ -118,10 +130,11 @@ const AdminDashboard = () => {
             </TabsContent>
 
             {/* 6. API Settings Tab (Restored) */}
-            <TabsContent value="api-settings">
+            <TabsContent value="api-settings" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>API Access Settings</CardTitle>
+                  <CardDescription>Manage public API access, restrictions, and quotas.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ApiSettings />
@@ -130,10 +143,11 @@ const AdminDashboard = () => {
             </TabsContent>
             
             {/* 7. Forex Data Tab (Restored) */}
-            <TabsContent value="forex-data">
+            <TabsContent value="forex-data" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle>Forex Data Management</CardTitle>
+                  <CardDescription>Manually add or edit forex data for a specific date.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <ForexDataManagement />
