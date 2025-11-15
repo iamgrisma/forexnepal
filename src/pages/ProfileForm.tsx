@@ -1,4 +1,4 @@
-// src/components/admin/ProfileForm.tsx
+// src/pages/ProfileForm.tsx
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
