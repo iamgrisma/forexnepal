@@ -37,13 +37,14 @@ const GoogleCallback = () => {
       }
 
       try {
+        // --- FIX: Removed '/api' prefix. apiClient will add it. ---
         // Exchange the code with your backend
         const data = await apiClient.post<{ 
           success: boolean; 
           token: string; 
           username: string;
           error?: string; 
-        }>('/api/admin/auth/google/callback', { code });
+        }>('/admin/auth/google/callback', { code }); // <-- REMOVED /api FROM HERE
 
         if (data.success) {
           // Save session and redirect to dashboard
