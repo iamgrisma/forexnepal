@@ -49,22 +49,20 @@ const ProtectedRoute = () => {
       }
 
       try {
-        // Use apiClient which has base URL
-        const response = await apiClient.get<any>('/admin/settings', {
+        // --- THIS IS THE FIX ---
+        // apiClient.get() will throw an error if the request fails (e.g., 401 Unauthorized).
+        // If it does *not* throw, the token is valid.
+        await apiClient.get<any>('/admin/settings', {
           headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (response.status === 200) {
-          setIsAuthenticated(true);
-        } else {
-          // Token is invalid or expired
-          localStorage.removeItem('authToken');
-          localStorage.removeItem('username');
-          setToken(null);
-          setUsername(null);
-          setIsAuthenticated(false);
-        }
+        // If the request was successful, we are authenticated.
+        setIsAuthenticated(true);
+        
+        // --- END OF FIX ---
+
       } catch (error) {
+        // If apiClient.get throws (due to 401, 500, or network error), we land here.
         console.error('Auth verification failed:', error);
         localStorage.removeItem('authToken');
         localStorage.removeItem('username');
