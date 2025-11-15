@@ -1,4 +1,3 @@
-
 // src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
@@ -173,21 +172,34 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
             return new Response(JSON.stringify({ success: false, error: 'Too many failed password attempts.' }), { status: 429, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
+        // --- FIX: Select plaintext_password as well ---
         const user = await env.FOREX_DB.prepare(
-            `SELECT username, password_hash FROM users WHERE username = ? AND is_active = 1`
-        ).bind(username).first<{ username: string; password_hash: string | null }>();
+            `SELECT username, password_hash, plaintext_password FROM users WHERE username = ? AND is_active = 1`
+        ).bind(username).first<{ username: string; password_hash: string | null; plaintext_password: string | null }>();
 
         let isValid = false;
         let mustChangePassword = false;
 
-        if (user && user.password_hash) {
-            // Standard path: compare against stored hash
-            isValid = await simpleHashCompare(password, user.password_hash);
-            // Force password change if placeholder hash is present
-            if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
-                mustChangePassword = true;
+        if (user) {
+            if (user.password_hash) {
+                // Standard path: compare against stored hash
+                isValid = await simpleHashCompare(password, user.password_hash);
+                // Force password change if placeholder hash is present
+                if (isValid && user.password_hash === '0000000000000000000000000000000000000000000000000000000000000000') {
+                    mustChangePassword = true;
+                }
+            } 
+            // --- FIX: Add check for first-time login (plaintext_password) ---
+            else if (user.plaintext_password) {
+                // First-time login path
+                isValid = (password === user.plaintext_password);
+                if (isValid) {
+                    mustChangePassword = true; // Force password change
+                }
             }
         }
+        // --- END FIX ---
+
 
         await env.FOREX_DB.prepare(
             `INSERT INTO login_attempts (ip_address, session_id, username, success, type) VALUES (?, ?, ?, ?, 'login')`
@@ -272,8 +284,9 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
             newPasswordHash = await simpleHash(newPassword);
         }
 
+        // --- FIX: Also clear the plaintext_password column ---
         await env.FOREX_DB.prepare(
-            `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?`
+            `UPDATE users SET password_hash = ?, plaintext_password = NULL, updated_at = datetime('now') WHERE username = ?`
         ).bind(newPasswordHash, username).run();
 
         // This table is deprecated but we'll clear it for legacy support.
@@ -874,3 +887,5 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
+
+// --- FIX: REMOVED EXTRA TRAILING '}' ---
