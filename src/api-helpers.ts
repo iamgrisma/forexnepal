@@ -1,11 +1,10 @@
-// src/api-helpers.ts
+// iamgrisma/forexnepal/forexnepal-3a6e83ee59906891a05be1ef38aac80d81ccf17d/src/api-helpers.ts
 import { Env, ApiAccessSetting, ExecutionContext, D1Database, SiteSettings } from './worker-types';
 import { corsHeaders } from './constants';
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 const API_SETTINGS_CACHE_TTL = 300; // 5 minutes
 
-// --- NEW (BUT WAS MISSING) ---
 /**
  * Fetches all site settings from D1 and formats them as an object.
  */
@@ -17,13 +16,17 @@ export async function getAllSettings(db: D1Database): Promise<SiteSettings> {
     };
     
     try {
-        const { results } = await db.prepare("SELECT key, value FROM site_settings").all<{ key: string, value: string }>();
+        // --- THIS IS THE FIX ---
+        // Was: const { results } = ... (which fails if dbResponse is null)
+        // Now: We fetch the full response object and check for 'results' safely.
+        const dbResponse = await db.prepare("SELECT key, value FROM site_settings").all<{ key: string, value: string }>();
         
-        if (!results) {
+        if (!dbResponse || !dbResponse.results || dbResponse.results.length === 0) {
+            console.log("No site settings found in D1, returning defaults.");
             return defaultSettings;
         }
 
-        const settings = results.reduce((acc, row) => {
+        const settings = dbResponse.results.reduce((acc, row) => {
             if (row.key === 'ticker_enabled' || row.key === 'adsense_enabled') {
                 acc[row.key] = row.value === 'true';
             } else if (row.key === 'adsense_exclusions') {
@@ -31,6 +34,7 @@ export async function getAllSettings(db: D1Database): Promise<SiteSettings> {
             }
             return acc;
         }, {} as any);
+        // --- END FIX ---
 
         return { ...defaultSettings, ...settings };
     } catch (e: any) {
@@ -38,7 +42,6 @@ export async function getAllSettings(db: D1Database): Promise<SiteSettings> {
         return defaultSettings;
     }
 }
-// --- END NEW FUNCTION ---
 
 
 /**
