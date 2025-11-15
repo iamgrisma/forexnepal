@@ -188,7 +188,8 @@ export default {
                 }
             }
 
-            return new Response(JSON.stringify({ error: 'API route not found' }), { status 404, headers: corsHeaders });
+            // --- THIS IS THE LINE I FIXED (added colon) ---
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
 
         // --- START: MODIFIED OAuth Callback Fix ---
