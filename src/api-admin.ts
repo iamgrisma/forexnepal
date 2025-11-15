@@ -878,7 +878,7 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
 }
 
 
-// --- START: NEW GoogleAuthCallback Function ---
+// --- START: *** MODIFIED *** GoogleAuthCallback Function ---
 /**
  * (PUBLIC) Handles the Google OAuth callback.
  * Exchanges the code for a token, gets user info, and issues a JWT.
@@ -890,7 +890,6 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Authorization code is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // --- MODIFIED: Split checks for secrets vs. vars ---
     // Check for required secrets
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.JWT_SECRET) {
       console.error('Missing one or more required secrets (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET).');
@@ -902,8 +901,9 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       console.error('Missing GOOGLE_REDIRECT_URI variable in wrangler.toml.');
       return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing redirect URI' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    // --- END MODIFICATION ---
 
+    // --- ROBUSTNESS FIX: START ---
+    
     // 1. Exchange code for access token
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -914,18 +914,26 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
         code: code,
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        redirect_uri: env.GOOGLE_REDIRECT_URI, // This will correctly read from [vars]
+        redirect_uri: env.GOOGLE_REDIRECT_URI,
         grant_type: 'authorization_code',
       }),
     });
 
+    // Read the response body ONCE
+    const tokenData = await tokenResponse.json();
+
     if (!tokenResponse.ok) {
-      const errorData = await tokenResponse.json();
-      console.error('Google token exchange failed:', errorData);
+      // If response is not ok, log the error data and return
+      console.error('Google token exchange failed:', tokenData);
       return new Response(JSON.stringify({ success: false, error: 'Failed to exchange Google token' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { access_token } = await tokenResponse.json();
+    const access_token = (tokenData as any).access_token;
+    if (!access_token) {
+        console.error('Google token response OK but missing access_token:', tokenData);
+        return new Response(JSON.stringify({ success: false, error: 'Google auth failed: no token' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
 
     // 2. Get user info from Google
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -934,13 +942,18 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       },
     });
 
+    // Read the user info response body ONCE
+    const userInfoData = await userInfoResponse.json();
+
     if (!userInfoResponse.ok) {
-      const errorData = await userInfoResponse.json();
-      console.error('Google user info fetch failed:', errorData);
+      // If response is not ok, log the error data and return
+      console.error('Google user info fetch failed:', userInfoData);
       return new Response(JSON.stringify({ success: false, error: 'Failed to fetch user info' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const googleUser: { email: string, name: string, verified_email: boolean } = await userInfoResponse.json();
+    const googleUser: { email: string, name: string, verified_email: boolean } = userInfoData as any;
+
+    // --- ROBUSTNESS FIX: END ---
 
     if (!googleUser.email || !googleUser.verified_email) {
       return new Response(JSON.stringify({ success: false, error: 'Google account must have a verified email' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
