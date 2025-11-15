@@ -36,9 +36,10 @@ import {
     handleGetApiSettings,
     handleUpdateApiSettings,
     handleGoogleLoginCallback,
-    // --- IMPORT NEW HANDLER ---
-    handleLoginWithResetToken
-    // --- REMOVED OLD HANDLERS (handleOneTimeLogin, handleGenerateOneTimeLoginCode) ---
+    // --- NEW / RENAMED HANDLERS ---
+    handleLoginWithResetToken,
+    handleGenerateResetToken
+    // --- REMOVED: handleOneTimeLogin, handleGenerateOneTimeLoginCode ---
 } from './api-admin';
 
 export default {
@@ -124,14 +125,9 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
-            // --- REMOVED OLD ROUTE ---
-            // if (pathname === '/api/admin/login-one-time' && method === 'POST')
-            
-            // --- ADD NEW GOOGLE CALLBACK ROUTE ---
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
                 return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
             }
-            // --- END NEW ROUTE ---
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
@@ -141,11 +137,11 @@ export default {
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
-            // --- ADD NEW LOGIN-WITH-TOKEN ROUTE ---
+            // --- NEW: Public route to login with a token ---
             if (pathname === '/api/admin/login-with-token' && method === 'POST') {
                 return handleLoginWithResetToken(request, env); // env contains JWT_SECRET
             }
-            // --- END NEW ROUTE ---
+            // --- REMOVED: Old /api/admin/login-one-time route ---
 
 
             // --- Admin Protected Routes (Token required) ---
@@ -153,7 +149,6 @@ export default {
                 const authHeader = request.headers.get('Authorization');
                 const token = authHeader?.replace('Bearer ', '');
                 
-                // Pass the secret from env to verifyToken
                 if (!token || !(await auth.verifyToken(token, env.JWT_SECRET))) {
                     return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 }
@@ -189,37 +184,26 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
-                // --- REMOVED OLD ROUTE ---
-                // if (pathname === '/api/admin/generate-login-code' && method === 'POST')
+                // --- NEW: Admin-only route to generate a token ---
+                if (pathname === '/api/admin/generate-reset-token' && method === 'POST') {
+                    return handleGenerateResetToken(request, env); // env contains JWT_SECRET
+                }
+                // --- REMOVED: Old /api/admin/generate-login-code route ---
             }
 
-            // --- THIS IS THE LINE I FIXED (added colon) ---
-            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // --- START: MODIFIED OAuth Callback Fix ---
-        // This intercepts the non-hash URL from the OAuth provider
-        // and redirects to the correct hash-based URL for the React app.
+        // --- OAuth Callback Redirect ---
         if (pathname === '/admin/auth/google/callback') {
             const newUrl = new URL(request.url);
-            
-            // Get the query string (e.g., ?code=...&scope=...)
             const searchParams = url.search;
-            
-            // Set the path to the root, where index.html is served
             newUrl.pathname = '/';
-            
-            // Set the hash to point to the React route AND pass the params
             newUrl.hash = `/admin/auth/google/callback${searchParams}`;
-            
-            // *** THIS IS THE FIX ***
-            // Clear the search params from the main URL to prevent duplication
-            newUrl.search = '';
-
-            // Issue the redirect
+            newUrl.search = ''; // Clear search params from main URL
             return Response.redirect(newUrl.toString(), 302);
         }
-        // --- END: MODIFIED OAuth Callback Fix ---
+        // --- END: OAuth Callback Redirect ---
 
 
         // --- Sitemap ---
