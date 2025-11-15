@@ -1,4 +1,4 @@
-// src/pages/AdminDashboard.tsx
+// iamgrisma/forexnepal/forexnepal-3a6e83ee59906891a05be1ef38aac80d81ccf17d/src/pages/AdminDashboard.tsx
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/components/ProtectedRoute';
@@ -34,8 +34,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 
 // Function to fetch the user's own profile
 const fetchProfile = async (): Promise<UserProfile> => {
-  // This is the simple API you wanted
-  return await apiClient.get<UserProfile>('/api/admin/profile');
+  // --- THIS IS THE FIX: Removed the redundant /api prefix ---
+  return await apiClient.get<UserProfile>('/admin/profile');
 };
 
 const AdminDashboard = () => {
