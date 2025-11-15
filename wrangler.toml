@@ -1,4 +1,3 @@
-# Cloudflare Workers configuration for forexnepal.com
 name = "forexnepal"
 main = "src/worker.ts"
 compatibility_date = "2024-01-01"
@@ -7,7 +6,7 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "FOREX_DB"
 database_name = "forex-rates"
-database_id = "05ede330-5c35-4aee-8843-6c3527817925" # Replace with your actual D1 database ID
+database_id = "05ede330-5c35-4aee-8843-6c3527817925"
 
 # KV namespace for static assets
 [[kv_namespaces]]
@@ -18,6 +17,12 @@ id = "d23853432a9d4f09955d9aa93e8dcca8"
 [[kv_namespaces]]
 binding = "API_SETTINGS_CACHE"
 id = "6eae569e69a748478ddef2014ee60022"
+
+# --- THIS IS THE MISSING PIECE ---
+# Add this entire [vars] block
+[vars]
+GOOGLE_REDIRECT_URI = "https://forexnepal.grisma.com.np/admin/auth/google/callback"
+# --- END OF NEW BLOCK ---
 
 [triggers]
 crons = ["15 18 * * *", "35 18 * * *", "15 23 * * *"]
