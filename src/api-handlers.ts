@@ -624,7 +624,7 @@ async function sendPasswordResetEmail(
         body: JSON.stringify({
             sender: {
                 name: 'Forex Nepal Admin',
-                email: 'admin@grisma.com.np',
+                email: 'cadmin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
             subject: 'Password Reset Request - Forex Nepal Admin',

@@ -37,8 +37,7 @@ import {
     handleUpdateApiSettings,
     // --- IMPORT NEW HANDLERS ---
     handleOneTimeLogin,
-    handleGenerateOneTimeLoginCode,
-    handleGoogleLoginCallback // --- ADD THIS IMPORT ---
+    handleGenerateOneTimeLoginCode
 } from './api-admin';
 
 export default {
@@ -124,14 +123,10 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
+            // --- ADD NEW ONE-TIME LOGIN ROUTE ---
             if (pathname === '/api/admin/login-one-time' && method === 'POST') {
                 return handleOneTimeLogin(request, env); // env contains JWT_SECRET
             }
-            // --- ADD NEW GOOGLE CALLBACK ROUTE ---
-            if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
-                return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
-            }
-            // --- END NEW ROUTE ---
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
@@ -183,6 +178,7 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
+                // --- ADD NEW GENERATE CODE ROUTE ---
                 if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
                     return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
                 }
@@ -190,23 +186,6 @@ export default {
 
             return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
-
-        // --- ADDED: Handle OAuth Callback for HashRouter ---
-        // This intercepts the non-hash URL from the OAuth provider
-        // and redirects to the correct hash-based URL for the React app.
-        if (pathname === '/admin/auth/google/callback') {
-            const newUrl = new URL(request.url);
-            // Reconstruct the URL to include the hash
-            // e.g., https://.../admin/auth/google/callback?code=...
-            // becomes: https://.../#/admin/auth/google/callback?code=...
-            newUrl.pathname = '/';
-            newUrl.hash = `/admin/auth/google/callback${url.search}`; // url.search includes the '?'
-            
-            // Issue the redirect
-            return Response.redirect(newUrl.toString(), 302);
-        }
-        // --- END: OAuth Callback Fix ---
-
 
         // --- Sitemap ---
         if (pathname === '/sitemap.xml' || pathname === '/sitemap_index.xml') {

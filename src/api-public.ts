@@ -1,4 +1,4 @@
-// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/api-public.ts
+// src/api-public.ts
 // --- PUBLIC-FACING API HANDLERS ---
 
 import { Env } from './worker-types';
@@ -52,7 +52,6 @@ async function getLatestForexRow(env: Env): Promise<any> {
 
 /**
  * (PUBLIC) Fetches the latest available rates (today or yesterday).
- * --- This correctly returns the NORMALIZED (per-unit) rates from the DB ---
  */
 export async function handleLatestRates(request: Request, env: Env): Promise<Response> {
     try {
@@ -66,9 +65,8 @@ export async function handleLatestRates(request: Request, env: Env): Promise<Res
 
         const rates: Rate[] = [];
         CURRENCIES.forEach(code => {
-            const buyRate = row[`${code}_buy`]; // This is already per-unit
-            const sellRate = row[`${code}_sell`]; // This is already per-unit
-            
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
                     currency: { ...CURRENCY_MAP[code], iso3: code },
@@ -98,7 +96,6 @@ export async function handleLatestRates(request: Request, env: Env): Promise<Res
 
 /**
  * (PUBLIC) Fetches rates for a specific date from the DB.
- * --- This correctly returns the NORMALIZED (per-unit) rates from the DB ---
  */
 export async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -124,9 +121,8 @@ export async function handleRatesByDate(request: Request, env: Env): Promise<Res
 
         const rates: Rate[] = [];
         CURRENCIES.forEach(code => {
-            const buyRate = row[`${code}_buy`]; // This is already per-unit
-            const sellRate = row[`${code}_sell`]; // This is already per-unit
-
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
                     currency: { ...CURRENCY_MAP[code], iso3: code },
@@ -155,7 +151,6 @@ export async function handleRatesByDate(request: Request, env: Env): Promise<Res
 
 /**
  * (PUBLIC) Fetches historical rates for one or all currencies.
- * --- FIX: This now returns NORMALIZED (per-unit) rates for charts. ---
  */
 export async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -183,10 +178,8 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             if (sampling !== 'daily') {
                 switch (sampling) {
                     case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break; // Wednesday
-                    // --- FIX: Corrected sampling logic ---
-                    case '15day': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
-                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) = 1)"; break;
-                    // --- END FIX ---
+                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
+                    case 'yearly': samplingClause = "AND (CAST(STRFTIME('%j', date) AS INT) IN (1, 180, 365))"; break;
                 }
                 samplingClause += ` OR date = ? OR date = ?`;
                 bindings.push(fromDate, toDate);
@@ -202,13 +195,14 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             
             const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
             
-            // --- FIX: REMOVED unit division. The data is already per-unit. ---
+            const currencyInfo = CURRENCY_MAP[upperCaseCurrencyCode];
+            const unit = currencyInfo?.unit || 1;
+            
             const chartData = results.map((item: any) => ({
                 date: item.date,
-                buy: item.buy && typeof item.buy === 'number' ? item.buy : null,
-                sell: item.sell && typeof item.sell === 'number' ? item.sell : null
+                buy: item.buy && typeof item.buy === 'number' ? item.buy / unit : null,
+                sell: item.sell && typeof item.sell === 'number' ? item.sell / unit : null
             })).filter(d => d.buy !== null || d.sell !== null);
-            // --- END FIX ---
 
             return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -224,9 +218,8 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             const payloads: RatesData[] = results.map(row => {
                 const rates: Rate[] = [];
                 CURRENCIES.forEach(code => {
-                    const buyRate = row[`${code}_buy`]; // Already per-unit
-                    const sellRate = row[`${code}_sell`]; // Already per-unit
-
+                    const buyRate = row[`${code}_buy`];
+                    const sellRate = row[`${code}_sell`];
                     if (typeof buyRate === 'number' && typeof sellRate === 'number') {
                         rates.push({
                             currency: { ...CURRENCY_MAP[code], iso3: code },
@@ -313,8 +306,8 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
 
         let tableRows = '';
         CURRENCIES.forEach(code => {
-            const buyRate = row[`${code}_buy`]; // Per-unit
-            const sellRate = row[`${code}_sell`]; // Per-unit
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
             
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 const currencyInfo = CURRENCY_MAP[code];
@@ -326,11 +319,13 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
                 let sellColor = '#9ca3af';
 
                 if (prevRow) {
-                    const prevBuy = (prevRow[`${code}_buy`] || 0); // Per-unit
-                    const prevSell = (prevRow[`${code}_sell`] || 0); // Per-unit
+                    const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
+                    const prevSell = (prevRow[`${code}_sell`] || 0) / unit;
+                    const currentBuy = (buyRate || 0) / unit;
+                    const currentSell = (sellRate || 0) / unit;
                     
-                    const buyDiff = buyRate - prevBuy;
-                    const sellDiff = sellRate - prevSell;
+                    const buyDiff = currentBuy - prevBuy;
+                    const sellDiff = currentSell - prevSell;
 
                     if (buyDiff > 0.0001) {
                         buyTrend = '▲';
@@ -360,9 +355,8 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
                             <strong>${code}</strong> (${unit})
                         </div>
                     </td>
-                    {/* Re-constitute the rate for display */ }
-                    <td>${(buyRate * unit).toFixed(2)} <span style="color: ${buyColor}">${buyTrend}</span></td>
-                    <td>${(sellRate * unit).toFixed(2)} <span style="color: ${sellColor}">${sellTrend}</span></td>
+                    <td>${buyRate.toFixed(2)} <span style="color: ${buyColor}">${buyTrend}</span></td>
+                    <td>${sellRate.toFixed(2)} <span style="color: ${sellColor}">${sellTrend}</span></td>
                 </tr>`;
             }
         });
@@ -531,8 +525,8 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
             return new Response(JSON.stringify({ error: 'No data found for this date' }), { status: 404, headers: corsHeaders });
         }
         
-        const usdRate = row['USD_buy'] * (CURRENCY_MAP['USD']?.unit || 1); // Re-constitute
-        const usdSell = row['USD_sell'] * (CURRENCY_MAP['USD']?.unit || 1); // Re-constitute
+        const usdRate = row['USD_buy'];
+        const usdSell = row['USD_sell'];
         let gainerName = 'N/A';
         let loserName = 'N/A';
         let maxChange = -Infinity;
@@ -546,11 +540,11 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
                 if (code === 'INR') continue;
                 
                 const unit = CURRENCY_MAP[code]?.unit || 1;
-                const buy = (row[`${code}_buy`] || 0); // Per-unit
-                const prevBuy = (prevRow[`${code}_buy`] || 0); // Per-unit
+                const buy = (row[`${code}_buy`] || 0) / unit;
+                const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
                 
                 if (buy && prevBuy) {
-                    const change = buy - prevBuy; // Per-unit change
+                    const change = buy - prevBuy;
                     if (change > 0.0001) gainersCount++;
                     if (change < -0.0001) losersCount++;
 
@@ -567,14 +561,11 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
         }
         
         // --- Generate Paragraphs ---
-        const inrBuy = row['INR_buy'] * (CURRENCY_MAP['INR']?.unit || 1);
-        const inrSell = row['INR_sell'] * (CURRENCY_MAP['INR']?.unit || 1);
-
         const intro = `Nepal Rastra Bank (NRB) published the official foreign exchange rates for ${date}. The U.S. Dollar settled at a buying rate of Rs. ${usdRate?.toFixed(2)} and a selling rate of Rs. ${usdSell?.toFixed(2)}.`;
         
         const summary = `Today's market saw mixed movements. The ${gainerName} was the top gainer, while the ${loserName} saw the most significant decline. In total, ${gainersCount} currencies gained value against the NPR, while ${losersCount} lost ground.`;
 
-        const detail = `The Indian Rupee (INR) remained fixed at Rs. ${inrBuy.toFixed(2)} (Buy) and Rs. ${inrSell.toFixed(2)} (Sell) per 100 units. Other major currencies like the European Euro and UK Pound Sterling also saw adjustments in line with global market trends.`;
+        const detail = `The Indian Rupee (INR) remained fixed at Rs. 160.00 (Buy) and Rs. 160.15 (Sell) per 100 units. Other major currencies like the European Euro and UK Pound Sterling also saw adjustments in line with global market trends.`;
 
         const responseData = {
             success: true,

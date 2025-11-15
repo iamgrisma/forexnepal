@@ -1,4 +1,3 @@
-// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/pages/CurrencyHistoricalData.tsx
 import React, { useMemo, useState, useEffect, useRef } from 'react'; // Added useRef
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -92,8 +91,7 @@ const fetchWithTimeout = async (url: string, timeout: number): Promise<Response>
 const fetchWeekDataWithFallback = async (currency: string, fromDate: string, toDate: string, unit: number): Promise<ChartDataPoint[]> => {
   try {
     // Try DB first with 5 second timeout
-    // --- FIX: Add sampling=daily to match API ---
-    const dbResponse = await fetchWithTimeout(`/api/historical-rates?currency=${currency}&from=${fromDate}&to=${toDate}&sampling=daily`, 5000);
+    const dbResponse = await fetchWithTimeout(`/api/historical-rates?currency=${currency}&from=${fromDate}&to=${toDate}`, 5000);
     
     if (dbResponse.ok) {
       const result = await dbResponse.json();
@@ -283,18 +281,9 @@ const CurrencyHistoricalData: React.FC = () => {
   const [customFromDate, setCustomFromDate] = useState<string>(fourYearsAgoStr);
   const [customToDate, setCustomToDate] = useState<string>(todayStr);
 
-  // --- FIX 1: Defer currency info lookup until code is available ---
-  const upperCaseCurrencyCode = currencyCode?.toUpperCase() || '';
-  
-  const currencyInfo = useMemo(() => {
-    if (!upperCaseCurrencyCode) {
-      return { name: 'Unknown', unit: 1, country: 'Unknown' };
-    }
-    return CURRENCY_MAP[upperCaseCurrencyCode] || { name: 'Unknown', unit: 1, country: 'Unknown' };
-  }, [upperCaseCurrencyCode]);
-
-  const { name, unit, country } = currencyInfo;
-  // --- END FIX 1 ---
+  const currencyInfo = CURRENCY_MAP[currencyCode?.toUpperCase() || ''];
+  const { name = 'Unknown', unit = 1, country = 'Unknown' } = currencyInfo || {};
+  const upperCaseCurrencyCode = currencyCode?.toUpperCase() || 'UNKNOWN';
 
   // Cooldown timer effect
   useEffect(() => {
@@ -318,8 +307,7 @@ const CurrencyHistoricalData: React.FC = () => {
   const isINRFixed = useMemo(() => {
     if (upperCaseCurrencyCode !== 'INR' || !inrCheckData) return false;
     const inrRate = inrCheckData.rates.find(r => r.currency.iso3 === 'INR');
-    // --- FIX: DB stores per-unit, so 160/100 = 1.6 ---
-    return inrRate && inrRate.buy === 1.6 && inrRate.sell === 1.6015;
+    return inrRate && inrRate.buy === 160 && inrRate.sell === 160.15;
   }, [inrCheckData, upperCaseCurrencyCode]);
 
   // Calculate date range
@@ -351,7 +339,6 @@ const CurrencyHistoricalData: React.FC = () => {
       // (Demand 1) INR Special Case
       if (isINRFixed) {
         return { 
-          // --- FIX: Use per-unit rates for chart ---
           data: generateINRFixedData(fromDate, toDate, unit), 
           samplingUsed: 'daily (fixed)' 
         };
@@ -385,13 +372,11 @@ const CurrencyHistoricalData: React.FC = () => {
       Promise.resolve().then(() => setDailyLoadProgress(null));
       return { data, samplingUsed: 'daily' };
     },
-    // --- FIX 2: Updated Enable logic ---
+    // (Demand 4) NEW: Enable logic
     enabled: !!(
-      currencyInfo.name !== 'Unknown' && // Don't run if currency isn't found
-      (upperCaseCurrencyCode === 'INR' ? !isCheckingINR : true) && // Wait for INR check
-      (!isLongRange || isLongRangeJobRunning) // Handle long-range button
+      (upperCaseCurrencyCode === 'INR' ? !isCheckingINR : !!currencyInfo) && // Base check
+      (!isLongRange || isLongRangeJobRunning) // -> AND ( (NOT long range) OR (IS long range AND button clicked) )
     ),
-    // --- END FIX 2 ---
     staleTime: 1000 * 60 * 10,
     retry: false, // Don't retry on rate-limit errors
     // (Demand 11) NO CACHING
@@ -723,7 +708,7 @@ const CurrencyHistoricalData: React.FC = () => {
                     
                     <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                       <p className="text-xs text-muted-foreground text-center sm:text-left">
-                        {isINRFixed ? `Showing fixed rate for INR (${unit} Units = Rs. 160.00).` : 
+                        {isINRFixed ? `Showing fixed rate for INR (1 Unit = Rs. 1.60).` : 
                          `Showing full daily data (${chartData?.length || 0} points).`
                         } Gaps indicate missing data.
                       </p>

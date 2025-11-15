@@ -1,4 +1,3 @@
-// src/components/admin/DataUpdateControl.tsx
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -65,8 +64,7 @@ const DataUpdateControl = () => {
     const token = localStorage.getItem('authToken');
 
     try {
-      // --- FIX: Changed URL from /api/fetch-and-store to /api/admin/fetch-nrb ---
-      const response = await fetch(`/api/admin/fetch-nrb?from=${fromDate}&to=${toDate}`, { // <-- FIXED URL
+      const response = await fetch(`/api/fetch-and-store?from=${fromDate}&to=${toDate}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
