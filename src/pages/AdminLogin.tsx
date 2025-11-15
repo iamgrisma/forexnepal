@@ -1,3 +1,4 @@
+// src/pages/AdminLogin.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,56 +7,25 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react'; // Added QrCode
+import { Loader2, ShieldAlert, KeyRound, QrCode } from 'lucide-react';
 import { apiClient } from '@/services/apiClient'; // Import the API client
-import { toast as sonnerToast } from "sonner"; // Import sonner
 
-// --- UPDATED: Add 'oneTimeCode' step ---
-type LoginStep = 'redirecting' | 'username' | 'password' | 'oneTimeCode' | 'blocked' | 'error';
-
-// Add keys for session storage
-const STEP_STORAGE_KEY = 'loginStep';
-const USERNAME_STORAGE_KEY = 'loginUsername';
+// --- Simplified Login Steps ---
+type LoginStep = 'login' | 'oneTimeCode' | 'error';
 
 const AdminLogin = () => {
-  // Read initial step from sessionStorage
-  const getInitialStep = (): LoginStep => {
-    try {
-      const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
-      // --- UPDATED: Allow 'oneTimeCode' to be stored ---
-      if (storedStep === 'username' || storedStep === 'password' || storedStep === 'oneTimeCode') {
-        return storedStep as LoginStep;
-      }
-    } catch (e) {}
-    return 'redirecting'; // Default
-  };
-  const [step, setStep] = useState<LoginStep>(getInitialStep());
-
-  // Read initial username from sessionStorage
-  const [username, setUsername] = useState(() => {
-    try {
-      return sessionStorage.getItem(USERNAME_STORAGE_KEY) || '';
-    } catch (e) {
-      return '';
-    }
-  });
-
+  const [step, setStep] = useState<LoginStep>('login');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [oneTimeCode, setOneTimeCode] = useState(''); // --- NEW: State for the code ---
+  const [oneTimeCode, setOneTimeCode] = useState(''); // State for the code
   const [loading, setLoading] = useState(false);
-  const [countdown, setCountdown] = useState(5); // Visual countdown
   const [ipAddress, setIpAddress] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   
   const sessionIdRef = useRef<string>(crypto.randomUUID());
-  const redirectTimerRef = useRef<number | null>(null);
-  const countdownIntervalRef = useRef<number | null>(null);
   
   const navigate = useNavigate();
   const { toast } = useToast(); // shadcn toast
-  const REDIRECT_URL = 'https://grisma.com.np';
-  const REDIRECT_TIME_MS = 7000; // 7 seconds total
-  const COUNTDOWN_INTERVAL_MS = REDIRECT_TIME_MS / 6; // ~1166ms per number
 
   // 1. Get IP Address on Load
   useEffect(() => {
@@ -72,119 +42,24 @@ const AdminLogin = () => {
     fetchIp();
   }, []);
 
-  // 2. Start Timers on 'redirecting' step
-  useEffect(() => {
-    if (step === 'redirecting') {
-      // Clear session storage on redirect step
-      try {
-        sessionStorage.removeItem(STEP_STORAGE_KEY);
-        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
-      } catch (e) {}
-      
-      // Start the main 7-second redirect timer
-      redirectTimerRef.current = window.setTimeout(() => {
-        window.location.href = REDIRECT_URL;
-      }, REDIRECT_TIME_MS);
-
-      // Start the visual 5-second countdown timer
-      setCountdown(5);
-      countdownIntervalRef.current = window.setInterval(() => {
-        setCountdown((c) => {
-          if (c <= 0) {
-            clearInterval(countdownIntervalRef.current!);
-            return 0;
-          }
-          return c - 1;
-        });
-      }, COUNTDOWN_INTERVAL_MS);
-    }
-    
-    // Cleanup timers on unmount or step change
-    return () => {
-      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-      if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
-    };
-  }, [step]);
-
-  // Save step to session storage whenever it changes
+  // 2. Clear session storage on load (in case old steps are stuck)
   useEffect(() => {
     try {
-      // --- UPDATED: Save 'oneTimeCode' step as well ---
-      if (step === 'username' || step === 'password' || step === 'oneTimeCode') {
-        sessionStorage.setItem(STEP_STORAGE_KEY, step);
-      } else if (step !== 'redirecting') {
-        // Clear storage on block, error, or success
-        sessionStorage.removeItem(STEP_STORAGE_KEY);
-        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.error('Failed to write to session storage', e);
-    }
-  }, [step]);
-  
-  // 3. Click Handler to Stop Redirect
-  const handleCircleClick = () => {
-    if (step !== 'redirecting') return;
-    
-    // Stop both timers
-    if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
-    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+      sessionStorage.removeItem('loginStep');
+      sessionStorage.removeItem('loginUsername');
+    } catch (e) {}
+  }, []);
 
-    // Move to next step (the useEffect above will save this)
-    setStep('username');
-    sonnerToast.success("Redirect cancelled. Please authenticate.", { duration: 2000 });
-  };
-
-  // 4. Username Submit Handler
-  const handleUsernameSubmit = async (e: React.FormEvent) => {
+  // 3. Combined Username/Password Login Handler
+  const handlePasswordLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || loading || !ipAddress) return;
-    
-    setLoading(true);
-    setErrorMessage('');
-
-    try {
-      // Call the new 'check-user' endpoint
-      await apiClient.post('/admin/check-user', {
-        username,
-        ipAddress,
-        sessionId: sessionIdRef.current,
-      });
-
-      // Save username to session storage on success
-      sessionStorage.setItem(USERNAME_STORAGE_KEY, username);
-      setStep('password');
-    } catch (error: any) {
-      console.error('Username check failed:', error.message);
-      // Clear storage on error
-      sessionStorage.removeItem(STEP_STORAGE_KEY);
-      sessionStorage.removeItem(USERNAME_STORAGE_KEY);
-
-      if (error.message.includes('Bro, get out')) {
-        setStep('blocked');
-        setErrorMessage(error.message);
-      } else if (error.message.includes('Redirect')) {
-        window.location.href = REDIRECT_URL;
-      } else if (error.message.includes('User not found')) {
-        toast({ title: "Error", description: "Invalid username.", variant: "destructive" });
-      } else {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 5. Final Login (Password) Submit Handler
-  const handleLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password || loading || !ipAddress) return;
+    if (!username || !password || loading || !ipAddress) return;
 
     setLoading(true);
     setErrorMessage('');
 
     try {
-      // Call the original 'login' endpoint
+      // Call the 'login' endpoint directly with both username and password
       const data = await apiClient.post<{ 
         success: boolean; 
         token: string; 
@@ -200,8 +75,8 @@ const AdminLogin = () => {
 
       if (data.success) {
         // Clear session storage on successful login
-        sessionStorage.removeItem(STEP_STORAGE_KEY);
-        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+        sessionStorage.removeItem('loginStep');
+        sessionStorage.removeItem('loginUsername');
 
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('username', data.username);
@@ -219,13 +94,18 @@ const AdminLogin = () => {
       }
     } catch (error: any) {
       console.error(error);
-      toast({ title: "Server Error", description: error.message || "Unable to login.", variant: "destructive" });
+      // The backend rate-limiting will return a 429 error, which will be caught here
+      if (error.message.includes('Too many failed')) {
+        toast({ title: "Too many attempts", description: "You have been locked out. Please try again later.", variant: "destructive" });
+      } else {
+        toast({ title: "Login Error", description: error.message || "Invalid credentials.", variant: "destructive" });
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // --- NEW 6. One-Time Code Login Handler ---
+  // 4. One-Time Code Login Handler (Unchanged)
   const handleOneTimeLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oneTimeCode || loading) return;
@@ -246,8 +126,8 @@ const AdminLogin = () => {
 
       if (data.success) {
         // Clear session storage on successful login
-        sessionStorage.removeItem(STEP_STORAGE_KEY);
-        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
+        sessionStorage.removeItem('loginStep');
+        sessionStorage.removeItem('loginUsername');
 
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('username', data.username);
@@ -272,34 +152,19 @@ const AdminLogin = () => {
 
   const renderStep = () => {
     switch (step) {
-      case 'redirecting':
-        return (
-          <CardContent className="flex flex-col items-center justify-center space-y-6 min-h-[300px]">
-            <CardTitle className="text-xl text-center">Secure Environment Login</CardTitle>
-            <CardDescription>
-              You are being redirected for login in secured environment please wait...
-            </CardDescription>
-            <div
-              className="relative w-32 h-32 rounded-full flex items-center justify-center bg-muted/50 border-4 border-dashed border-primary/20 cursor-pointer group transition-all hover:bg-muted"
-              onClick={handleCircleClick}
-            >
-              <Loader2 className="absolute h-32 w-32 text-primary/30 animate-spin-slow" />
-              <span className="text-6xl font-bold text-primary opacity-75 group-hover:opacity-100 transition-opacity">
-                {countdown}
-              </span>
-            </div>
-          </CardContent>
-        );
-
-      case 'username':
+      // --- THIS IS THE NEW DEFAULT STEP ---
+      case 'login':
         return (
           <CardContent>
-            <form onSubmit={handleUsernameSubmit} className="space-y-4">
-              <ShieldCheck className="h-10 w-10 text-green-600 mx-auto" />
-              <CardTitle className="text-center">Security Check Passed</CardTitle>
-              <CardDescription className="text-center pb-2">
-                Please enter your username to proceed.
-              </CardDescription>
+            <form onSubmit={handlePasswordLoginSubmit} className="space-y-4">
+              <CardHeader className="p-0 pb-4">
+                <KeyRound className="h-10 w-10 text-primary mx-auto" />
+                <CardTitle className="text-center">Admin Login</CardTitle>
+                <CardDescription className="text-center">
+                  Please enter your credentials.
+                </CardDescription>
+              </CardHeader>
+              
               <div>
                 <label className="text-sm font-medium mb-1 block text-left" htmlFor="username">Username</label>
                 <Input
@@ -315,41 +180,7 @@ const AdminLogin = () => {
                   autoFocus
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !username}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Next
-              </Button>
-              <div className="flex justify-between">
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => navigate('/admin/forgot-password')}
-                  className="text-sm px-0"
-                >
-                  Forgot Password?
-                </Button>
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => setStep('oneTimeCode')}
-                  className="text-sm px-0"
-                >
-                  Login with one-time code
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        );
 
-      case 'password':
-        return (
-          <CardContent>
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <KeyRound className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle className="text-center">Welcome, {username}</CardTitle>
-              <CardDescription className="text-center pb-2">
-                Please enter your password.
-              </CardDescription>
               <div>
                 <label className="text-sm font-medium mb-1 block text-left" htmlFor="password">Password</label>
                 <Input
@@ -361,10 +192,10 @@ const AdminLogin = () => {
                   required
                   disabled={loading}
                   autoComplete="current-password"
-                  autoFocus
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !password}>
+
+              <Button type="submit" className="w-full" disabled={loading || !username || !password}>
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Login
               </Button>
@@ -390,16 +221,18 @@ const AdminLogin = () => {
           </CardContent>
         );
 
-      // --- NEW RENDER CASE ---
       case 'oneTimeCode':
         return (
           <CardContent>
             <form onSubmit={handleOneTimeLoginSubmit} className="space-y-4">
-              <QrCode className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle className="text-center">One-Time Login</CardTitle>
-              <CardDescription className="text-center pb-2">
-                Enter the 8-digit code provided by your administrator.
-              </CardDescription>
+              <CardHeader className="p-0 pb-4">
+                <QrCode className="h-10 w-10 text-primary mx-auto" />
+                <CardTitle className="text-center">One-Time Login</CardTitle>
+                <CardDescription className="text-center">
+                  Enter the 8-digit code provided by your administrator.
+                </CardDescription>
+              </CardHeader>
+              
               <div>
                 <label className="text-sm font-medium mb-1 block text-left" htmlFor="oneTimeCode">One-Time Code</label>
                 <Input
@@ -422,7 +255,7 @@ const AdminLogin = () => {
               <Button
                 type="button"
                 variant="link"
-                onClick={() => setStep('username')} // Go back to username step
+                onClick={() => setStep('login')} // Go back to password login
                 className="w-full text-sm"
               >
                 Back to password login
@@ -431,16 +264,15 @@ const AdminLogin = () => {
           </CardContent>
         );
 
-      case 'blocked':
       case 'error':
         return (
           <CardContent className="min-h-[300px] flex flex-col items-center justify-center">
             <Alert variant="destructive" className="mb-4">
               <ShieldAlert className="h-4 w-4" />
-              <AlertTitle>{step === 'blocked' ? 'Access Denied' : 'Error'}</AlertTitle>
+              <AlertTitle>Error</AlertTitle>
               <AlertDescription>
                 {errorMessage || 'An unknown error occurred. Please refresh.'}
-              </AlertDescription>
+              </AlerDescription>
             </Alert>
             <Button variant="outline" onClick={() => navigate('/')}>Go Home</Button>
           </CardContent>
