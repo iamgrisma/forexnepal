@@ -1,100 +1,77 @@
-// src/pages/ResetPassword.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
-import { Loader2, KeyRound, LogIn } from 'lucide-react';
-import { apiClient } from '@/services/apiClient';
-import { z } from 'zod';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Separator } from '@/components/ui/separator';
-import { Label } from '@/components/ui/label'; // <-- THE MISSING IMPORT IS ADDED HERE
-
-const passwordSchema = z.object({
-  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
-});
-
-type PasswordFormValues = z.infer<typeof passwordSchema>;
+import { Loader2, KeyRound } from 'lucide-react';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
+  const tokenFromUrl = searchParams.get('token');
+  
+  const [token, setToken] = useState(tokenFromUrl || '');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
-  
-  // --- UPDATED: Token state ---
-  const [token, setToken] = useState(() => searchParams.get('token') || '');
-  const [loading, setLoading] = useState(false);
-  const [loginLoading, setLoginLoading] = useState(false); // --- NEW: Separate loading state for login
 
-  const form = useForm<PasswordFormValues>({
-    resolver: zodResolver(passwordSchema),
-    defaultValues: { newPassword: '' },
-  });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  // --- NEW: Effect to update token from URL ---
-  useEffect(() => {
-    const tokenFromUrl = searchParams.get('token');
-    if (tokenFromUrl) {
-      setToken(tokenFromUrl);
-    }
-  }, [searchParams]);
-
-  const onPasswordResetSubmit = async (data: PasswordFormValues) => {
-    setLoading(true);
-    if (!token) {
-      toast({ title: "Error", description: "No token provided.", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    
-    try {
-      await apiClient.post('/admin/reset-password', {
-        token: token,
-        newPassword: data.newPassword,
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Error",
+        description: "Passwords do not match.",
+        variant: "destructive",
       });
-      toast({ title: "Success", description: "Password has been reset. Please log in." });
-      navigate('/admin/login', { replace: true });
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to reset password.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- NEW: Handler for direct one-time login ---
-  const handleOneTimeLogin = async () => {
-    setLoginLoading(true);
-    if (!token) {
-      toast({ title: "Error", description: "No token provided.", variant: "destructive" });
-      setLoginLoading(false);
       return;
     }
 
-    try {
-      const data = await apiClient.post<{ 
-        success: boolean; 
-        token: string; 
-        username: string; 
-        error?: string;
-      }>('/admin/login-with-token', { token }); // <-- NEW ENDPOINT
+    if (newPassword.length < 8) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 8 characters long.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      if (data.success) {
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('username', data.username);
-        toast({ title: "Login Successful", description: `Welcome, ${data.username}!` });
-        navigate('/admin/dashboard', { replace: true });
+    setLoading(true);
+
+    try {
+      const response = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, newPassword }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        toast({
+          title: "Success",
+          description: "Your password has been reset successfully.",
+        });
+        setTimeout(() => navigate('/admin/login'), 1500);
       } else {
-        throw new Error(data.error || 'Login failed');
+        toast({
+          title: "Error",
+          description: data.error || "Failed to reset password. The token may be invalid or expired.",
+          variant: "destructive",
+        });
       }
-    } catch (error: any) {
-      toast({ title: "Login Failed", description: error.message || "Invalid or expired token.", variant: "destructive" });
+    } catch (error) {
+      console.error('Password reset error:', error);
+      toast({
+        title: "Error",
+        description: "Unable to reset password. Please try again.",
+        variant: "destructive",
+      });
     } finally {
-      setLoginLoading(false);
+      setLoading(false);
     }
   };
 
@@ -104,82 +81,74 @@ const ResetPassword = () => {
         <div className="max-w-md mx-auto">
           <Card className="shadow-md">
             <CardHeader>
-              <KeyRound className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle className="text-center">Account Access</CardTitle>
-              <CardDescription className="text-center">
-                Enter your access token if not in the URL, then choose an option.
+              <div className="flex items-center gap-2">
+                <KeyRound className="h-6 w-6 text-primary" />
+                <CardTitle>Reset Your Password</CardTitle>
+              </div>
+              <CardDescription>
+                Enter your reset code and choose a new secure password.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              
-              {/* --- NEW: Token Input Field --- */}
-              <div>
-                <Label htmlFor="token" className="text-sm font-medium">Access Token / Code</Label>
-                <Input
-                  id="token"
-                  type="text"
-                  value={token}
-                  onChange={(e) => setToken(e.target.value)}
-                  placeholder="Enter code from email"
-                  className="mt-1"
-                  disabled={loading || loginLoading}
-                />
-              </div>
-
-              <Separator />
-
-              {/* --- Option 1: Reset Password --- */}
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onPasswordResetSubmit)} className="space-y-4">
-                  <CardDescription className="text-center text-base font-semibold">
-                    Option 1: Set a New Password
-                  </CardDescription>
-                  <FormField
-                    control={form.control}
-                    name="newPassword"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New Password</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="password"
-                            placeholder="Enter new password"
-                            {...field}
-                            disabled={loading || loginLoading}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium mb-1 block" htmlFor="token">
+                    Reset Code
+                  </label>
+                  <Input
+                    id="token"
+                    type="text"
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    placeholder="Enter reset code from email"
+                    required
+                    disabled={loading}
+                    autoFocus={!tokenFromUrl}
                   />
-                  <Button type="submit" className="w-full" disabled={loading || loginLoading || !token}>
-                    {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <KeyRound className="mr-2 h-4 w-4" />}
-                    Set New Password
-                  </Button>
-                </form>
-              </Form>
-
-              <div className="relative">
-                <Separator />
-                <span className="absolute left-1/2 -translate-x-1/2 -top-3 bg-card px-2 text-sm text-muted-foreground">OR</span>
-              </div>
-
-              {/* --- Option 2: One-Time Login --- */}
-              <div className="space-y-2">
-                <CardDescription className="text-center text-base font-semibold">
-                  Option 2: Login Directly (One-Time)
-                </CardDescription>
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block" htmlFor="newPassword">
+                    New Password
+                  </label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (min 8 chars)"
+                    required
+                    minLength={8}
+                    disabled={loading}
+                    autoFocus={!!tokenFromUrl}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block" htmlFor="confirmPassword">
+                    Confirm New Password
+                  </label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    required
+                    minLength={8}
+                    disabled={loading}
+                  />
+                  {newPassword && confirmPassword && newPassword !== confirmPassword && (
+                    <p className="text-xs text-destructive mt-1">Passwords do not match.</p>
+                  )}
+                </div>
                 <Button
-                  variant="secondary"
+                  type="submit"
+                  disabled={loading || !token || !newPassword || newPassword !== confirmPassword || newPassword.length < 8}
                   className="w-full"
-                  onClick={handleOneTimeLogin}
-                  disabled={loading || loginLoading || !token}
                 >
-                  {loginLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
-                  Login Without Resetting Password
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {loading ? 'Resetting...' : 'Reset Password'}
                 </Button>
-              </div>
-
+              </form>
             </CardContent>
           </Card>
         </div>

@@ -37,418 +37,539 @@ export async function handlePublicSettings(request: Request, env: Env): Promise<
  */
 async function getLatestForexRow(env: Env): Promise<any> {
     const nowUtc = new Date();
-    const nptOffset = 5.75 * 60; // 5 hours 45 minutes
-    const nptTime = new Date(nowUtc.getTime() + nptOffset * 60000);
-    const todayNpt = nptTime.toISOString().split('T')[0];
+    const nptOffsetMs = (5 * 60 + 45) * 60 * 1000;
+    const nowNpt = new Date(nowUtc.getTime() + nptOffsetMs);
     
-    let row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(todayNpt).first();
-    
-    if (row) {
-        return row;
+    const todayStr = formatDate(nowNpt);
+    const yesterdayStr = formatDate(new Date(nowNpt.getTime() - 86400000)); // 24h ago
+
+    let row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(todayStr).first<any>();
+    if (!row) {
+        row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(yesterdayStr).first<any>();
     }
-    
-    // If no data for today, try yesterday
-    nptTime.setDate(nptTime.getDate() - 1);
-    const yesterdayNpt = nptTime.toISOString().split('T')[0];
-    row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(yesterdayNpt).first();
-    
-    return row; // This might be null if no data for yesterday either
+    return row;
 }
 
 /**
- * Helper to normalize wide row data to the desired API "long" format
- */
-function normalizeRates(wideRow: any): RatesData | null {
-    if (!wideRow) return null;
-
-    const rates: Rate[] = [];
-    CURRENCIES.forEach(code => {
-        const currencyInfo = CURRENCY_MAP[code] || { name: code, unit: 1, country: 'Unknown' };
-        const buy = wideRow[`${code}_buy`];
-        const sell = wideRow[`${code}_sell`];
-
-        // Only include if at least one value is present
-        if (buy !== null || sell !== null) {
-            rates.push({
-                currency: {
-                    code: code,
-                    name: currencyInfo.name,
-                    unit: currencyInfo.unit,
-                },
-                buy: buy ? parseFloat(buy).toFixed(2) : null,
-                sell: sell ? parseFloat(sell).toFixed(2) : null,
-            });
-        }
-    });
-
-    return {
-        date: wideRow.date,
-        published_on: wideRow.created_at, // Use created_at from DB
-        modified_on: wideRow.updated_at,   // Use updated_at from DB
-        rates: rates,
-    };
-}
-
-/**
- * (PUBLIC) GET latest rates.
+ * (PUBLIC) Fetches the latest available rates (today or yesterday).
  */
 export async function handleLatestRates(request: Request, env: Env): Promise<Response> {
-  try {
-    const latestRateWide = await getLatestForexRow(env);
-    
-    if (!latestRateWide) {
-      return new Response(JSON.stringify({ success: true, data: null, message: "No data available." }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const latestRateLong = normalizeRates(latestRateWide);
-
-    return new Response(JSON.stringify({ success: true, data: latestRateLong }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=60' // Cache for 1 minute
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching latest rates:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET rates by specific date.
- */
-export async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const date = url.pathname.split('/').pop();
-    
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return new Response(JSON.stringify({ success: false, error: 'Invalid date format. Use YYYY-MM-DD.' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const ratesWide = await env.FOREX_DB.prepare(
-      "SELECT * FROM forex_rates WHERE date = ?"
-    ).bind(date).first();
-
-    if (!ratesWide) {
-        return new Response(JSON.stringify({ success: false, data: null, error: 'No data found for this date.' }), {
-            status: 404,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
-
-    const ratesLong = normalizeRates(ratesWide);
-
-    return new Response(JSON.stringify({ success: true, data: ratesLong }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=86400' // Cache historical for 1 day
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching rates by date:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET historical rates for charts.
- */
-export async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const from = url.searchParams.get('from');
-    const to = url.searchParams.get('to');
-    const currency = url.searchParams.get('currency');
-
-    if (!currency || !CURRENCIES.includes(currency.toUpperCase())) {
-         return new Response(JSON.stringify({ success: false, error: 'Invalid or missing currency parameter' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
-    
-    if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
-         return new Response(JSON.stringify({ success: false, error: 'Invalid or missing from/to date parameters. Use YYYY-MM-DD.' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
-
-    const buyCol = `${currency.toUpperCase()}_buy`;
-    const sellCol = `${currency.toUpperCase()}_sell`;
-    
-    // Use prepared statement to select specific columns
-    const query = `
-      SELECT 
-        date, 
-        "${buyCol}" as buy, 
-        "${sellCol}" as sell 
-      FROM forex_rates 
-      WHERE date >= ? AND date <= ? 
-      ORDER BY date ASC
-    `;
-
-    const { results } = await env.FOREX_DB.prepare(query).bind(from, to).all();
-    
-    return new Response(JSON.stringify({ success: true, data: results || [] }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=3600' // Cache charts for 1 hour
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching historical rates:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET all published posts (paginated).
- */
-export async function handlePublicPosts(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get('limit') || '10', 10);
-    const offset = parseInt(url.searchParams.get('offset') || '0', 10);
-
-    const { results } = await env.FOREX_DB.prepare(
-      "SELECT id, title, slug, excerpt, featured_image_url, author_name, author_url, published_at, updated_at FROM posts WHERE status = 'published' ORDER BY published_at DESC LIMIT ? OFFSET ?"
-    ).bind(limit, offset).all();
-    
-    return new Response(JSON.stringify({ success: true, posts: results || [] }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=600' // Cache posts list for 10 mins
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching public posts:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET a single post by its slug.
- */
-export async function handlePublicPostBySlug(request: Request, env: Env): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    const slug = url.pathname.split('/').pop();
-    
-    if (!slug) {
-      return new Response(JSON.stringify({ success: false, error: 'Invalid slug' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const post = await env.FOREX_DB.prepare(
-      "SELECT id, title, slug, excerpt, content, featured_image_url, author_name, author_url, published_at, updated_at, meta_title, meta_description, meta_keywords FROM posts WHERE slug = ? AND status = 'published'"
-    ).bind(slug).first();
-
-    if (!post) {
-      return new Response(JSON.stringify({ success: false, error: 'Post not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    
-    return new Response(JSON.stringify({ success: true, post: post }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=3600' // Cache post detail for 1 hour
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching post by slug:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET latest rates as an image (for embedding).
- */
-export async function handleImageApi(request: Request, env: Env): Promise<Response> {
-  // This is a placeholder. Image generation logic needs to be implemented.
-  return new Response(JSON.stringify({ error: 'Image API not implemented' }), {
-    status: 501,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-
-/**
- * (PUBLIC) GET list of dates for archive.
- */
-export async function handleArchiveListApi(request: Request, env: Env): Promise<Response> {
-  try {
-    const { results } = await env.FOREX_DB.prepare(
-      "SELECT DISTINCT date, updated_at FROM forex_rates ORDER BY date DESC"
-    ).all();
-
-    const dates = (results as { date: string, updated_at: string }[]).map(row => ({
-        date: row.date,
-        published_on: row.updated_at
-    }));
-    
-    return new Response(JSON.stringify({ success: true, dates: dates, total: dates.length }), {
-      headers: { 
-        ...corsHeaders, 
-        'Content-Type': 'application/json',
-        'Cache-Control': 'public, max-age=3600' // Cache archive list for 1 hour
-      },
-    });
-  } catch (e: any) {
-    console.error("Error fetching archive list:", e.message, e.cause);
-    return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-}
-
-/**
- * (PUBLIC) GET rates data for a specific archive date.
- * This is the full version from your repo.
- */
-export async function handleArchiveDetailApi(request: Request, env: Env): Promise<Response> {
     try {
-        const url = new URL(request.url);
-        const date = url.pathname.split('/').pop();
-        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-            return new Response(JSON.stringify({ error: 'Invalid date format. Use YYYY-MM-DD.' }), { status: 400, headers: corsHeaders });
-        }
-
-        const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
+        const row = await getLatestForexRow(env);
         if (!row) {
-            return new Response(JSON.stringify({ error: 'No data found for this date' }), { status: 404, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: 'No forex data found for today or yesterday.' }), { 
+                status: 404, 
+                headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+            });
         }
 
-        const prevDate = new Date(date);
-        prevDate.setDate(prevDate.getDate() - 1);
-        const prevDateStr = prevDate.toISOString().split('T')[0];
-        const prevRow = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(prevDateStr).first<any>();
-
-        const rates: any[] = [];
-        let gainersCount = 0;
-        let losersCount = 0;
-        let topGainer = { currency: 'N/A', change: -Infinity };
-        let topLoser = { currency: 'N/A', change: Infinity };
-        let usdRate: number | null = null;
-        let usdSell: number | null = null;
-
+        const rates: Rate[] = [];
         CURRENCIES.forEach(code => {
-            const info = CURRENCY_MAP[code] || { name: code, unit: 1, country: 'Unknown' };
-            const buy = row[`${code}_buy`] ? parseFloat(row[`${code}_buy`]) : null;
-            const sell = row[`${code}_sell`] ? parseFloat(row[`${code}_sell`]) : null;
-
-            if (code === 'USD') {
-                usdRate = buy;
-                usdSell = sell;
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
+            if (typeof buyRate === 'number' || typeof sellRate === 'number') {
+                rates.push({
+                    currency: { ...CURRENCY_MAP[code], iso3: code },
+                    buy: buyRate ?? 0,
+                    sell: sellRate ?? 0,
+                });
             }
-            
-            if (buy === null && sell === null) return;
-
-            let prevBuy = null;
-            let change = null;
-            if (prevRow) {
-                prevBuy = prevRow[`${code}_buy`] ? parseFloat(prevRow[`${code}_buy`]) : null;
-                if (buy !== null && prevBuy !== null) {
-                    change = buy - prevBuy;
-                    if (change > 0) {
-                        gainersCount++;
-                        if (change > topGainer.change) {
-                            topGainer = { currency: code, change: change };
-                        }
-                    } else if (change < 0) {
-                        losersCount++;
-                        if (change < topLoser.change) {
-                            topLoser = { currency: code, change: change };
-                        }
-                    }
-                }
-            }
-            
-            rates.push({
-                currency: {
-                    code: code,
-                    name: info.name,
-                    unit: info.unit,
-                    country: info.country
-                },
-                buy: buy ? buy.toFixed(2) : null,
-                sell: sell ? sell.toFixed(2) : null,
-                change: change ? change.toFixed(2) : null
-            });
         });
         
-        const normalizedData = {
+        const ratesData: RatesData = {
             date: row.date,
-            published_on: row.created_at,
-            modified_on: row.updated_at,
+            published_on: row.updated_at || row.date,
+            modified_on: row.updated_at || row.date,
+            rates: rates
+        };
+        
+        return new Response(JSON.stringify(ratesData), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleLatestRates:`, error.message, error.cause);
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+
+/**
+ * (PUBLIC) Fetches rates for a specific date from the DB.
+ */
+export async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const date = url.pathname.split('/').pop();
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!date || !dateRegex.test(date)) {
+        return new Response(JSON.stringify({ date: date, rates: [] }), { 
+            status: 400, 
+            headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+        });
+    }
+
+    try {
+        const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
+
+        if (!row) {
+            return new Response(JSON.stringify({ date: date, rates: [] }), { 
+                status: 404, 
+                headers: {...corsHeaders, 'Content-Type': 'application/json'} 
+            });
+        }
+
+        const rates: Rate[] = [];
+        CURRENCIES.forEach(code => {
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
+            if (typeof buyRate === 'number' || typeof sellRate === 'number') {
+                rates.push({
+                    currency: { ...CURRENCY_MAP[code], iso3: code },
+                    buy: buyRate ?? 0,
+                    sell: sellRate ?? 0,
+                });
+            }
+        });
+        
+        const ratesData: RatesData = {
+            date: row.date,
+            published_on: row.updated_at || row.date,
+            modified_on: row.updated_at || row.date,
             rates: rates
         };
 
-        // --- Generate Summary Paragraphs ---
-        let gainerName = 'N/A';
-        if (topGainer.currency !== 'N/A') {
-            const gainerInfo = CURRENCY_MAP[topGainer.currency];
-            if (gainerInfo) {
-                gainerName = `${gainerInfo.name} (${topGainer.currency})`;
-            } else {
-                gainerName = topGainer.currency;
+        return new Response(JSON.stringify(ratesData), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleRatesByDate for ${date}:`, error.message, error.cause);
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+/**
+ * (PUBLIC) Fetches historical rates for one or all currencies.
+ */
+export async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const currencyCode = url.searchParams.get('currency');
+    const fromDate = url.searchParams.get('from');
+    const toDate = url.searchParams.get('to');
+    const sampling = url.searchParams.get('sampling') || 'daily';
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!fromDate || !toDate || !dateRegex.test(fromDate) || !dateRegex.test(toDate)) {
+        return new Response(JSON.stringify({ error: 'Invalid date parameters' }), { status: 400, headers: corsHeaders });
+    }
+
+    try {
+        if (currencyCode) {
+            // Logic for single currency chart
+            const upperCaseCurrencyCode = currencyCode.toUpperCase();
+            if (!CURRENCIES.includes(upperCaseCurrencyCode)) {
+                return new Response(JSON.stringify({ success: false, error: 'Invalid currency' }), { status: 400, headers: corsHeaders });
             }
+            
+            let samplingClause = "";
+            const bindings = [fromDate, toDate];
+
+            if (sampling !== 'daily') {
+                switch (sampling) {
+                    case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break; // Wednesday
+                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
+                    case 'yearly': samplingClause = "AND (CAST(STRFTIME('%j', date) AS INT) IN (1, 180, 365))"; break;
+                }
+                samplingClause += ` OR date = ? OR date = ?`;
+                bindings.push(fromDate, toDate);
+            }
+
+            const sql = `
+                SELECT date, "${upperCaseCurrencyCode}_buy" as buy, "${upperCaseCurrencyCode}_sell" as sell
+                FROM forex_rates
+                WHERE date >= ? AND date <= ?
+                ${samplingClause}
+                ORDER BY date ASC
+            `;
+            
+            const { results } = await env.FOREX_DB.prepare(sql).bind(...bindings).all<any>();
+            
+            const currencyInfo = CURRENCY_MAP[upperCaseCurrencyCode];
+            const unit = currencyInfo?.unit || 1;
+            
+            const chartData = results.map((item: any) => ({
+                date: item.date,
+                buy: item.buy && typeof item.buy === 'number' ? item.buy / unit : null,
+                sell: item.sell && typeof item.sell === 'number' ? item.sell / unit : null
+            })).filter(d => d.buy !== null || d.sell !== null);
+
+            return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+        } else {
+            // Logic for multi-currency comparison (e.g., profit calculator)
+            const sql = `
+                SELECT * FROM forex_rates
+                WHERE date = ? OR date = ?
+                ORDER BY date ASC
+            `;
+            const { results } = await env.FOREX_DB.prepare(sql).bind(fromDate, toDate).all<any>();
+
+            const payloads: RatesData[] = results.map(row => {
+                const rates: Rate[] = [];
+                CURRENCIES.forEach(code => {
+                    const buyRate = row[`${code}_buy`];
+                    const sellRate = row[`${code}_sell`];
+                    if (typeof buyRate === 'number' && typeof sellRate === 'number') {
+                        rates.push({
+                            currency: { ...CURRENCY_MAP[code], iso3: code },
+                            buy: buyRate,
+                            sell: sellRate,
+                        });
+                    }
+                });
+                return {
+                    date: row.date,
+                    published_on: row.updated_at || row.date,
+                    modified_on: row.updated_at || row.date,
+                    rates: rates
+                };
+            }).filter(p => p.rates.length > 0);
+
+            return new Response(JSON.stringify({ status: { code: 200, message: 'OK' }, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        let loserName = 'N/A';
-        if (topLoser.currency !== 'N/A') {
-            const loserInfo = CURRENCY_MAP[topLoser.currency];
-            if (loserInfo) {
-                loserName = `${loserInfo.name} (${topLoser.currency})`;
-            } else {
-                loserName = topLoser.currency;
-            }
+    } catch (error: any) {
+        console.error('handleHistoricalRates failed:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+/**
+ * (PUBLIC) Fetches all published posts.
+ */
+export async function handlePublicPosts(request: Request, env: Env): Promise<Response> {
+    try {
+        const query = env.FOREX_DB.prepare(
+            `SELECT id, title, slug, excerpt, featured_image_url, author_name, author_url, published_at
+             FROM posts WHERE status = 'published' AND published_at IS NOT NULL ORDER BY published_at DESC`
+        );
+        const { results } = await query.all();
+        return new Response(JSON.stringify({ success: true, posts: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error('Error fetching public posts:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error fetching posts.' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+/**
+ * (PUBLIC) Fetches a single published post by its slug.
+ */
+export async function handlePublicPostBySlug(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const slug = url.pathname.split('/').pop();
+    if (!slug) {
+        return new Response(JSON.stringify({ error: 'Missing slug' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+    try {
+        const post = await env.FOREX_DB.prepare(
+            `SELECT * FROM posts WHERE slug = ? AND status = 'published' AND published_at IS NOT NULL`
+        ).bind(slug).first();
+        if (!post) {
+            return new Response(JSON.stringify({ success: false, error: 'Not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        return new Response(JSON.stringify({ success: true, post }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+    } catch (error: any) {
+        console.error(`Error fetching post by slug (${slug}):`, error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+// --- NEW PUBLIC API ENDPOINTS ---
+
+/**
+ * (PUBLIC) API for Image Embed
+ * Returns HTML that renders the forex table on client side.
+ */
+export async function handleImageApi(request: Request, env: Env): Promise<Response> {
+    try {
+        const row = await getLatestForexRow(env);
+        if (!row) {
+            return new Response('<html><body><p>No forex data found</p></body></html>', { 
+                status: 404, 
+                headers: {...corsHeaders, 'Content-Type': 'text/html'} 
+            });
         }
         
-        const intro = `Nepal Rastra Bank (NRB) published the official foreign exchange rates for ${formatDate(date)}. The U.S. Dollar settled at a buying rate of Rs. ${usdRate?.toFixed(2)} and a selling rate of Rs. ${usdSell?.toFixed(2)}.`;
+        const yesterdayStr = formatDate(new Date(new Date(row.date).getTime() - 86400000));
+        const prevRow = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(yesterdayStr).first<any>();
+
+        let tableRows = '';
+        CURRENCIES.forEach(code => {
+            const buyRate = row[`${code}_buy`];
+            const sellRate = row[`${code}_sell`];
+            
+            if (typeof buyRate === 'number' || typeof sellRate === 'number') {
+                const currencyInfo = CURRENCY_MAP[code];
+                const unit = currencyInfo?.unit || 1;
+                
+                let buyTrend = '●';
+                let sellTrend = '●';
+                let buyColor = '#9ca3af';
+                let sellColor = '#9ca3af';
+
+                if (prevRow) {
+                    const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
+                    const prevSell = (prevRow[`${code}_sell`] || 0) / unit;
+                    const currentBuy = (buyRate || 0) / unit;
+                    const currentSell = (sellRate || 0) / unit;
+                    
+                    const buyDiff = currentBuy - prevBuy;
+                    const sellDiff = currentSell - prevSell;
+
+                    if (buyDiff > 0.0001) {
+                        buyTrend = '▲';
+                        buyColor = '#10b981';
+                    } else if (buyDiff < -0.0001) {
+                        buyTrend = '▼';
+                        buyColor = '#ef4444';
+                    }
+
+                    if (sellDiff > 0.0001) {
+                        sellTrend = '▲';
+                        sellColor = '#10b981';
+                    } else if (sellDiff < -0.0001) {
+                        sellTrend = '▼';
+                        sellColor = '#ef4444';
+                    }
+                }
+
+                const countryCode = code === 'EUR' ? 'EU' : code.substring(0, 2);
+                tableRows += `
+                <tr>
+                    <td>
+                        <div style="display: flex; align-items: center;">
+                            <img src="https://flagsapi.com/${countryCode}/flat/32.png" 
+                                 alt="${code}" 
+                                 style="width: 24px; height: 18px; margin-right: 8px; border: 1px solid #e5e7eb;">
+                            <strong>${code}</strong> (${unit})
+                        </div>
+                    </td>
+                    <td>${buyRate.toFixed(2)} <span style="color: ${buyColor}">${buyTrend}</span></td>
+                    <td>${sellRate.toFixed(2)} <span style="color: ${sellColor}">${sellTrend}</span></td>
+                </tr>`;
+            }
+        });
+
+        const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nepal Forex Rates - ${row.date}</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f9fafb;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px;
+            text-align: center;
+        }
+        .header h1 { font-size: 24px; margin-bottom: 8px; }
+        .header p { font-size: 14px; opacity: 0.9; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 16px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        th {
+            background: #f9fafb;
+            font-weight: 600;
+            font-size: 14px;
+            color: #4b5563;
+        }
+        td {
+            font-size: 14px;
+            color: #1f2937;
+        }
+        tr:hover { background: #f9fafb; }
+        .footer {
+            text-align: center;
+            padding: 16px;
+            background: #f9fafb;
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .footer a { color: #2563eb; text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Nepal Forex Exchange Rates</h1>
+            <p>Published on ${row.date}</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Currency</th>
+                    <th>Buy (NPR)</th>
+                    <th>Sell (NPR)</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+        </table>
+        <div class="footer">
+            Source: <a href="https://forex.grisma.com.np" target="_blank">Forex by Grisma</a> | 
+            Powered by NRB Real-time API
+        </div>
+    </div>
+</body>
+</html>`;
+
+        return new Response(html, { 
+            headers: { ...corsHeaders, 'Content-Type': 'text/html; charset=utf-8' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleImageApi:`, error.message, error.cause);
+        return new Response('<html><body><p>Error loading data</p></body></html>', { 
+            status: 500, 
+            headers: {...corsHeaders, 'Content-Type': 'text/html'} 
+        });
+    }
+}
+
+/**
+ * (PUBLIC) API for Archive List
+ * Returns a paginated list of dates for which data exists.
+ */
+export async function handleArchiveListApi(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const page = parseInt(url.searchParams.get('page') || '1', 10);
+    const limit = parseInt(url.searchParams.get('limit') || '30', 10);
+    const offset = (page - 1) * limit;
+
+    try {
+        const { results } = await env.FOREX_DB.prepare(
+            `SELECT date FROM forex_rates ORDER BY date DESC LIMIT ? OFFSET ?`
+        ).bind(limit, offset).all<{ date: string }>();
         
-        const summary = `Today's market saw mixed movements. The ${gainerName} was the top gainer, while the ${loserName} saw the most significant decline. In total, ${gainersCount} currencies gained value against the NPR, while ${losersCount} lost ground.`;
-
-        const inrInfo = CURRENCY_MAP['INR'];
-        const inrBuy = row['INR_buy'] ? (parseFloat(row['INR_buy']) / inrInfo.unit).toFixed(2) : 'N/A';
-        const inrSell = row['INR_sell'] ? (parseFloat(row['INR_sell']) / inrInfo.unit).toFixed(2) : 'N/A';
-
-        const detail = `The Indian Rupee (INR) remained fixed at Rs. ${inrBuy} (Buy) and Rs. ${inrSell} (Sell) per 1 unit. Other major currencies like the European Euro and UK Pound Sterling also saw adjustments in line with global market trends.`;
+        const countResult = await env.FOREX_DB.prepare(`SELECT COUNT(*) as total FROM forex_rates`).first<{ total: number }>();
+        
+        const total = countResult?.total || 0;
+        const totalPages = Math.ceil(total / limit);
 
         const responseData = {
             success: true,
-            data: normalizedData,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages
+            },
+            dates: results.map(r => r.date)
+        };
+
+        return new Response(JSON.stringify(responseData), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        });
+
+    } catch (error: any) {
+        console.error(`Error in handleArchiveListApi:`, error.message, error.cause);
+        return new Response(JSON.stringify({ error: 'Database query failed' }), { status: 500, headers: corsHeaders });
+    }
+}
+
+/**
+ * (PUBLIC) API for Archive Detail Page Content
+ * Returns the generated text paragraphs for the archive detail page.
+ */
+export async function handleArchiveDetailApi(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const date = url.pathname.split('/').pop();
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+
+    if (!date || !dateRegex.test(date)) {
+        return new Response(JSON.stringify({ error: 'Invalid date format' }), { status: 400, headers: corsHeaders });
+    }
+
+    try {
+        const prevDate = formatDate(new Date(new Date(date).getTime() - 86400000));
+        
+        const row = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(date).first<any>();
+        const prevRow = await env.FOREX_DB.prepare(`SELECT * FROM forex_rates WHERE date = ?`).bind(prevDate).first<any>();
+
+        if (!row) {
+            return new Response(JSON.stringify({ error: 'No data found for this date' }), { status: 404, headers: corsHeaders });
+        }
+        
+        const usdRate = row['USD_buy'];
+        const usdSell = row['USD_sell'];
+        let gainerName = 'N/A';
+        let loserName = 'N/A';
+        let maxChange = -Infinity;
+        let minChange = Infinity;
+
+        let gainersCount = 0;
+        let losersCount = 0;
+
+        if (prevRow) {
+            for (const code of CURRENCIES) {
+                if (code === 'INR') continue;
+                
+                const unit = CURRENCY_MAP[code]?.unit || 1;
+                const buy = (row[`${code}_buy`] || 0) / unit;
+                const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
+                
+                if (buy && prevBuy) {
+                    const change = buy - prevBuy;
+                    if (change > 0.0001) gainersCount++;
+                    if (change < -0.0001) losersCount++;
+
+                    if (change > maxChange) {
+                        maxChange = change;
+                        gainerName = CURRENCY_MAP[code]?.name || code;
+                    }
+                    if (change < minChange) {
+                        minChange = change;
+                        loserName = CURRENCY_MAP[code]?.name || code;
+                    }
+                }
+            }
+        }
+        
+        // --- Generate Paragraphs ---
+        const intro = `Nepal Rastra Bank (NRB) published the official foreign exchange rates for ${date}. The U.S. Dollar settled at a buying rate of Rs. ${usdRate?.toFixed(2)} and a selling rate of Rs. ${usdSell?.toFixed(2)}.`;
+        
+        const summary = `Today's market saw mixed movements. The ${gainerName} was the top gainer, while the ${loserName} saw the most significant decline. In total, ${gainersCount} currencies gained value against the NPR, while ${losersCount} lost ground.`;
+
+        const detail = `The Indian Rupee (INR) remained fixed at Rs. 160.00 (Buy) and Rs. 160.15 (Sell) per 100 units. Other major currencies like the European Euro and UK Pound Sterling also saw adjustments in line with global market trends.`;
+
+        const responseData = {
+            success: true,
+            date: date,
             paragraphs: {
                 intro: intro,
                 summary: summary,
@@ -457,11 +578,7 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
         };
 
         return new Response(JSON.stringify(responseData), { 
-            headers: { 
-              ...corsHeaders, 
-              'Content-Type': 'application/json',
-              'Cache-Control': 'public, max-age=86400' // Cache for 1 day
-            } 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         });
 
     } catch (error: any) {

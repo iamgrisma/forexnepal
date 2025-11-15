@@ -1,9 +1,8 @@
-// src/components/Navigation.tsx
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 // Import icons
-import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard, Code } from 'lucide-react';
+import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard, Code } from 'lucide-react'; // <-- NEW: Imported Code icon
 
 const Navigation = () => {
   const location = useLocation();
@@ -11,7 +10,9 @@ const Navigation = () => {
 
   return (
     <>
-      {/* Desktop/Scrollable Mobile Navigation */}
+      {/* Desktop/Scrollable Mobile Navigation 
+          UPDATED: sticky top-0 changed to md:sticky top-0
+      */}
       <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 md:sticky top-0 z-50 shadow-sm">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center gap-8">
@@ -45,8 +46,8 @@ const Navigation = () => {
                   <ArrowRightLeft className="h-4 w-4 mr-2" />
                   Converter
                 </NavLink>
-                {/* --- This is the API link you wanted --- */}
-                <NavLink to="/api-docs" active={location.pathname === '/api-docs'}>
+                {/* --- NEW: Added API Link --- */}
+                <NavLink to="/api" active={location.pathname === '/api'}>
                   <Code className="h-4 w-4 mr-2" />
                   API
                 </NavLink>
@@ -58,7 +59,6 @@ const Navigation = () => {
                   <Phone className="h-4 w-4 mr-2" />
                   Contact
                 </NavLink>
-                {/* --- This is the conditional Dashboard link --- */}
                 {isLoggedIn && (
                   <NavLink to="/admin/dashboard" active={location.pathname === '/admin/dashboard'}>
                     <LayoutDashboard className="h-4 w-4 mr-2" />
@@ -69,7 +69,7 @@ const Navigation = () => {
                   <FileText className="h-4 w-4 mr-2" />
                   Disclosure
                 </NavLink>
-                <NavLink to="/privacy" active={location.pathname === '/privacy'}>
+                <NavLink to="/privacy-policy" active={location.pathname === '/privacy-policy'}>
                   <Shield className="h-4 w-4 mr-2" />
                   Privacy
                 </NavLink>
@@ -83,7 +83,7 @@ const Navigation = () => {
         </div>
       </nav>
 
-      {/* --- This is your preferred Mobile Bottom Navigation --- */}
+      {/* Mobile Bottom Navigation - UPDATED Order */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 shadow-lg z-50">
         <div className="grid grid-cols-5 divide-x divide-gray-200">
           <NavLink
@@ -132,7 +132,7 @@ const Navigation = () => {
   );
 };
 
-// NavLink and ExternalNavLink helpers
+// NavLink and ExternalNavLink remain the same as provided
 interface NavLinkProps {
   to: string;
   active: boolean;

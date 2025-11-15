@@ -1,4 +1,4 @@
-// iamgrisma/forexnepal/forexnepal-14bb7e1f6fc54805aef98994ccc7f5b19d0b7417/src/auth.ts
+// src/auth.ts
 import { SignJWT, jwtVerify } from 'jose';
 
 /**
@@ -20,27 +20,6 @@ export async function verifyToken(token: string, secret: string): Promise<boolea
   } catch (e) {
     console.error('Token verification failed:', e);
     return false;
-  }
-}
-
-/**
- * NEW FUNCTION
- * Verifies a JWT token and returns the username (subject).
- */
-export async function getUsernameFromToken(token: string, secret: string): Promise<string | null> {
-  if (!secret) {
-    console.error('JWT_SECRET is not set. Token verification failed.');
-    return null;
-  }
-  try {
-    const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
-      issuer: 'forex-nepal',
-      audience: 'forex-nepal-users',
-    });
-    return payload.sub || null; // 'sub' (subject) should be the username
-  } catch (e) {
-    console.error('Token verification failed:', e);
-    return null;
   }
 }
 
