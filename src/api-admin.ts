@@ -1,3 +1,6 @@
+// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/api-admin.ts
+// --- ADMIN-FACING API HANDLERS ---
+
 import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement } from './worker-types';
 import { corsHeaders, CURRENCIES, CURRENCY_MAP } from './constants';
 import { generateSlug, formatDate } from './worker-utils';
@@ -7,16 +10,13 @@ import { getAllSettings } from './api-helpers';
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
-// --- [NO CHANGES TO EXISTING FUNCTIONS ABOVE THIS LINE] ---
-// ... (all other functions like handleFetchAndStore, handleSiteSettings, etc. are identical) ...
-
 /**
  * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
  */
 export async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -25,14 +25,12 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     const toDate = url.searchParams.get('to');
     
     if (!fromDate || !toDate) {
-           // --- SYNTAX ERROR FIX ---
            return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
         const { action } = (await request.json()) as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
-            // --- SYNTAX ERROR FIX ---
             return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
@@ -62,7 +60,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
 export async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -315,7 +313,8 @@ async function sendPasswordResetEmail(
                 email: 'cadmin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
-            subject: 'Password Reset Request - Forex Nepal Admin',
+            // --- MODIFIED: Subject ---
+            subject: 'Login / Password Reset Request - Forex Nepal Admin',
             htmlContent: `
               <!DOCTYPE html>
               <html>
@@ -335,21 +334,26 @@ async function sendPasswordResetEmail(
               <body>
                 <div class="container">
                   <div class="header">
-                    <h1>Password Reset Request</h1>
+                    <!-- --- MODIFIED: Title --- -->
+                    <h1>Login / Password Reset Request</h1>
                   </div>
                   <div class="content">
                     <p>Hello <strong>${username}</strong>,</p>
-                    <p>We received a request to reset your password for the Forex Nepal Admin Dashboard.</p>
-                    <p>Click the button below to reset your password or log in directly:</p>
+                    <p>We received a request for a one-time login link or password reset for your Forex Nepal Admin Dashboard account.</p>
+                    <!-- --- MODIFIED: Text --- -->
+                    <p>Click the button below to log in directly or to reset your password:</p>
                     <p style="text-align: center;">
-                      <a href="${resetUrl}" class="button">Reset Password / Login</a>
+                      <!-- --- MODIFIED: Button Text --- -->
+                      <a href="${resetUrl}" class="button">Login / Reset Password</a>
                     </p>
                     <p>Or copy and paste this link into your browser:</p>
                     <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
+                    <!-- --- MODIFIED: Text --- -->
                     <p>Alternatively, use this token on the reset page:</p>
                     <p style="text-align: center;" class="token">${resetToken}</p>
-                    <p><strong>This link and token will expire in 15 minutes.</strong></p>
-                    <p>If you didn't request a password reset, please ignore this email or contact support if you're concerned about your account security.</p>
+                    <!-- --- MODIFIED: Expiry time --- -->
+                    <p><strong>This link and token will expire in 15 minutes and can only be used once.</strong></p>
+                    <p>If you didn't request this, please ignore this email or contact support if you're concerned about your account security.</p>
                   </div>
                   <div class="footer">
                     <p>Forex Nepal Admin Dashboard | Powered by Grisma</p>
@@ -375,7 +379,8 @@ async function sendPasswordResetEmail(
 }
 
 /**
- * (ADMIN) Request a password reset email.
+ * (PUBLIC) Request a password reset email.
+ * This is also used by admins to send a link to a user.
  */
 export async function handleRequestPasswordReset(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'POST') {
@@ -393,6 +398,7 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
         ).bind(username).first<{ username: string; email: string | null }>();
 
         if (!user || !user.email) {
+            // For security, always return success even if user or email doesn't exist.
             console.log(`Password reset request for "${username}", but user or email not found. Sending success for security.`);
             return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
@@ -406,6 +412,7 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
 
         const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
+        // This function now sends the updated email template
         sendPasswordResetEmail(
             env,
             user.email,
@@ -424,7 +431,7 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
 }
 
 /**
- * (ADMIN) Reset password using a token.
+ * (PUBLIC) Reset password using a token.
  */
 export async function handleResetPassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
@@ -478,7 +485,7 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
 
 // --- START: *** NEW *** Login with Reset Token Function ---
 /**
- * (PUBLIC) Logs a user in using a password reset token.
+ * (PUBLIC) Logs a user in using a password reset token without changing password.
  */
 export async function handleLoginWithResetToken(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
@@ -514,7 +521,7 @@ export async function handleLoginWithResetToken(request: Request, env: Env): Pro
             `UPDATE password_reset_tokens SET used = 1 WHERE token = ?`
         ).bind(token).run();
 
-        // Log the user in
+        // Log the user in by generating a JWT
         const jwtToken = await generateToken(resetRecord.username, env.JWT_SECRET);
         
         return new Response(JSON.stringify({
@@ -531,13 +538,61 @@ export async function handleLoginWithResetToken(request: Request, env: Env): Pro
 // --- END: *** NEW *** Login with Reset Token Function ---
 
 
+// --- START: *** NEW *** Generate Reset Token Function (Admin) ---
+/**
+ * (ADMIN) Generates a password reset token for a user *without* sending an email.
+ * Returns the token for the admin to copy.
+ * This replaces the old `handleGenerateOneTimeLoginCode`
+ */
+export async function handleGenerateResetToken(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { username } = await request.json();
+        if (!username) {
+            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Check if user exists
+        const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
+        if (!user) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        const resetToken = crypto.randomUUID().replace(/-/g, '');
+        // Make this one valid for 1 hour, since it's admin-generated
+        const expiresAt = new Date(Date.now() + 3600000).toISOString(); // 1 hour
+
+        await env.FOREX_DB.prepare(
+            `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
+        ).bind(username, resetToken, expiresAt).run();
+
+        return new Response(JSON.stringify({ 
+            success: true, 
+            username: username, 
+            token: resetToken, // Changed from 'code' to 'token' for consistency
+            expires_at: expiresAt 
+        }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Error generating reset token:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+// --- END: *** NEW *** Generate Reset Token Function (Admin) ---
+
+
 /**
  * (ADMIN) GET all users or POST a new user.
  */
 export async function handleUsers(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -579,7 +634,7 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
 export async function handleUserById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     
@@ -605,7 +660,7 @@ export async function handleUserById(request: Request, env: Env): Promise<Respon
 export async function handlePosts(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -644,7 +699,7 @@ export async function handlePosts(request: Request, env: Env): Promise<Response>
 export async function handlePostById(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     const url = new URL(request.url);
@@ -697,7 +752,7 @@ export async function handlePostById(request: Request, env: Env): Promise<Respon
 export async function handleForexData(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
     try {
@@ -761,7 +816,7 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
 export async function handleGetApiSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -780,7 +835,7 @@ export async function handleGetApiSettings(request: Request, env: Env): Promise<
 export async function handleUpdateApiSettings(request: Request, env: Env): Promise<Response> {
     const authHeader = request.headers.get('Authorization');
     const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
@@ -827,11 +882,10 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
 }
 
 
-// --- REMOVED OLD ONE-TIME LOGIN HANDLERS ---
-// handleOneTimeLogin and handleGenerateOneTimeLoginCode functions have been deleted.
+// --- REMOVED: Old handleOneTimeLogin and handleGenerateOneTimeLoginCode functions ---
 
 
-// --- START: GoogleAuthCallback Function ---
+// --- GoogleAuthCallback Function ---
 /**
  * (PUBLIC) Handles the Google OAuth callback.
  * Exchanges the code for a token, gets user info, and issues a JWT.
@@ -843,17 +897,13 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Authorization code is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Check for required secrets
     if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET || !env.JWT_SECRET) {
       console.error('Missing one or more required secrets (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, JWT_SECRET).');
       return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing secrets' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    // --- THIS IS THE FIX (Part 1 of 2) ---
-    // We REMOVED the check for env.GOOGLE_REDIRECT_URI.
-    // We will hard-code the value below, just like in the frontend.
+    // Hard-coded redirect URI, as it's not a secret
     const REDIRECT_URI = "https://forex.grisma.com.np/admin/auth/google/callback";
-    // --- END FIX ---
     
 
     // 1. Exchange code for access token
@@ -866,19 +916,14 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
         code: code,
         client_id: env.GOOGLE_CLIENT_ID,
         client_secret: env.GOOGLE_CLIENT_SECRET,
-        // --- THIS IS THE FIX (Part 2 of 2) ---
-        // Changed from env.GOOGLE_REDIRECT_URI to the hard-coded string.
         redirect_uri: REDIRECT_URI,
-        // --- END FIX ---
         grant_type: 'authorization_code',
       }),
     });
 
-    // Read the response body ONCE
     const tokenData = await tokenResponse.json();
 
     if (!tokenResponse.ok) {
-      // If response is not ok, log the error data and return
       console.error('Google token exchange failed:', tokenData);
       return new Response(JSON.stringify({ success: false, error: 'Failed to exchange Google token' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -889,7 +934,6 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
         return new Response(JSON.stringify({ success: false, error: 'Google auth failed: no token' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-
     // 2. Get user info from Google
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: {
@@ -897,11 +941,9 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       },
     });
 
-    // Read the user info response body ONCE
     const userInfoData = await userInfoResponse.json();
 
     if (!userInfoResponse.ok) {
-      // If response is not ok, log the error data and return
       console.error('Google user info fetch failed:', userInfoData);
       return new Response(JSON.stringify({ success: false, error: 'Failed to fetch user info' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
