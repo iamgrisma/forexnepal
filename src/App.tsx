@@ -1,3 +1,4 @@
+// src/App.tsx
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -28,7 +29,9 @@ const Archive = lazy(() => import("./pages/Archive"));
 const ArchiveDetail = lazy(() => import("./pages/ArchiveDetail"));
 const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
 const PostEditor = lazy(() => import("./pages/PostEditor"));
-const ApiDocs = lazy(() => import("./pages/ApiDocs")); // <-- NEW: Import ApiDocs
+const ApiDocs = lazy(() => import("./pages/ApiDocs"));
+// --- NEW: Import Google Auth Callback ---
+const GoogleAuthCallback = lazy(() => import("./pages/GoogleAuthCallback"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,12 +60,8 @@ const App = () => (
         {/* --- Public Routes --- */}
         <Route path="/" element={<Index />} />
         <Route path="/archive" element={<Archive />} />
-        {/* --- UPDATED ROUTE --- */}
         <Route path="/archive/page/*" element={<Archive />} />
-        
-        {/* --- UPDATED ROUTE --- */}
         <Route path="/daily-update/forex-for/*" element={<ArchiveDetail />} />
-        
         <Route path="/converter" element={<Converter />} />
         <Route path="/historical-charts" element={<HistoricalCharts />} />
         <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
@@ -73,24 +72,21 @@ const App = () => (
         <Route path="/ads.txt" element={<AdsTxt />} />
         <Route path="/posts" element={<Posts />} />
         <Route path="/posts/:slug" element={<PostDetail />} />
-        <Route path="/api" element={<ApiDocs />} /> {/* <-- NEW: Add /api route */}
+        <Route path="/api" element={<ApiDocs />} />
 
         {/* --- Admin Login Route (Public) --- */}
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/forgot-password" element={<ForgotPassword />} />
         <Route path="/admin/reset-password" element={<ResetPassword />} />
+        {/* --- NEW: Add Google Auth Callback Route --- */}
+        <Route path="/admin/auth/google/callback" element={<GoogleAuthCallback />} />
 
         {/* --- Protected Admin Routes --- */}
-        {/* The ProtectedRoute component wraps all routes that need authentication */}
         <Route element={<ProtectedRoute />}>
-           {/* Define the dashboard route HERE */}
            <Route path="/admin/dashboard" element={<AdminDashboard />} />
-           {/* Define the change password route HERE */}
            <Route path="/admin/change-password" element={<ChangePassword />} />
-           {/* Define the post editor routes HERE */}
            <Route path="/admin/posts/new" element={<PostEditor />} />
            <Route path="/admin/posts/edit/:id" element={<PostEditor />} />
-           {/* Add any other future protected admin routes inside this wrapper */}
         </Route>
 
         {/* --- Catch-all Not Found Route (Must be last) --- */}
