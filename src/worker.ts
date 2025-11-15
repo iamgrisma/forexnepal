@@ -35,10 +35,11 @@ import {
     handleForexData,
     handleGetApiSettings,
     handleUpdateApiSettings,
-    handleLoginWithToken,
+    // --- FIX: Renamed 'handleLoginWithToken' to 'handleOneTimeLogin' ---
+    handleOneTimeLogin,
     handleGenerateOneTimeLoginCode,
     handleGoogleLoginCallback,
-    // --- ADD NEW PROFILE HANDLERS ---
+    // --- ADDED NEW PROFILE HANDLERS (from your latest worker.ts) ---
     handleGetProfile,
     handleUpdateProfile,
     handleRequestEmailVerification
@@ -127,8 +128,11 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
+            if (pathname === '/api/admin/login-one-time' && method === 'POST') {
+                return handleOneTimeLogin(request, env); // env contains JWT_SECRET
+            }
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
-                return handleGoogleLoginCallback(request, env, ctx); // env contains GOOGLE secrets, pass ctx
+                return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
             }
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
@@ -139,21 +143,20 @@ export default {
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
-            if (pathname === '/api/admin/login-with-token' && method === 'POST') {
-                return handleLoginWithToken(request, env); // env contains JWT_SECRET
-            }
-
 
             // --- Admin Protected Routes (Token required) ---
             if (pathname.startsWith('/api/admin/')) {
                 const authHeader = request.headers.get('Authorization');
                 const token = authHeader?.replace('Bearer ', '');
                 
+                // Pass the secret from env to verifyToken
                 if (!token || !(await auth.verifyToken(token, env.JWT_SECRET))) {
                     return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 }
+
+                // Token is valid, proceed to admin handlers
                 
-                // --- NEW: Profile Routes ---
+                // --- ADDED NEW PROFILE ROUTES (from your latest worker.ts) ---
                 if (pathname === '/api/admin/profile' && method === 'GET') {
                     return handleGetProfile(request, env);
                 }
@@ -163,9 +166,8 @@ export default {
                 if (pathname === '/api/admin/request-email-verification' && method === 'POST') {
                     return handleRequestEmailVerification(request, env, ctx);
                 }
-                // --- END: Profile Routes ---
+                // --- END NEW ROUTES ---
 
-                // Token is valid, proceed to other admin handlers
                 if (pathname === '/api/admin/change-password' && method === 'POST') {
                     return handleChangePassword(request, env); // env contains JWT_SECRET
                 }
@@ -191,28 +193,18 @@ export default {
                     return handleForexData(request, env); // env contains JWT_SECRET
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'GET') {
-                    return handleGetApiSettings(request, env); // env contains JWT_SECRET
+                    return handleGetApiSettings(request, env); // env contains JWT_TKN
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
-                    return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
+                    return handleUpdateApiSettings(request, env); // env contains JWT_TKN
                 }
                 if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
-                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
+                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_TKN
                 }
             }
 
             return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
-
-        // --- ADDED: Handle OAuth Callback for HashRouter ---
-        if (pathname === '/admin/auth/google/callback') {
-            const newUrl = new URL(request.url);
-            newUrl.pathname = '/';
-            newUrl.hash = `/admin/auth/google/callback${url.search}`; // url.search includes the '?'
-            return Response.redirect(newUrl.toString(), 302);
-        }
-        // --- END: OAuth Callback Fix ---
-
 
         // --- Sitemap ---
         if (pathname === '/sitemap.xml' || pathname === '/sitemap_index.xml') {
