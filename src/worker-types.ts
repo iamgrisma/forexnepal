@@ -43,8 +43,10 @@ export interface Env {
     BREVO_API_KEY: string;
     API_SETTINGS_CACHE: KVNamespace; 
     
-    // --- NEWLY ADDED SECRET ---
+    // --- Secrets ---
     JWT_SECRET: string;
+    GOOGLE_CLIENT_ID: string;
+    GOOGLE_CLIENT_SECRET: string;
 }
 
 // --- Custom App Types ---
@@ -53,6 +55,17 @@ export interface SiteSettings {
     adsense_enabled: boolean;
     adsense_exclusions: string;
 }
+
+// --- NEWLY ADDED: The missing UserProfile type ---
+export interface UserProfile {
+  username: string;
+  email: string | null;
+  full_name: string | null;
+  mobile_number: string | null;
+  profile_pic_url: string | null;
+  role: string;
+}
+// --- END OF FIX ---
 
 // --- Types for API Access Control ---
 export type ApiAccessLevel = 'public' | 'disabled' | 'restricted';
