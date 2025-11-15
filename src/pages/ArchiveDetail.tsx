@@ -1,3 +1,4 @@
+// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/pages/ArchiveDetail.tsx
 import React, { useEffect, useMemo, Suspense, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
@@ -102,9 +103,14 @@ export type ArticleTemplateProps = {
 
 // --- MAIN PAGE COMPONENT ---
 const ArchiveDetail = () => {
+  // --- FIX 1: Read the ':date' named parameter ---
+  // The splat route `*` is also captured to handle old /daily-update/forex-for/ links
   const params = useParams();
-  const date = params["*"];
-  const targetDateStr = date ?? null;
+  const dateFromSplat = params["*"];
+  const dateFromParam = params.date;
+  const targetDateStr = dateFromParam || dateFromSplat?.replace('daily-update/forex-for/', '') || null;
+  // --- END FIX 1 ---
+  
   const queryClient = useQueryClient(); // Get query client
   
   // --- Date Validation ---
@@ -212,6 +218,7 @@ const ArchiveDetail = () => {
     const currentRates = currentDayData.rates;
     const prevDayRates = prevDayData?.rates || [];
 
+    // --- FIX 4: Corrected Data Analysis Logic ---
     const analyzedRates: AnalyzedRate[] = ALL_CURRENCY_CODES.map(code => {
       const rate = currentRates.find(r => r.currency.iso3 === code);
       const prevRate = prevDayRates.find(pr => pr.currency.iso3 === code);
@@ -222,22 +229,17 @@ const ArchiveDetail = () => {
         return null; 
       }
 
-      const buy = Number(rate.buy);
-      const sell = Number(rate.sell);
       const unit = info.unit || 1;
-      const normalizedBuy = buy / unit;
-      const normalizedSell = sell / unit;
+      // 'rate.buy' and 'rate.sell' are ALREADY normalized (per-unit) rates from the API
+      const normalizedBuy = Number(rate.buy);
+      const normalizedSell = Number(rate.sell);
 
-      const prevBuy = prevRate ? (Number(prevRate.buy) / (prevRate.currency.unit || 1)) : 0;
-      const prevSell = prevRate ? (Number(prevRate.sell) / (prevRate.currency.unit || 1)) : 0;
+      // Get the normalized per-unit rate from the previous day
+      const prevBuy = prevRate ? Number(prevRate.buy) : 0;
       
-      // --- IMPORTANT: Calculate change based on BUY rate for consistency ---
+      // Calculate change based on normalized (per-unit) rates
       const dailyChange = prevRate ? (normalizedBuy - prevBuy) : 0;
       const dailyChangePercent = (prevRate && prevBuy > 0) ? (dailyChange / prevBuy) * 100 : 0;
-      
-      // Also calculate sell change just in case
-      const dailySellChange = prevRate ? (normalizedSell - prevSell) : 0;
-
 
       return {
         ...rate, 
@@ -246,14 +248,18 @@ const ArchiveDetail = () => {
             name: info.name,
             unit: info.unit
         },
-        buy,
-        sell,
+        // Re-constitute the display rate (e.g., 0.9 * 10 = 9.0 for JPY)
+        buy: normalizedBuy * unit,
+        sell: normalizedSell * unit,
+        
+        // Store the actual per-unit values
         normalizedBuy,
         normalizedSell,
-        dailyChange, // This is normalized (per-unit) buy change
-        dailyChangePercent, // This is normalized (per-unit) buy % change
+        dailyChange, // This is per-unit change
+        dailyChangePercent, // This is per-unit % change
       };
     }).filter((r): r is AnalyzedRate => r !== null); // Filter out nulls
+    // --- END FIX 4 ---
     
     const filteredForRanking = analyzedRates.filter(r => r.currency.iso3 !== 'INR');
     const safeFilteredRates = filteredForRanking.length > 0 ? filteredForRanking : analyzedRates;
@@ -269,19 +275,17 @@ const ArchiveDetail = () => {
     
     // Sort by percent change (desc), then alphabetically
     const sortedByChange = [...currenciesToSort].sort((a, b) => {
-        // --- FIX: Sort by *absolute* change percentage for interleaving ---
         const absA = Math.abs(a.dailyChangePercent);
         const absB = Math.abs(b.dailyChangePercent);
         
         if (absA > absB) return -1; // Sort by ABSOLUTE value, descending
         if (absA < absB) return 1;
         
-        // If percentages are equal, sort alphabetically
         return a.currency.iso3.localeCompare(b.currency.iso3);
     });
 
     const positiveChanges = sortedByChange.filter(r => r.dailyChangePercent > 0.0001);
-    const negativeChanges = sortedByChange.filter(r => r.dailyChangePercent < -0.0001); // No reverse needed now
+    const negativeChanges = sortedByChange.filter(r => r.dailyChangePercent < -0.0001);
     const stableChanges = sortedByChange.filter(r => Math.abs(r.dailyChangePercent) <= 0.0001);
 
     const interleavedList: AnalyzedRate[] = [];
@@ -290,14 +294,13 @@ const ArchiveDetail = () => {
         if (positiveChanges[i]) interleavedList.push(positiveChanges[i]);
         if (negativeChanges[i]) interleavedList.push(negativeChanges[i]);
     }
-    interleavedList.push(...stableChanges); // Add stable ones at the end
+    interleavedList.push(...stableChanges); 
 
     const allStable = positiveChanges.length === 0 && negativeChanges.length === 0;
     const allPositive = negativeChanges.length === 0 && positiveChanges.length > 0;
     const allNegative = positiveChanges.length === 0 && negativeChanges.length > 0;
     
     const topGainer = positiveChanges[0] || stableChanges[0] || analyzedRates[0];
-    // --- FIX: Find most negative ---
     const topLoser = negativeChanges.length > 0 ? negativeChanges[0] : (stableChanges[0] || analyzedRates[0]);
 
 
@@ -338,8 +341,9 @@ const ArchiveDetail = () => {
 
         if (!oldRateData) return null;
 
-        const oldRate = Number(oldRateData.buy) / (oldRateData.currency.unit || 1);
-        const newRate = currentRate.normalizedBuy; // Already normalized
+        // 'oldRateData.buy' is already normalized (per-unit)
+        const oldRate = Number(oldRateData.buy);
+        const newRate = currentRate.normalizedBuy; // This is also normalized
 
         if (oldRate === 0) return null;
         const change = newRate - oldRate;
@@ -410,18 +414,20 @@ const ArchiveDetail = () => {
               </Link>
             </Button>
             <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              {/* --- FIX 2: Update pagination links --- */}
               <Button variant="outline" size="sm" asChild className="flex-1 sm:flex-initial">
-                <Link to={`/daily-update/forex-for/${previousDate}`} className="flex items-center gap-1 justify-center">
+                <Link to={`/archive/${previousDate}`} className="flex items-center gap-1 justify-center">
                   <ChevronLeft className="h-4 w-4" /> Previous
                 </Link>
               </Button>
               {canGoNext && (
                 <Button variant="outline" size="sm" asChild className="flex-1 sm:flex-initial">
-                  <Link to={`/daily-update/forex-for/${nextDate}`} className="flex items-center gap-1 justify-center">
+                  <Link to={`/archive/${nextDate}`} className="flex items-center gap-1 justify-center">
                     Next <ChevronRight className="h-4 w-4" />
                   </Link>
                 </Button>
               )}
+              {/* --- END FIX 2 --- */}
             </div>
           </div>
 
@@ -548,15 +554,17 @@ const SimplifiedRateTable: React.FC<{ rates: AnalyzedRate[], date: string }> = (
               <TableCell className="text-center">{rate.currency.unit}</TableCell>
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
+                  {/* --- FIX: Use rate.buy (which is now re-constituted) --- */}
                   <span className="font-semibold text-base">Rs. {rate.buy.toFixed(2)}</span>
-                  {/* We multiply by unit here to show the *actual* paisa change for the unit */}
+                  {/* --- FIX: Use rate.dailyChange (per-unit) * unit --- */}
                   <ChangeIndicator value={rate.dailyChange * rate.currency.unit} decimals={3} />
                 </div>
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex flex-col items-end">
+                  {/* --- FIX: Use rate.sell (which is now re-constituted) --- */}
                   <span className="font-semibold text-base">Rs. {rate.sell.toFixed(2)}</span>
-                  {/* We don't have daily *sell* change, so we just show the buy change for both as an indicator */}
+                  {/* --- FIX: Use rate.dailyChange (per-unit) * unit --- */}
                   <ChangeIndicator value={rate.dailyChange * rate.currency.unit} decimals={3} />
                 </div>
               </TableCell>
@@ -590,6 +598,7 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
                   <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
                     {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
                   </Link>
+                  {/* --- FIX: Use normalizedSell --- */}
                   <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(2)}</span>
                 </li>
               ))}
@@ -608,6 +617,7 @@ const CurrencyRankings: React.FC<{ topHigh: AnalyzedRate[], topLow: AnalyzedRate
                   <Link to={`/historical-data/${rate.currency.iso3}`} className="font-medium text-blue-600 hover:underline">
                     {getFlagEmoji(rate.currency.iso3)} {rate.currency.name}
                   </Link>
+                  {/* --- FIX: Use normalizedSell --- */}
                   <span className="text-muted-foreground ml-2">Rs. {rate.normalizedSell.toFixed(4)}</span>
                 </li>
               ))}
@@ -717,12 +727,14 @@ const ArchiveTextGenerator = {
   getNewsIntro: (longDateHeader: string, analysisData: DailyAnalysis, dayOfWeek: number) => {
     const { allRates, topGainer, topLoser } = analysisData;
     const usd = allRates.find(r => r.currency.iso3 === 'USD');
-    const usdBuy = usd ? usd.buy.toFixed(2) : 'N/A';
-    const usdSell = usd ? usd.sell.toFixed(2) : 'N/A';
+    const usdBuy = usd ? usd.buy.toFixed(2) : 'N/A'; // Use re-constituted rate
+    const usdSell = usd ? usd.sell.toFixed(2) : 'N/A'; // Use re-constituted rate
     const gainerName = topGainer.currency.name;
+    // --- FIX: Use re-constituted change ---
     const gainerChange = (topGainer.dailyChange * topGainer.currency.unit).toFixed(3);
     const loserName = topLoser.currency.name;
     const loserChange = (topLoser.dailyChange * topLoser.currency.unit).toFixed(3);
+    // --- END FIX ---
 
     const variants = [
       // 0: Sunday
@@ -741,7 +753,6 @@ const ArchiveTextGenerator = {
       `<p><strong>${longDateHeader}</strong> | While banks are closed today, Nepal Rastra Bank has published the reference exchange rates that will be effective for today's transactions where applicable. The <strong>U.S. Dollar</strong> is quoted at <strong>Rs. ${usdBuy}</strong> (Buy) and <strong>Rs. ${usdSell}</strong> (Sell). Often, weekend rates reflect the closing rates of the previous day. Today’s report analyzes these figures, including the daily change of the ${gainerName} (up by Rs. ${gainerChange}) and the ${loserName} (down by Rs. ${loserChange}), providing a full summary and historical context.</p>`
     ];
     
-    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -751,17 +762,8 @@ const ArchiveTextGenerator = {
   getTodaysForexDetail: (analysisData: DailyAnalysis, dayOfWeek: number) => {
     const { allRates, interleavedList, allStable, allPositive, allNegative } = analysisData;
     
-    // --- TEMPLATE VARIABLES (These are now inlined) ---
-    // const link = (r: AnalyzedRate) => `<a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>`;
-    // const flag = (r: AnalyzedRate) => getFlagEmoji(r.currency.iso3);
-    // const buy = (r: AnalyzedRate) => `<strong>Rs. ${r.buy.toFixed(2)}</strong>`;
-    // const sell = (r: AnalyzedRate) => `<strong>Rs. ${r.sell.toFixed(2)}</strong>`;
-    // const unit = (r: AnalyzedRate) => `${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}`;
-    // const change = (r: AnalyzedRate) => `<strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong>`;
-    // const changePercent = (r: AnalyzedRate) => `(<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>)`;
-    // --- END TEMPLATE VARIABLES ---
-
-    // --- FIX: 7 variations for a positive change sentence (INLINED) ---
+    // --- FIX: All helper functions now use the re-constituted `rate.buy` / `rate.sell` ---
+    // --- and the calculated `rate.dailyChange` (per-unit) * `rate.currency.unit` ---
     const positiveSentences = [
       (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} advanced against the NPR, gaining <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>) to reach a buying rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a selling rate of <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
       (r: AnalyzedRate) => `A notable gainer today is the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which appreciated by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>); it is now trading at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
@@ -772,7 +774,6 @@ const ArchiveTextGenerator = {
       (r: AnalyzedRate) => `An upward trend was seen in the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which increased by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Today, ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} can be bought for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sold for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`
     ];
     
-    // --- FIX: 7 variations for a negative change sentence (INLINED) ---
     const negativeSentences = [
       (r: AnalyzedRate) => `Conversely, the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} depreciated by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>), settling at a buying rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> and a selling rate of <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
       (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> weakened today, dropping by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). It is now listed at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) for ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
@@ -783,7 +784,6 @@ const ArchiveTextGenerator = {
       (r: AnalyzedRate) => `A downward trend was observed for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)}, which decreased by <strong>Rs. ${Math.abs(r.dailyChange * r.currency.unit).toFixed(3)}</strong> (<span class="${getChangeColor(r.dailyChange)}">${r.dailyChangePercent.toFixed(2)}%</span>). Today, ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''} can be bought for <strong>Rs. ${r.buy.toFixed(2)}</strong> and sold for <strong>Rs. ${r.sell.toFixed(2)}</strong>.`
     ];
 
-    // --- FIX: 7 variations for a stable sentence (INLINED) ---
     const stableSentences = [
       (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} remained stable with no change from yesterday, holding at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> (Sell) per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
       (r: AnalyzedRate) => `No change was recorded for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which maintains its rate of <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> for selling (${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}).`,
@@ -793,6 +793,7 @@ const ArchiveTextGenerator = {
       (r: AnalyzedRate) => `A stable rate was posted for the <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a>, which continues to trade at <strong>Rs. ${r.buy.toFixed(2)}</strong> (Buy) and <strong>Rs. ${r.sell.toFixed(2)}</strong> per ${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}.`,
       (r: AnalyzedRate) => `The <a href="/#/historical-data/${r.currency.iso3}" class="font-medium text-blue-600 hover:underline">${r.currency.name} (${r.currency.iso3})</a> ${getFlagEmoji(r.currency.iso3)} saw no movement, with its value constant at <strong>Rs. ${r.buy.toFixed(2)}</strong> for buying and <strong>Rs. ${r.sell.toFixed(2)}</strong> (${r.currency.unit} unit${r.currency.unit > 1 ? 's' : ''}).`
     ];
+    // --- END FIX ---
 
     let html = `<h2>Today's Forex Detail:</h2>`;
     
@@ -910,7 +911,6 @@ const ArchiveTextGenerator = {
       // 6: Saturday
       `<p>The value of a single unit of currency can vary dramatically, as shown in these rankings for ${date}. The "Most Expensive" list features the global heavyweights in nominal value, such as the KWD and BHD. This demonstrates the significant capital required to purchase even one unit of these currencies. The "Least Expensive" list, however, is a matter of denomination. The JPY, KRW, and INR all have small base units, making them appear "cheap" in this 1-to-1 comparison. This ranking is for informational purposes; real-world transactions will use the official units (e.g., 100 for KRW, 10 for JPY) as specified in the main table. Our <a href="/#/converter" class="text-blue-600 hover:underline font-medium">converter</a> handles this automatically.</p>`
     ];
-    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -934,7 +934,6 @@ const ArchiveTextGenerator = {
       // 6: Saturday
       `<p>Context is key in finance. This section provides that context by comparing today's rates to historical benchmarks. We analyze the change in the normalized 'Buy' rate over six different timeframes, from one week to over two decades. This allows you to assess the long-term performance and stability of each currency against the NPR. The data is loaded dynamically when you select a tab to ensure performance. This analysis is crucial for understanding the true appreciation or depreciation of assets over time. For a more detailed visual breakdown, please visit our interactive <a href="/#/historical-charts" class="text-blue-600 hover:underline font-medium">historical charts page</a>.</p>`
     ];
-    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   },
 
@@ -998,7 +997,6 @@ const ArchiveTextGenerator = {
        ${topWeekly && bottomWeekly ? `<p>This week, the <strong>${topWeekly.name}</strong> has emerged as the strongest currency with a <strong>${topWeekly.percent.toFixed(2)}%</strong> increase. The <strong>${bottomWeekly.name}</strong>, on the other hand, has seen the most significant decline over the past seven days, falling <strong>${bottomWeekly.percent.toFixed(2)}%</strong>. This weekly summary helps to understand the underlying momentum of currencies.</p>` : ''}`
     ];
     
-    // --- FIX: Pass dayOfWeek to the variant getter ---
     return ArchiveTextGenerator._getVariant(dayOfWeek, variants);
   }
 };
