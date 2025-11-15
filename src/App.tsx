@@ -1,6 +1,7 @@
 // src/App.tsx
 import React, { lazy, Suspense } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+// Import Routes and Route, but remove HashRouter
+import { Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import ProtectedRoute from '@/components/ProtectedRoute';
@@ -43,7 +44,8 @@ const SuspenseFallback = () => (
 
 function App() {
   return (
-    <HashRouter>
+    // <--- REMOVED THE REDUNDANT <HashRouter> WRAPPER FROM HERE --->
+    <>
       <Suspense fallback={<SuspenseFallback />}>
         <Routes>
           {/* Public Routes */}
@@ -85,7 +87,7 @@ function App() {
       <Toaster />
       <SonnerToaster position="top-right" richColors />
       <PWAInstallPrompt />
-    </HashRouter>
+    </>
   );
 }
 
