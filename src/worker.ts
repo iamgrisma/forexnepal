@@ -183,7 +183,6 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
-                // --- ADD NEW GENERATE CODE ROUTE ---
                 if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
                     return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
                 }
