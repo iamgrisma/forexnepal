@@ -1,6 +1,8 @@
 // src/components/Navigation.tsx
 import React from 'react';
-import { NavLink, useNavigate }'react-router-dom';
+// --- THIS IS THE FIX: Added 'from' ---
+import { NavLink, useNavigate } from 'react-router-dom';
+// --- END OF FIX ---
 import { Home, Archive, BarChart2, FileText, Cpu, LayoutDashboard, LogOut, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet';
@@ -171,7 +173,7 @@ const MobileBottomNavigation = () => {
           <NavLink
             key={link.to}
             to={link.to}
-            end // Ensure 'Home' link is only active for exact path
+            end={link.to === '/'} // End prop for Home only
             className={({ isActive }) =>
               `flex flex-col items-center justify-center w-full transition-colors ${
                 isActive
@@ -192,9 +194,9 @@ const MobileBottomNavigation = () => {
               <span className="text-xs font-medium">More</span>
             </button>
           </SheetTrigger>
-          <SheetContent side="bottom">
+          <SheetContent side="bottom" className="h-[40vh]">
             <div className="flex flex-col space-y-4 py-6">
-              <div className="px-2 space-y-1">
+              <div className="px-2 grid grid-cols-2 gap-4">
                 {/* Re-list links for the sheet */}
                 {navLinks.map((link) => (
                   <SheetNavItem key={link.to} to={link.to}>
@@ -221,7 +223,7 @@ const MobileBottomNavigation = () => {
 export const Navigation = () => {
   return (
     <>
-      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className="sticky top-0 z-40 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 max-w-7xl items-center justify-between">
           <NavLink to="/" className="flex items-center space-x-2">
             <img src="/icon-192.png" alt="Forex Nepal Logo" className="h-8 w-8" />
@@ -231,13 +233,14 @@ export const Navigation = () => {
           {/* Render Desktop Nav */}
           <DesktopNavigation />
           
-          {/* Render Mobile Hamburger (for top bar, but it's part of the bottom bar now) */}
-          {/* We'll use a placeholder div for spacing if needed, but DesktopNavigation is hidden on mobile */}
-          <div className="md:hidden" />
+          {/* Render Mobile Hamburger (for top bar on tablets) */}
+          <div className="hidden sm:md:hidden">
+            <MobileSheetNavigation />
+          </div>
         </div>
       </header>
       
-      {/* Render Mobile Bottom Nav */}
+      {/* Render Mobile Bottom Nav (for phones) */}
       <MobileBottomNavigation />
     </>
   );
