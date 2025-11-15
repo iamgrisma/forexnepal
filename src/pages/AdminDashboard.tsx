@@ -1,155 +1,151 @@
 // src/pages/AdminDashboard.tsx
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/components/ProtectedRoute'; // This import will now work
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { apiClient } from '@/services/apiClient';
+import { UserProfile } from '@/worker-types';
+import Layout from '@/components/Layout';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
-import { LogOut, Home } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Mail, Phone, User, Shield, Edit, X } from 'lucide-react';
+import ProfileForm from '@/components/admin/ProfileForm'; // The new edit form
 
-// Import Admin Components
-import DataUpdateControl from '@/components/admin/DataUpdateControl';
-import ForexDataManagement from '@/components/admin/ForexDataManagement';
-import PostsManagement from '@/components/admin/PostsManagement';
-import UserManagement from '@/components/admin/UserManagement';
-import SiteSettingsComponent from '@/components/admin/SiteSettings';
-import ApiSettings from '@/components/admin/ApiSettings';
+const fetchProfile = async (): Promise<UserProfile> => {
+  const data = await apiClient.get<{ success: boolean; profile: UserProfile }>('/admin/profile');
+  return data.profile;
+};
 
 const AdminDashboard = () => {
-  const { logout } = useAuth(); // This will now receive the logout function
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
 
-  const handleLogout = () => {
-    logout(); // Call the logout function from context
-    // The ProtectedRoute's effect will handle navigation,
-    // but we can also navigate directly for a faster UI update.
-    navigate('/admin/login');
+  const { data: profile, isLoading, error } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchProfile,
+  });
+
+  const getInitials = (name: string | null | undefined) => {
+    if (!name) return 'FN'; // Forex Nepal
+    const names = name.split(' ');
+    if (names.length > 1) {
+      return (names[0][0] + names[names.length - 1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
   };
 
-  const goToHome = () => {
-    navigate('/');
+  const handleEditSuccess = (updatedProfile: UserProfile) => {
+    queryClient.setQueryData(['userProfile'], updatedProfile);
+    setIsEditing(false);
   };
+
+  const renderProfileView = () => (
+    <Card className="max-w-3xl mx-auto">
+      <CardHeader className="flex flex-col items-center text-center relative">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          className="absolute top-4 right-4"
+          onClick={() => setIsEditing(true)}
+        >
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Avatar className="h-24 w-24 text-3xl">
+          <AvatarImage src={profile?.profile_pic_url || undefined} alt={profile?.full_name || profile?.username} />
+          <AvatarFallback>{getInitials(profile?.full_name || profile?.username)}</AvatarFallback>
+        </Avatar>
+        <CardTitle className="mt-4 text-2xl">
+          {profile?.full_name || 'N/A'}
+        </CardTitle>
+        <CardDescription>@{profile?.username}</CardDescription>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Contact Information</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center">
+              <Mail className="h-5 w-5 mr-3 text-muted-foreground" />
+              <span>{profile?.email || 'No email provided'}</span>
+            </div>
+            <div className="flex items-center">
+              <Phone className="h-5 w-5 mr-3 text-muted-foreground" />
+              <span>{profile?.mobile_number || 'No mobile provided'}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Access & Role</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center">
+              <User className="h-5 w-5 mr-3 text-muted-foreground" />
+              <span>Username: <strong>{profile?.username}</strong></span>
+            </div>
+            <div className="flex items-center">
+              <Shield className="h-5 w-5 mr-3 text-muted-foreground" />
+              <span>Role: <strong className="capitalize">{profile?.role}</strong></span>
+            </div>
+          </CardContent>
+        </Card>
+      </CardContent>
+    </Card>
+  );
+
+  const renderEditView = () => (
+    <Card className="max-w-3xl mx-auto">
+      <CardHeader>
+        <div className="flex justify-between items-center">
+          <div>
+            <CardTitle>Edit Profile</CardTitle>
+            <CardDescription>Update your personal and security information.</CardDescription>
+          </div>
+          <Button 
+            variant="ghost" 
+            size="icon"
+            onClick={() => setIsEditing(false)}
+          >
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {profile && <ProfileForm profile={profile} onSave={handleEditSuccess} />}
+      </CardContent>
+    </Card>
+  );
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-muted/40">
-      <div className="flex flex-col sm:gap-4 sm:py-4">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
-          <h1 className="text-xl font-semibold">Admin Dashboard</h1>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={goToHome}>
-              <Home className="h-4 w-4 mr-2" />
-              Go to Site
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              <LogOut className="h-4 w-4 mr-2" />
-              Logout
-            </Button>
-          </div>
-        </header>
-        <main className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
-          <Tabs defaultValue="data-update">
-            <div className="flex items-center">
-              <TabsList>
-                <TabsTrigger value="data-update">Data Update</TabsTrigger>
-                <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
-                <TabsTrigger value="posts">Posts</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
-                <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
-                <TabsTrigger value="api-settings">API Settings</TabsTrigger>
-              </TabsList>
+    <Layout>
+      <div className="p-4 md:p-8">
+        {isLoading && (
+          <div className="max-w-3xl mx-auto space-y-4">
+            <div className="flex flex-col items-center space-y-4">
+              <Skeleton className="h-24 w-24 rounded-full" />
+              <Skeleton className="h-8 w-48" />
+              <Skeleton className="h-6 w-32" />
             </div>
-            <TabsContent value="data-update">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Data Update Control</CardTitle>
-                  <CardDescription>
-                    Manually fetch data from NRB API and update the database.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <DataUpdateControl />
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="forex-data">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Forex Data Management</CardTitle>
-                  <CardDescription>
-                    Manually add or edit forex data for a specific date.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ForexDataManagement />
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="posts">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Posts Management</CardTitle>
-                  <CardDescription>
-                    Create, edit, and delete blog posts.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PostsManagement />
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="users">
-              <Card>
-                <CardHeader>
-                  <CardTitle>User Management</CardTitle>
-                  <CardDescription>
-                    Add or remove admin users.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <UserManagement />
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="site-settings">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Site Settings</CardTitle>
-                    <CardDescription>
-                      Manage global site settings like ticker and ads.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <SiteSettingsComponent />
-                  </CardContent>
-                </Card>
-            </TabsContent>
-            <TabsContent value="api-settings">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>API Settings</CardTitle>
-                    <CardDescription>
-                      Manage public API access, restrictions, and quotas.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <ApiSettings />
-                  </CardContent>
-                </Card>
-            </TabsContent>
-          </Tabs>
-        </main>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Skeleton className="h-40 w-full" />
+              <Skeleton className="h-40 w-full" />
+            </div>
+          </div>
+        )}
+        {error && (
+          <Card className="max-w-3xl mx-auto bg-destructive/10 border-destructive">
+            <CardHeader>
+              <CardTitle>Error</CardTitle>
+              <CardDescription>{(error as Error).message || 'Failed to load profile.'}</CardDescription>
+            </CardHeader>
+          </Card>
+        )}
+        {!isLoading && !error && profile && (
+          isEditing ? renderEditView() : renderProfileView()
+        )}
       </div>
-    </div>
+    </Layout>
   );
 };
 
