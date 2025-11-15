@@ -21,7 +21,7 @@ id = "6eae569e69a748478ddef2014ee60022"
 # --- THIS IS THE MISSING PIECE ---
 # Add this entire [vars] block
 [vars]
-GOOGLE_REDIRECT_URI = "https://forexnepal.grisma.com.np/admin/auth/google/callback"
+GOOGLE_REDIRECT_URI = "https://forex.grisma.com.np/admin/auth/google/callback"
 # --- END OF NEW BLOCK ---
 
 [triggers]
