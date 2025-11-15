@@ -887,5 +887,3 @@ export async function handleGenerateOneTimeLoginCode(request: Request, env: Env)
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-
-// --- FIX: REMOVED EXTRA TRAILING '}' ---
