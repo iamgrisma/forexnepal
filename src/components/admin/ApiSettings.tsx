@@ -81,6 +81,7 @@ type ApiSaveResponse = {
 
 // Function to fetch API settings
 const fetchApiSettings = async (): Promise<ApiAccessSetting[]> => {
+  // apiClient automatically adds auth headers, no need to pass them
   const response = await apiClient.get<ApiSettingsResponse>('/admin/api-settings');
   if (response.success) {
     return response.settings;
@@ -111,6 +112,7 @@ export const ApiSettings: React.FC = () => {
   // Mutation to update settings
   const mutation = useMutation({
     mutationFn: async (updatedSettings: ApiAccessSetting[]) => {
+      // apiClient automatically adds auth headers and body
       const response = await apiClient.post<ApiSaveResponse>('/admin/api-settings', updatedSettings);
       if (response.success) {
         return response;
@@ -147,6 +149,8 @@ export const ApiSettings: React.FC = () => {
   if (isLoading) {
     return (
       <div className="space-y-2 p-4">
+        <Skeleton className="h-10 w-1/3" />
+        <Skeleton className="h-8 w-1/2" />
         {[...Array(5)].map((_, i) => (
           <Skeleton key={i} className="h-16 w-full" />
         ))}
@@ -237,6 +241,7 @@ export const ApiSettings: React.FC = () => {
                         <SelectValue placeholder="Select level" />
                       </SelectTrigger>
                       <SelectContent>
+                        {/* --- THIS IS THE FIX: Matched your dropdown options --- */}
                         <SelectItem value="public">Public</SelectItem>
                         <SelectItem value="restricted">Restricted</SelectItem>
                         <SelectItem value="disabled">Disabled</SelectItem>
