@@ -1,148 +1,244 @@
 // src/components/Navigation.tsx
-import React, { useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { NavLink, useNavigate }'react-router-dom';
+import { Home, Archive, BarChart2, FileText, Cpu, LayoutDashboard, LogOut, Menu } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, X, Sun, Moon, Home, BarChart2, Book, Settings, LayoutDashboard, LogOut } from 'lucide-react';
-import { useMobile } from '@/hooks/use-mobile'; // Assuming you have this hook
+import { Sheet, SheetContent, SheetTrigger, SheetClose } from '@/components/ui/sheet';
+import { useAuth } from '@/components/ProtectedRoute'; // Import useAuth
+import { useToast } from '@/hooks/use-toast';
 
-// --- UPDATED: Removed About, Contact, Disclosure, Privacy from main links ---
-const navLinks = [
-  { href: '/', label: 'Home', Icon: Home },
-  { href: '/historical-charts', label: 'Charts', Icon: BarChart2 },
-  { href: '/posts', label: 'Posts', Icon: Book },
-  { href: '/api-docs', label: 'API', Icon: Settings },
-];
-
-const Navigation = () => {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const isMobile = useMobile();
-  const navigate = useNavigate();
-
-  // Handle theme toggling
-  const toggleTheme = () => {
-    const isDarkMode = document.documentElement.classList.toggle('dark');
-    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
-  };
-
-  // Check for stored theme on load
-  React.useEffect(() => {
-    const storedTheme = localStorage.getItem('theme');
-    if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+// Helper component for NavLink
+const NavItem = ({ to, children }: { to: string; children: React.ReactNode }) => (
+  <NavLink
+    to={to}
+    className={({ isActive }) =>
+      `flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+        isActive
+          ? 'bg-primary text-primary-foreground'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+      }`
     }
-  }, []);
+  >
+    {children}
+  </NavLink>
+);
 
-  const handleAdminLogout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('username');
-    localStorage.removeItem('forcePasswordChange');
-    navigate('/admin/login');
+// Helper for Sheet NavLink
+const SheetNavItem = ({ to, children }: { to: string; children: React.ReactNode }) => (
+  <SheetClose asChild>
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex items-center space-x-3 px-3 py-2 rounded-md text-base font-medium transition-colors ${
+          isActive
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+        }`
+      }
+    >
+      {children}
+    </NavLink>
+  </SheetClose>
+);
+
+// --- 1. Desktop Navigation ---
+const DesktopNavigation = () => {
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleLogout = () => {
+    logout();
+    toast({ title: "Logged out successfully." });
+    navigate('/');
   };
 
-  const renderNavLinks = (isMobileSheet = false) => {
-    const linkClass = isMobileSheet
-      ? 'flex items-center p-3 rounded-md text-lg hover:bg-muted'
-      : 'px-3 py-2 text-sm font-medium rounded-md hover:bg-muted dark:hover:bg-muted/50 transition-colors';
-    
-    const activeClass = isMobileSheet
-      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-      : 'bg-primary text-primary-foreground hover:bg-primary/90 dark:hover:bg-primary/90';
-
-    const authToken = localStorage.getItem('authToken');
-
-    return (
-      <>
-        {navLinks.map((link) => (
-          <NavLink
-            key={link.label}
-            to={link.href}
-            className={({ isActive }) => `${linkClass} ${isActive ? activeClass : ''}`}
-            onClick={() => isMobileSheet && setIsMobileMenuOpen(false)}
-          >
-            {isMobileSheet && <link.Icon className="mr-3 h-5 w-5" />}
-            {link.label}
-          </NavLink>
-        ))}
-        {authToken && (
-          <>
-            <NavLink
-              to="/admin/dashboard"
-              className={({ isActive }) => `${linkClass} ${isActive ? activeClass : ''}`}
-              onClick={() => isMobileSheet && setIsMobileMenuOpen(false)}
-            >
-              {isMobileSheet && <LayoutDashboard className="mr-3 h-5 w-5" />}
-              Dashboard
-            </NavLink>
-            <Button
-              variant={isMobileSheet ? 'ghost' : 'outline'}
-              size="sm"
-              className={isMobileSheet ? `${linkClass} text-red-500 hover:bg-red-500/10 hover:text-red-600` : 'ml-2'}
-              onClick={() => {
-                if (isMobileSheet) setIsMobileMenuOpen(false);
-                handleAdminLogout();
-              }}
-            >
-              {isMobileSheet && <LogOut className="mr-3 h-5 w-5" />}
-              Logout
-            </Button>
-          </>
-        )}
-      </>
-    );
-  };
+  const navLinks = [
+    { to: '/', icon: <Home className="h-4 w-4" />, label: 'Home' },
+    { to: '/archive', icon: <Archive className="h-4 w-4" />, label: 'Archive' },
+    { to: '/historical-charts', icon: <BarChart2 className="h-4 w-4" />, label: 'Charts' },
+    { to: '/posts', icon: <FileText className="h-4 w-4" />, label: 'Blogs' },
+    { to: '/api-docs', icon: <Cpu className="h-4 w-4" />, label: 'API' },
+  ];
 
   return (
-    <nav className="bg-card dark:bg-card/80 backdrop-blur-sm border-b sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          
-          {/* Logo */}
-          <div className="flex-shrink-0 flex items-center">
-            <Link to="/" className="text-2xl font-bold text-primary flex items-center">
-              <img src="/icon-192.png" alt="Forex Nepal Logo" className="h-8 w-8 mr-2" />
-              ForexNepal
-            </Link>
-          </div>
+    <nav className="hidden md:flex items-center space-x-4">
+      {navLinks.map((link) => (
+        <NavItem key={link.to} to={link.to}>
+          {link.icon}
+          <span>{link.label}</span>
+        </NavItem>
+      ))}
+      {isAuthenticated && (
+        <>
+          <NavItem to="/admin/dashboard">
+            <LayoutDashboard className="h-4 w-4" />
+            <span>Dashboard</span>
+          </NavItem>
+          <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground hover:bg-muted hover:text-foreground">
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
+          </Button>
+        </>
+      )}
+    </nav>
+  );
+};
 
-          {/* Desktop Nav */}
-          {!isMobile && (
-            <div className="hidden md:flex md:items-center md:space-x-1">
-              {renderNavLinks(false)}
+// --- 2. Mobile Top Navigation (Hamburger Menu) ---
+const MobileSheetNavigation = () => {
+  const { isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  const handleLogout = () => {
+    logout();
+    toast({ title: "Logged out successfully." });
+    navigate('/');
+  };
+  
+  const navLinks = [
+    { to: '/', icon: <Home className="h-5 w-5" />, label: 'Home' },
+    { to: '/archive', icon: <Archive className="h-5 w-5" />, label: 'Archive' },
+    { to: '/historical-charts', icon: <BarChart2 className="h-5 w-5" />, label: 'Charts' },
+    { to: '/posts', icon: <FileText className="h-5 w-5" />, label: 'Blogs' },
+    { to: '/api-docs', icon: <Cpu className="h-5 w-5" />, label: 'API' },
+  ];
+
+  return (
+    <div className="md:hidden">
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button variant="outline" size="icon">
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">Open menu</span>
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left">
+          <div className="flex flex-col space-y-4 py-6">
+            <div className="px-2 space-y-1">
+              {navLinks.map((link) => (
+                <SheetNavItem key={link.to} to={link.to}>
+                  {link.icon}
+                  <span>{link.label}</span>
+                </SheetNavItem>
+              ))}
             </div>
-          )}
-          
-          <div className="flex items-center">
-             {/* Theme Toggle */}
-            <Button variant="ghost" size="icon" onClick={toggleTheme} className="mr-2">
-              <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-              <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Toggle theme</span>
-            </Button>
             
-            {/* Mobile Menu Button */}
-            {isMobile && (
-              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-                <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon">
-                    {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-                  </Button>
-                </SheetTrigger>
-                <SheetContent side="right" className="w-full sm:w-80 p-4">
-                  <div className="flex flex-col space-y-3 pt-8">
-                    {renderNavLinks(true)}
+            {/* Conditional Admin Links */}
+            {isAuthenticated && (
+              <>
+                <div className="border-t border-border pt-4">
+                  <div className="px-2 space-y-1">
+                    <SheetNavItem to="/admin/dashboard">
+                      <LayoutDashboard className="h-5 w-5" />
+                      <span>Dashboard</span>
+                    </SheetNavItem>
+                    <SheetClose asChild>
+                      <Button
+                        variant="ghost"
+                        onClick={handleLogout}
+                        className="w-full justify-start space-x-3 px-3 py-2 text-base font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <LogOut className="h-5 w-5" />
+                        <span>Logout</span>
+                      </Button>
+                    </SheetClose>
                   </div>
-                </SheetContent>
-              </Sheet>
+                </div>
+              </>
             )}
           </div>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+};
 
-        </div>
+// --- 3. Mobile Bottom Navigation ---
+const MobileBottomNavigation = () => {
+  const navLinks = [
+    { to: '/', icon: <Home className="h-5 w-5" />, label: 'Home' },
+    { to: '/archive', icon: <Archive className="h-5 w-5" />, label: 'Archive' },
+    { to: '/historical-charts', icon: <BarChart2 className="h-5 w-5" />, label: 'Charts' },
+    { to: '/posts', icon: <FileText className="h-5 w-5" />, label: 'Blogs' },
+  ];
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border shadow-lg z-50">
+      <div className="flex justify-around items-center h-16">
+        {navLinks.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            end // Ensure 'Home' link is only active for exact path
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center w-full transition-colors ${
+                isActive
+                  ? 'text-primary'
+                  : 'text-muted-foreground hover:text-primary'
+              }`
+            }
+          >
+            {link.icon}
+            <span className="text-xs font-medium">{link.label}</span>
+          </NavLink>
+        ))}
+        {/* Hamburger menu trigger is part of the bottom bar */}
+        <Sheet>
+          <SheetTrigger asChild>
+            <button className="flex flex-col items-center justify-center w-full text-muted-foreground hover:text-primary">
+              <Menu className="h-5 w-5" />
+              <span className="text-xs font-medium">More</span>
+            </button>
+          </SheetTrigger>
+          <SheetContent side="bottom">
+            <div className="flex flex-col space-y-4 py-6">
+              <div className="px-2 space-y-1">
+                {/* Re-list links for the sheet */}
+                {navLinks.map((link) => (
+                  <SheetNavItem key={link.to} to={link.to}>
+                    {link.icon}
+                    <span>{link.label}</span>
+                  </SheetNavItem>
+                ))}
+                {/* 'More' links */}
+                <SheetNavItem to="/api-docs">
+                  <Cpu className="h-5 w-5" />
+                  <span>API</span>
+                </SheetNavItem>
+                {/* You can add more links here like Contact, About etc. */}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
     </nav>
   );
 };
 
-export default Navigation;
+// --- Main Navigation Component ---
+export const Navigation = () => {
+  return (
+    <>
+      <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-16 max-w-7xl items-center justify-between">
+          <NavLink to="/" className="flex items-center space-x-2">
+            <img src="/icon-192.png" alt="Forex Nepal Logo" className="h-8 w-8" />
+            <span className="font-bold text-lg">Forex Nepal</span>
+          </NavLink>
+          
+          {/* Render Desktop Nav */}
+          <DesktopNavigation />
+          
+          {/* Render Mobile Hamburger (for top bar, but it's part of the bottom bar now) */}
+          {/* We'll use a placeholder div for spacing if needed, but DesktopNavigation is hidden on mobile */}
+          <div className="md:hidden" />
+        </div>
+      </header>
+      
+      {/* Render Mobile Bottom Nav */}
+      <MobileBottomNavigation />
+    </>
+  );
+};
