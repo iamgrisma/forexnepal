@@ -1,12 +1,12 @@
 // src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
-import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement } from './worker-types';
+import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement, UserProfile, User } from './worker-types'; // <-- Added UserProfile & User
 import { corsHeaders, CURRENCIES, CURRENCY_MAP } from './constants';
 import { generateSlug, formatDate } from './worker-utils';
 import { verifyToken, simpleHash, simpleHashCompare, generateToken } from './auth';
 import { processAndStoreApiData } from './scheduled';
-import { getAllSettings } from './api-helpers';
+import { getAllSettings, getUserFromToken } from './api-helpers'; // <-- Added getUserFromToken
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
@@ -25,14 +25,12 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
     const toDate = url.searchParams.get('to');
     
     if (!fromDate || !toDate) {
-           // --- SYNTAX ERROR FIX ---
            return new Response(JSON.stringify({ error: 'Missing date parameters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
         const { action } = (await request.json()) as { action: 'update' | 'replace' };
         if (action !== 'update' && action !== 'replace') {
-            // --- SYNTAX ERROR FIX ---
             return new Response(JSON.stringify({ error: 'Invalid action specified' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
@@ -295,15 +293,16 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 }
 
 /**
- * (ADMIN) Helper function to send password reset email via Brevo.
+ * (ADMIN) Helper function to send password reset/verification email via Brevo.
  */
-async function sendPasswordResetEmail(
+async function sendEmailVerification(
     env: Env,
     to: string,
     username: string,
-    resetToken: string,
-    resetUrl: string,
-    ctx: ExecutionContext
+    verificationCode: string,
+    ctx: ExecutionContext,
+    subject: string,
+    htmlContent: string // Pass full HTML content
 ): Promise<void> {
     const BREVO_API_KEY = env.BREVO_API_KEY;
     if (!BREVO_API_KEY) {
@@ -324,58 +323,15 @@ async function sendPasswordResetEmail(
                 email: 'admin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
-            // --- UPDATED: Email content reflects both options ---
-            subject: 'Login Code / Password Reset Request - Forex Nepal Admin',
-            htmlContent: `
-              <!DOCTYPE html>
-              <html>
-              <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <style>
-                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-                  .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-                  .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-                  .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-                  .token { font-family: 'Courier New', monospace; background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 18px; letter-spacing: 2px; }
-                </style>
-              </head>
-              <body>
-                <div class="container">
-                  <div class="header">
-                    <h1>Account Access Request</h1>
-                  </div>
-                  <div class="content">
-                    <p>Hello <strong>${username}</strong>,</p>
-                    <p>We received a request for a one-time login or password reset for your Forex Nepal Admin account.</p>
-                    <p>Click the button below to log in or reset your password:</p>
-                    <p style="text-align: center;">
-                      <a href="${resetUrl}" class="button">Access Your Account</a>
-                    </p>
-                    <p>Or copy and paste this link into your browser:</p>
-                    <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
-                    <p>Alternatively, you can use this code on the login page:</p>
-                    <p style="text-align: center;" class="token">${resetToken}</p>
-                    <p><strong>This link and code will expire in 15 minutes.</strong></p>
-                    <p>If you didn't request this, please ignore this email.</p>
-                  </div>
-                  <div class="footer">
-                    <p>Forex Nepal Admin Dashboard | Powered by Grisma</p>
-                    <p>This is an automated email, please do not reply.</p>
-                  </div>
-                </div>
-              </body>
-              </html>
-            `,
+            subject: subject,
+            htmlContent: htmlContent, // Use the provided HTML
         }),
     }).then(async (emailResponse) => {
          if (!emailResponse.ok) {
             const errorText = await emailResponse.text();
             console.error('Brevo API error:', errorText);
         } else {
-            console.log('Password reset/login email sent successfully via Brevo.');
+            console.log('Verification email sent successfully via Brevo.');
         }
     }).catch(emailError => {
         console.error('Email sending error:', emailError);
@@ -383,6 +339,7 @@ async function sendPasswordResetEmail(
 
     ctx.waitUntil(emailPromise);
 }
+
 
 /**
  * (ADMIN) Request a password reset email.
@@ -402,14 +359,11 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
             `SELECT username, email FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; email: string | null }>();
 
-        // --- UPDATED: Always find the user to check if they exist ---
-        // But only send an email if one is present
         if (!user) {
             console.log(`Password reset request for "${username}", but user not found. Sending success for security.`);
-            return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+            return new Response(JSON.stringify({ success: true, message: "If account exists, email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
         
-        // --- This function now generates the token for BOTH use cases ---
         const resetToken = crypto.randomUUID().replace(/-/g, '');
         const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
 
@@ -419,19 +373,42 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
 
         const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
-        // Only send the email if the user has one
         if (user.email) {
-            sendPasswordResetEmail(
-                env,
-                user.email,
-                user.username,
-                resetToken,
-                resetUrl,
-                ctx
-            );
+            const subject = 'Login Code / Password Reset Request - Forex Nepal Admin';
+            const htmlContent = `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <meta charset="UTF-8">
+                <style>
+                  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                  .header { background: #667eea; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                  .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+                  .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                  .token { font-family: 'Courier New', monospace; background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 18px; letter-spacing: 2px; }
+                </style>
+              </head>
+              <body>
+                <div class="container">
+                  <div class="header"><h1>Account Access Request</h1></div>
+                  <div class="content">
+                    <p>Hello <strong>${username}</strong>,</p>
+                    <p>Click the button below to log in or reset your password:</p>
+                    <p style="text-align: center;"><a href="${resetUrl}" class="button">Access Your Account</a></p>
+                    <p>Alternatively, use this code on the login page:</p>
+                    <p style="text-align: center;" class="token">${resetToken}</p>
+                    <p><strong>This link and code will expire in 15 minutes.</strong></p>
+                    <p>If you didn't request this, please ignore this email.</p>
+                  </div>
+                </div>
+              </body>
+              </html>`;
+            
+            sendEmailVerification(env, user.email, user.username, resetToken, ctx, subject, htmlContent);
         }
 
-        return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+        return new Response(JSON.stringify({ success: true, message: "If account exists, email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
 
     } catch (error: any) {
         console.error('Request password reset error:', error.message, error.cause);
@@ -558,21 +535,21 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
     try {
         if (request.method === 'GET') {
             const { results } = await env.FOREX_DB.prepare(
-                `SELECT username, email, role, is_active, created_at FROM users ORDER BY created_at DESC`
+                `SELECT username, email, role, is_active, created_at, full_name, mobile_number, profile_pic_url FROM users ORDER BY created_at DESC` // Added new fields
             ).all();
             return new Response(JSON.stringify({ success: true, users: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         
         if (request.method === 'POST') {
-            const { username, email, password, role } = await request.json();
+            const { username, email, password, role, full_name } = await request.json(); // Added full_name
             if (!username || !password) {
                 return new Response(JSON.stringify({ success: false, error: 'Username and password required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
             }
             
             const passwordHash = await simpleHash(password);
             await env.FOREX_DB.prepare(
-                `INSERT INTO users (username, email, password_hash, role, created_at, updated_at, is_active) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), 1)`
-            ).bind(username, email || null, passwordHash, role || 'admin').run();
+                `INSERT INTO users (username, email, password_hash, role, created_at, updated_at, is_active, full_name) VALUES (?, ?, ?, ?, datetime('now'), datetime('now'), 1, ?)`
+            ).bind(username, email || null, passwordHash, role || 'admin', full_name || username).run(); // Save full_name
             
             return new Response(JSON.stringify({ success: true }), { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -580,8 +557,8 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     } catch (error: any) {
         console.error('User management error:', error.message, error.cause);
-        if (error.message.includes('UNIQUE constraint failed: users.username')) {
-            return new Response(JSON.stringify({ success: false, error: 'Username already exists.' }), { status: 409, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        if (error.message.includes('UNIQUE constraint failed: users.username') || error.message.includes('UNIQUE constraint failed: users.email')) {
+            return new Response(JSON.stringify({ success: false, error: 'Username or email already exists.' }), { status: 409, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -841,9 +818,49 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
 }
 
 
-// --- REMOVED: ONE-TIME LOGIN HANDLERS ---
-// --- Removed handleOneTimeLogin ---
-// --- Removed handleGenerateOneTimeLoginCode ---
+// --- RE-ADDED: SECURE ONE-TIME LOGIN CODE GENERATION (FOR ADMINS) ---
+/**
+ * (ADMIN) Generates a one-time login token for a user.
+ * This is called BY AN ADMIN to manually generate a token for another user.
+ * This is secure because it uses the password_reset_tokens table.
+ */
+export async function handleGenerateOneTimeLoginCode(request: Request, env: Env): Promise<Response> {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { username } = await request.json();
+        if (!username) {
+            return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Check if user exists
+        const user = await env.FOREX_DB.prepare(`SELECT username FROM users WHERE username = ?`).bind(username).first();
+        if (!user) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Generate a full UUID token, as this is what the ResetPassword page expects
+        const accessCode = crypto.randomUUID().replace(/-/g, '');
+        // --- UPDATED: Use 15 minutes to match password reset ---
+        const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
+
+        // Use the correct table
+        await env.FOREX_DB.prepare(
+            `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
+        ).bind(username, accessCode, expiresAt).run();
+
+        // Return the token (code) to the admin
+        return new Response(JSON.stringify({ success: true, username: username, code: accessCode, expires_at: expiresAt }), { headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Error generating one-time login code:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
 
 
 // --- NEW GOOGLE LOGIN HANDLER ---
@@ -852,7 +869,7 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
  * Exchanges the code for an access token, gets user email,
  * and logs in if the email exists in the DB.
  */
-export async function handleGoogleLoginCallback(request: Request, env: Env): Promise<Response> {
+export async function handleGoogleLoginCallback(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -906,19 +923,39 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
             return new Response(JSON.stringify({ success: false, error: 'Failed to get user info from Google' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const googleUser = await userInfoResponse.json() as { email: string; email_verified: boolean };
+        const googleUser = await userInfoResponse.json() as { email: string; email_verified: boolean; picture?: string; name?: string }; // Added picture and name
 
         if (!googleUser.email || !googleUser.email_verified) {
             return new Response(JSON.stringify({ success: false, error: 'Google account must have a verified email' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        // 3. Find user in *your* database by email (as requested: "just login")
+        // 3. Find user in *your* database by email
         const user = await env.FOREX_DB.prepare(
-            `SELECT username FROM users WHERE email = ? AND is_active = 1`
-        ).bind(googleUser.email).first<{ username: string }>();
+            `SELECT username, profile_pic_url, full_name FROM users WHERE email = ? AND is_active = 1`
+        ).bind(googleUser.email).first<{ username: string, profile_pic_url: string | null, full_name: string | null }>();
 
         if (!user) {
             return new Response(JSON.stringify({ success: false, error: 'No admin account is associated with this Google email.' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        // --- NEW: Update profile picture and full name if they are empty ---
+        const updates: Promise<any>[] = [];
+        if (googleUser.picture && !user.profile_pic_url) {
+            updates.push(
+                env.FOREX_DB.prepare(`UPDATE users SET profile_pic_url = ? WHERE username = ?`)
+                    .bind(googleUser.picture, user.username)
+                    .run()
+            );
+        }
+        if (googleUser.name && !user.full_name) {
+             updates.push(
+                env.FOREX_DB.prepare(`UPDATE users SET full_name = ? WHERE username = ?`)
+                    .bind(googleUser.name, user.username)
+                    .run()
+            );
+        }
+        if (updates.length > 0) {
+            ctx.waitUntil(Promise.all(updates));
         }
 
         // 4. User exists! Generate your app's JWT token and log them in.
@@ -934,5 +971,209 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
     } catch (error: any) {
         console.error('Google callback error:', error.message, error.cause);
         return new Response(JSON.stringify({ success: false, error: 'Server error during Google login' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+
+// --- NEW: PROFILE MANAGEMENT HANDLERS ---
+
+/**
+ * (ADMIN) GET the logged-in user's profile information.
+ */
+export async function handleGetProfile(request: Request, env: Env): Promise<Response> {
+    const user = await getUserFromToken(request, env);
+    if (!user) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    // We already have the user data from getUserFromToken
+    const profile: UserProfile = {
+        username: user.username,
+        email: user.email,
+        full_name: user.full_name,
+        mobile_number: user.mobile_number,
+        profile_pic_url: user.profile_pic_url,
+        role: user.role,
+    };
+    
+    return new Response(JSON.stringify({ success: true, profile }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+}
+
+/**
+ * (ADMIN) POST (update) the logged-in user's profile information.
+ */
+export async function handleUpdateProfile(request: Request, env: Env): Promise<Response> {
+    const user = await getUserFromToken(request, env);
+    if (!user) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const {
+            full_name,
+            email,
+            mobile_number,
+            profile_pic_url,
+            password,
+            email_verification_code
+        } = await request.json();
+
+        let updates: D1PreparedStatement[] = [];
+
+        // --- 1. Handle Email Change ---
+        if (email && email !== user.email) {
+            if (!email_verification_code) {
+                return new Response(JSON.stringify({ success: false, error: 'Email verification code is required.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+
+            // Check for the special 'emver-' prefix
+            if (!email_verification_code.startsWith('emver-')) {
+                return new Response(JSON.stringify({ success: false, error: 'Invalid verification code format.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            
+            const tokenRecord = await env.FOREX_DB.prepare(
+                `SELECT username, expires_at, used FROM password_reset_tokens WHERE token = ? AND username = ?`
+            ).bind(email_verification_code, user.username).first<{ username: string; expires_at: string; used: number }>();
+
+            if (!tokenRecord) {
+                return new Response(JSON.stringify({ success: false, error: 'Invalid verification code.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            if (tokenRecord.used) {
+                return new Response(JSON.stringify({ success: false, error: 'Verification code already used.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            if (new Date(tokenRecord.expires_at) < new Date()) {
+                return new Response(JSON.stringify({ success: false, error: 'Verification code expired.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+
+            // All checks passed, mark token as used and update email
+            await env.FOREX_DB.prepare(`UPDATE password_reset_tokens SET used = 1 WHERE token = ?`).bind(email_verification_code).run();
+            updates.push(env.FOREX_DB.prepare(`UPDATE users SET email = ? WHERE username = ?`).bind(email, user.username));
+        }
+
+        // --- 2. Handle Password Change ---
+        if (password && password.length > 0) {
+            if (password.length < 8) {
+                return new Response(JSON.stringify({ success: false, error: 'Password must be at least 8 characters' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            const newPasswordHash = await simpleHash(password);
+            updates.push(env.FOREX_DB.prepare(`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?`).bind(newPasswordHash, user.username));
+        }
+        
+        // --- 3. Handle Other Fields ---
+        const simpleUpdateFields: { [key: string]: any } = {
+            full_name: full_name,
+            mobile_number: mobile_number,
+            profile_pic_url: profile_pic_url
+        };
+
+        const fieldsToUpdate = Object.keys(simpleUpdateFields)
+            .filter(key => simpleUpdateFields[key] !== undefined && simpleUpdateFields[key] !== user[key as keyof User])
+            .map(key => `${key} = ?`);
+
+        if (fieldsToUpdate.length > 0) {
+            const query = `UPDATE users SET ${fieldsToUpdate.join(', ')}, updated_at = datetime('now') WHERE username = ?`;
+            const values = Object.keys(simpleUpdateFields)
+                                .filter(key => simpleUpdateFields[key] !== undefined && simpleUpdateFields[key] !== user[key as keyof User])
+                                .map(key => simpleUpdateFields[key]);
+            values.push(user.username);
+            updates.push(env.FOREX_DB.prepare(query).bind(...values));
+        }
+
+        // --- 4. Execute Batch ---
+        if (updates.length > 0) {
+            await env.FOREX_DB.batch(updates);
+        }
+
+        // --- 5. Return new profile ---
+        const updatedUser = await env.FOREX_DB.prepare(`SELECT * FROM users WHERE username = ?`).bind(user.username).first<User>();
+        if (!updatedUser) {
+             return new Response(JSON.stringify({ success: false, error: 'Failed to retrieve updated profile.' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        const updatedProfile: UserProfile = {
+            username: updatedUser.username,
+            email: updatedUser.email,
+            full_name: updatedUser.full_name,
+            mobile_number: updatedUser.mobile_number,
+            profile_pic_url: updatedUser.profile_pic_url,
+            role: updatedUser.role,
+        };
+
+        return new Response(JSON.stringify({ success: true, profile: updatedProfile }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Update profile error:', error.message, error.cause);
+        if (error.message.includes('UNIQUE constraint failed: users.email')) {
+            return new Response(JSON.stringify({ success: false, error: 'This email is already in use by another account.' }), { status: 409, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+/**
+ * (ADMIN) Request an email verification code.
+ */
+export async function handleRequestEmailVerification(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const user = await getUserFromToken(request, env);
+    if (!user) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { email } = await request.json();
+        if (!email) {
+            return new Response(JSON.stringify({ success: false, error: 'Email is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        if (email === user.email) {
+             return new Response(JSON.stringify({ success: false, error: 'This is already your email address' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        // Generate the special 'emver-' token
+        const verificationToken = `emver-${crypto.randomUUID().slice(0, 8)}`; // Shorter code
+        const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
+
+        // Use the same password_reset_tokens table as requested
+        await env.FOREX_DB.prepare(
+            `INSERT INTO password_reset_tokens (username, token, expires_at) VALUES (?, ?, ?)`
+        ).bind(user.username, verificationToken, expiresAt).run();
+
+        // Send the verification email
+        const subject = 'Verify your new email - Forex Nepal Admin';
+        const htmlContent = `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #667eea; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+              .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+              .token { font-family: 'Courier New', monospace; background: #e9ecef; padding: 10px; border-radius: 4px; font-size: 18px; letter-spacing: 2px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header"><h1>Email Verification</h1></div>
+              <div class="content">
+                <p>Hello <strong>${user.username}</strong>,</p>
+                <p>You requested to change your email address to <strong>${email}</strong>.</p>
+                <p>Please use the following verification code to confirm this change:</p>
+                <p style="text-align: center;" class="token">${verificationToken}</p>
+                <p><strong>This code will expire in 15 minutes.</strong></p>
+                <p>If you didn't request this, please ignore this email.</p>
+              </div>
+            </div>
+          </body>
+          </html>`;
+        
+        sendEmailVerification(env, email, user.username, verificationToken, ctx, subject, htmlContent);
+
+        return new Response(JSON.stringify({ success: true, message: "Verification code sent to new email" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
+
+    } catch (error: any) {
+        console.error('Request email verification error:', error.message, error.cause);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
