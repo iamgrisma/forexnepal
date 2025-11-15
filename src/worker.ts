@@ -1,4 +1,4 @@
-// src/worker.ts
+// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/worker.ts
 import { Env, ExecutionContext, ScheduledEvent } from './worker-types';
 import { corsHeaders } from './constants';
 import { handleScheduled } from './scheduled';
@@ -35,10 +35,10 @@ import {
     handleForexData,
     handleGetApiSettings,
     handleUpdateApiSettings,
-    // --- IMPORT NEW HANDLERS ---
-    handleOneTimeLogin,
-    handleGenerateOneTimeLoginCode,
-    handleGoogleLoginCallback // --- ADD THIS IMPORT ---
+    handleGoogleLoginCallback,
+    // --- IMPORT NEW HANDLER ---
+    handleLoginWithResetToken
+    // --- REMOVED OLD HANDLERS (handleOneTimeLogin, handleGenerateOneTimeLoginCode) ---
 } from './api-admin';
 
 export default {
@@ -117,16 +117,16 @@ export default {
                 return handleArchiveDetailApi(request, env);
             }
 
-            // --- Admin Auth Routes (No token required, but pass secret for token generation) ---
+            // --- Admin Auth Routes (No token required) ---
             if (pathname === '/api/admin/check-user' && method === 'POST') {
                 return handleCheckUser(request, env);
             }
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
-            if (pathname === '/api/admin/login-one-time' && method === 'POST') {
-                return handleOneTimeLogin(request, env); // env contains JWT_SECRET
-            }
+            // --- REMOVED OLD ROUTE ---
+            // if (pathname === '/api/admin/login-one-time' && method === 'POST')
+            
             // --- ADD NEW GOOGLE CALLBACK ROUTE ---
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
                 return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
@@ -141,6 +141,12 @@ export default {
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
+            // --- ADD NEW LOGIN-WITH-TOKEN ROUTE ---
+            if (pathname === '/api/admin/login-with-token' && method === 'POST') {
+                return handleLoginWithResetToken(request, env); // env contains JWT_SECRET
+            }
+            // --- END NEW ROUTE ---
+
 
             // --- Admin Protected Routes (Token required) ---
             if (pathname.startsWith('/api/admin/')) {
@@ -183,9 +189,8 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
-                if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
-                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
-                }
+                // --- REMOVED OLD ROUTE ---
+                // if (pathname === '/api/admin/generate-login-code' && method === 'POST')
             }
 
             // --- THIS IS THE LINE I FIXED (added colon) ---
