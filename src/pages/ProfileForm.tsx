@@ -29,7 +29,8 @@ const profileSchema = z.object({
   profile_pic_url: z.string().url('Must be a valid URL').optional().or(z.literal('')),
   email: z.string().email('Invalid email address'),
   email_verification_code: z.string().optional(),
-  password: z.string().optional(),
+  // Password is optional and must be at least 8 chars *if* provided
+  password: z.string().min(8, 'Password must be at least 8 characters').optional().or(z.literal('')),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -70,7 +71,6 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) 
       if (result.success) {
         sonnerToast.success('Profile updated successfully!');
         onSave(result.user); // Pass updated profile back to parent (this now also hides the form)
-        // No need to reset form, as the component will unmount/re-render
       } else {
         throw new Error(result.error || 'Failed to update profile.');
       }
@@ -101,14 +101,13 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) 
       setIsSendingCode(false);
     }
   };
-  
+
   // Reset verification state if user changes email back to original
   const watchedEmail = form.watch('email');
   if (watchedEmail === currentEmail && showVerification) {
     setShowVerification(false);
   }
   const emailChanged = watchedEmail !== currentEmail;
-
 
   return (
     <Form {...form}>
@@ -240,7 +239,7 @@ const ProfileForm: React.FC<ProfileFormProps> = ({ profile, onSave, onCancel }) 
           />
         </div>
 
-        {/* --- NEW: Button Group with Cancel --- */}
+        {/* --- MODIFIED: Button Group with Cancel --- */}
         <div className="flex flex-col-reverse sm:flex-row gap-2">
           <Button 
             type="button" 
