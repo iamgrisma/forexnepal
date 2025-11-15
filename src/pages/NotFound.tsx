@@ -8,7 +8,7 @@ import ForexTicker from '../components/ForexTicker';
 import ShareButtons from '@/components/ShareButtons';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { RefreshCw, Gitlab, List, Grid3X3, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useToast } from '@/components/ui/use-toast';
 import Layout from '@/components/Layout';
 import AdSense from '@/components/AdSense';
@@ -17,15 +17,14 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format, subDays, addDays } from 'date-fns';
-import { Link } from 'react-router-dom';
 // --- TASK 4: Import DB-First Service ---
 import { fetchRatesForDateWithCache } from '../services/d1ForexService'; 
 // --- END TASK 4 ---
 
-// NOTE: This component is a 404 page that ALSO renders the Index page content as a fallback.
-// This is an unusual pattern, but we will apply the optimization here as well.
+// --- NEW: Import getFlagEmoji ---
+import { getFlagEmoji } from '../services/forexService';
 
-const NotFound = () => {
+const Index = () => {
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [popularCurrencies, setPopularCurrencies] = useState<Rate[]>([]);
@@ -84,9 +83,20 @@ const NotFound = () => {
     }
   }, [prevDayData]);
 
+  // --- THIS IS THE KEY FIX ---
+  // Determine which data to display.
+  // Use today's data (forexData) if it's available and has rates.
+  // Otherwise, fall back to the previous day's data (prevDayData).
+  const displayData: RatesData | undefined = 
+    (forexData?.rates && forexData.rates.length > 0) 
+    ? forexData 
+    : prevDayData;
+  // --- END OF FIX ---
+
   useEffect(() => {
-    if (forexData?.rates) {
-      const allRates = forexData.rates;
+    // --- UPDATE: Use displayData ---
+    if (displayData?.rates) {
+      const allRates = displayData.rates;
 
       const popularCodes = ['USD', 'EUR', 'GBP', 'AUD', 'JPY', 'CHF'];
       const asianCodes = ['JPY', 'CNY', 'SGD', 'HKD', 'MYR', 'KRW', 'THB', 'INR'];
@@ -113,7 +123,7 @@ const NotFound = () => {
         setMiddleEastCurrencies([]);
         setOtherCurrencies([]);
     }
-  }, [forexData]);
+  }, [displayData]); // --- UPDATE: Depend on displayData ---
 
   const handleRefresh = async () => {
     toast({
@@ -126,9 +136,12 @@ const NotFound = () => {
       queryClient.invalidateQueries({ queryKey: ['previousDayRates', selectedDateString] })
     ]);
   };
+  
+  // --- UPDATE: Use displayData to populate rates ---
+  const rates: Rate[] = displayData?.rates || [];
+  // --- UPDATE: Check if the data being shown is from the fallback ---
+  const isShowingFallback = (!forexData || (forexData.rates && forexData.rates.length === 0)) && (prevDayData?.rates && prevDayData.rates.length > 0);
 
-  const ratesData: RatesData | undefined = forexData;
-  const rates: Rate[] = ratesData?.rates || [];
 
   const handleDateChange = (date: Date | undefined) => {
     if (date) {
@@ -148,127 +161,415 @@ const NotFound = () => {
     }
   };
 
+  // --- 
+  // --- 
+  // --- UPDATED IMAGE DOWNLOAD FUNCTION ---
+  // --- 
+  // --- 
   const downloadContentAsImage = async () => {
-    const targetElementId = viewMode === 'table' ? 'forex-table-container' : 'forex-grid-container';
-    const targetElement = document.getElementById(targetElementId);
+    // 1. Determine which rates to render
+    const ratesToRender: Rate[] = rates; // Use all 22 rates
 
-    if (!targetElement) {
-        toast({
-            title: "Error",
-            description: "Content for download not found.",
-            variant: "destructive",
-        });
-        return;
+    if (!ratesToRender || ratesToRender.length === 0) {
+      toast({
+        title: "Error",
+        description: "No data to download.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    // Create a temporary wrapper to include the title and footer for both views
+    // --- Helper function to get trend data ---
+    const getTrend = (currentRate: Rate, type: 'buy' | 'sell'): { diff: number, trend: 'increase' | 'decrease' | 'stable' } => {
+      const prevRate = previousDayRates.find(r => r.currency.iso3 === currentRate.currency.iso3);
+      if (!prevRate) { // Return stable with 0 diff if no prev rate
+        return { diff: 0, trend: 'stable' }; 
+      }
+      
+      // --- FIX: Use parseFloat with fallback to 0 to handle null/string ---
+      const prevValue = parseFloat(prevRate[type] as any || 0) / (prevRate.currency.unit || 1);
+      const currentValue = parseFloat(currentRate[type] as any || 0) / (currentRate.currency.unit || 1);
+      const diff = currentValue - prevValue;
+      
+      const trend = diff > 0.0001 ? 'increase' : (diff < -0.0001 ? 'decrease' : 'stable');
+      return { diff, trend };
+    };
+
+    // 2. Create a wrapper for the image content
     const wrapper = document.createElement('div');
-    wrapper.style.width = 'fit-content'; // Adjust width based on content
+    // --- 
+    // --- THIS IS THE FIX ---
+    // --- Set width to 2480px (2400px content + 80px padding)
+    wrapper.style.width = '2480px'; 
+    // ---
+    // ---
     wrapper.style.padding = '40px';
-    wrapper.style.backgroundColor = 'white';
+    wrapper.style.backgroundColor = '#FFFFFF'; // Solid white background
     wrapper.style.fontFamily = 'system-ui, -apple-system, sans-serif';
     wrapper.style.display = 'flex';
     wrapper.style.flexDirection = 'column';
-    wrapper.style.alignItems = 'center'; // Center the content
+    wrapper.style.alignItems = 'center';
+    wrapper.style.boxSizing = 'border-box'; // This makes the 2480px include the 80px padding
 
-    // Title for the image
+
+    // 3. Add High-Contrast Title
     const titleEl = document.createElement('h1');
     titleEl.style.textAlign = 'center';
-    titleEl.style.fontSize = '32px';
-    titleEl.style.fontWeight = 'bold';
-    titleEl.style.marginBottom = '30px';
-    titleEl.style.color = '#1f2937';
-    titleEl.style.whiteSpace = 'pre-wrap'; // Allows line breaks
-    titleEl.innerHTML = `Foreign Exchange Rates as Per Nepal Rastra Bank\nfor ${formatDateLong(selectedDate)}`;
+    titleEl.style.fontSize = '60px'; 
+    titleEl.style.fontWeight = '700';
+    titleEl.style.marginBottom = '40px';
+    titleEl.style.color = '#111827'; // Dark text
+    titleEl.style.lineHeight = '1.2';
+    const displayDate = displayData ? new Date(displayData.date) : selectedDate;
+    titleEl.innerHTML = `Foreign Exchange Rate by NRB for ${formatDateLong(displayDate)}`;
     wrapper.appendChild(titleEl);
 
-    // Clone the actual content (table or grid)
-    const contentClone = targetElement.cloneNode(true) as HTMLElement;
-    contentClone.style.fontSize = '16px'; // Standardize font size for image
-    // Ensure grid layout works well for image by potentially adjusting column count if too wide
-    if (viewMode === 'grid') {
-        contentClone.style.display = 'grid';
-        contentClone.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))'; // Adjust as needed
-        contentClone.style.gap = '20px'; // Adjust gap
-        contentClone.style.width = '1200px'; // Fixed width for consistent image output
-        contentClone.style.padding = '20px';
-    } else {
-        contentClone.style.width = '1200px'; // Fixed width for table
-        contentClone.style.padding = '20px';
+    // 4. Re-build content based on viewMode
+    if (viewMode === 'table') {
+      // Split rates into two columns (11 rates each)
+      const midpoint = Math.ceil(ratesToRender.length / 2); // 22 -> 11
+      const column1Rates = ratesToRender.slice(0, midpoint);
+      const column2Rates = ratesToRender.slice(midpoint);
+
+      const tableContainer = document.createElement('div');
+      tableContainer.style.display = 'flex';
+      tableContainer.style.flexDirection = 'row';
+      tableContainer.style.gap = '20px';
+      tableContainer.style.width = '100%'; // 100% of the 2400px content area
+
+      const buildTable = (ratesList: Rate[], snOffset: number) => {
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.fontFamily = 'sans-serif';
+
+        // Create Table Header
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.style.backgroundColor = '#F3F4F6'; // Solid light gray
+        const headers = ['SN', 'Currency', 'Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'];
+        headers.forEach(headerText => {
+          const th = document.createElement('th');
+          th.textContent = headerText;
+          th.style.padding = '20px';
+          th.style.fontSize = '22px';
+          th.style.fontWeight = '600';
+          th.style.textAlign = 'left';
+          th.style.color = '#1F2937'; // Dark text
+          th.style.borderBottom = '2px solid #D1D5DB';
+          if (['Unit', 'Buying Rate', 'Selling Rate', 'Buy Trend', 'Sell Trend'].includes(headerText)) {
+              th.style.textAlign = 'right';
+          }
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Create Table Body
+        const tbody = document.createElement('tbody');
+        ratesList.forEach((rate, index) => {
+          const tr = document.createElement('tr');
+          if (index % 2 === 1) tr.style.backgroundColor = '#F9FAFB'; // Zebra striping
+
+          // SN
+          const tdSn = document.createElement('td');
+          tdSn.textContent = (index + 1 + snOffset).toString();
+          
+          // Currency
+          const tdCurrency = document.createElement('td');
+          tdCurrency.innerHTML = `<span style="font-size: 32px; margin-right: 16px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span> <span style="vertical-align: middle;">${rate.currency.name} (${rate.currency.iso3})</span>`;
+          tdCurrency.style.fontWeight = '600';
+          tdCurrency.style.color = '#111827';
+          
+          // Unit
+          const tdUnit = document.createElement('td');
+          tdUnit.textContent = rate.currency.unit.toString();
+          tdUnit.style.textAlign = 'right';
+
+          // Buy Rate
+          const tdBuy = document.createElement('td');
+          tdBuy.textContent = Number(rate.buy || 0).toFixed(2);
+          tdBuy.style.color = '#15803D'; // Dark green
+          tdBuy.style.fontWeight = '700';
+          tdBuy.style.textAlign = 'right';
+          
+          // Sell Rate
+          const tdSell = document.createElement('td');
+          tdSell.textContent = Number(rate.sell || 0).toFixed(2);
+          tdSell.style.color = '#B91C1C'; // Dark red
+          tdSell.style.fontWeight = '700';
+          tdSell.style.textAlign = 'right';
+
+          // Trends
+          const buyTrend = getTrend(rate, 'buy');
+          const sellTrend = getTrend(rate, 'sell');
+          
+          const tdBuyTrend = document.createElement('td');
+          const tdSellTrend = document.createElement('td');
+          
+          [tdBuyTrend, tdSellTrend].forEach((td, i) => {
+              const trendData = i === 0 ? buyTrend : sellTrend;
+              if (trendData.trend === 'increase') {
+                  td.innerHTML = `<span style="color: #16A34A;">▲ ${trendData.diff.toFixed(2)}</span>`;
+              } else if (trendData.trend === 'decrease') {
+                  td.innerHTML = `<span style="color: #DC2626;">▼ ${trendData.diff.toFixed(2)}</span>`;
+              } else {
+                  td.innerHTML = `<span style="color: #6B7280;">—</span>`;
+              }
+              td.style.fontWeight = '600';
+              td.style.textAlign = 'right';
+          });
+
+          [tdSn, tdCurrency, tdUnit, tdBuy, tdSell, tdBuyTrend, tdSellTrend].forEach(td => {
+              td.style.padding = '18px 20px';
+              td.style.borderBottom = '1px solid #E5E7EB';
+              td.style.fontSize = '22px';
+              td.style.verticalAlign = 'middle';
+              tr.appendChild(td);
+          });
+          
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        return table;
+      };
+
+      tableContainer.appendChild(buildTable(column1Rates, 0));
+      tableContainer.appendChild(buildTable(column2Rates, column1Rates.length));
+      wrapper.appendChild(tableContainer);
+
+    } else { // viewMode === 'grid'
+      const gridContainer = document.createElement('div');
+      gridContainer.style.display = 'flex'; // Use flex column to stack rows
+      gridContainer.style.flexDirection = 'column';
+      gridContainer.style.gap = '24px';
+      gridContainer.style.width = '100%'; // 100% of the 2400px content area
+      gridContainer.style.boxSizing = 'border-box';
+      
+      const numColumns = 6;
+      const gap = 24;
+      const totalGapWidth = gap * (numColumns - 1); // 24 * 5 = 120
+      // This math is now correct, as the content area IS 2400px
+      const cardWidthPx = (2400 - totalGapWidth) / numColumns; // (2400 - 120) / 6 = 380px
+
+      // --- Helper to build a single card ---
+      const buildGridCard = (rate: Rate) => {
+        const card = document.createElement('div');
+        card.style.border = '2px solid #E5E7EB';
+        card.style.borderRadius = '16px'; 
+        card.style.padding = '24px'; 
+        card.style.backgroundColor = '#FFFFFF';
+        card.style.display = 'flex';
+        card.style.flexDirection = 'column';
+        card.style.gap = '20px'; 
+        card.style.boxSizing = 'border-box';
+        card.style.height = '280px'; 
+        card.style.justifyContent = 'space-between'; 
+        card.style.flexBasis = `${cardWidthPx}px`;
+        card.style.flexGrow = '0';
+        card.style.flexShrink = '0';
+
+        // Card Header
+        const cardHeader = document.createElement('div');
+        cardHeader.style.display = 'flex';
+        cardHeader.style.alignItems = 'center';
+        cardHeader.style.gap = '12px'; 
+        
+        cardHeader.innerHTML = `
+          <span style="font-size: 48px; vertical-align: middle;">${getFlagEmoji(rate.currency.iso3)}</span>
+          <div style="display: flex; flex-direction: column; justify-content: center; flex: 1; min-width: 0;">
+            <h3 style="font-weight: 700; font-size: 22px; color: #000000; line-height: 1.3; margin: 0; word-wrap: break-word;">${rate.currency.name}</h3>
+            <div style="font-size: 18px; font-weight: 600; color: #1D4ED8; margin-top: 4px;">
+              ${rate.currency.iso3} (${rate.currency.unit})
+            </div>
+          </div>
+        `;
+        
+        // Card Body (Buy/Sell)
+        const cardBody = document.createElement('div');
+        cardBody.style.display = 'grid';
+        cardBody.style.gridTemplateColumns = '1fr 1fr';
+        cardBody.style.gap = '12px';
+        
+        const buyTrend = getTrend(rate, 'buy');
+        const sellTrend = getTrend(rate, 'sell');
+
+        // Buy Box
+        const buyBox = document.createElement('div');
+        buyBox.style.backgroundColor = '#F0FDF4';
+        buyBox.style.border = '1px solid #BBF7D0';
+        buyBox.style.borderRadius = '8px';
+        buyBox.style.padding = '12px';
+        buyBox.style.textAlign = 'center';
+        buyBox.innerHTML = `
+          <div style="font-size: 16px; font-weight: 600; color: #166534; margin-bottom: 4px;">BUY</div>
+          <div style="font-size: 26px; font-weight: 700; color: #15803D; margin-bottom: 4px;">${Number(rate.buy || 0).toFixed(2)}</div>
+          <div style="font-size: 16px; font-weight: 600; color: ${buyTrend.trend === 'increase' ? '#16A34A' : buyTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+            ${buyTrend.trend === 'increase' ? `▲ +${buyTrend.diff.toFixed(2)}` : buyTrend.trend === 'decrease' ? `▼ ${buyTrend.diff.toFixed(2)}` : '—'}
+          </div>
+        `;
+
+        // Sell Box
+        const sellBox = document.createElement('div');
+        sellBox.style.backgroundColor = '#FEF2F2';
+        sellBox.style.border = '1px solid #FECACA';
+        sellBox.style.borderRadius = '8px';
+        sellBox.style.padding = '12px';
+        sellBox.style.textAlign = 'center';
+        sellBox.innerHTML = `
+          <div style="font-size: 16px; font-weight: 600; color: #991B1B; margin-bottom: 4px;">SELL</div>
+          <div style="font-size: 26px; font-weight: 700; color: #B91C1C; margin-bottom: 4px;">${Number(rate.sell || 0).toFixed(2)}</div>
+          <div style="font-size: 16px; font-weight: 600; color: ${sellTrend.trend === 'increase' ? '#16A34A' : sellTrend.trend === 'decrease' ? '#DC2626' : '#6B7280'};">
+            ${sellTrend.trend === 'increase' ? `▲ +${sellTrend.diff.toFixed(2)}` : sellTrend.trend === 'decrease' ? `▼ ${sellTrend.diff.toFixed(2)}` : '—'}
+          </div>
+        `;
+        
+        cardBody.appendChild(buyBox);
+        cardBody.appendChild(sellBox);
+        card.appendChild(cardHeader);
+        card.appendChild(cardBody);
+        return card;
+      };
+      
+      // --- Build the custom 6-6-6-4 grid ---
+      
+      // Helper for rows of 6 cards
+      const buildCardRow = (ratesSlice: Rate[]) => {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.gap = '24px';
+        row.style.width = '100%';
+        row.style.flexWrap = 'nowrap'; // Ensure they stay in one row
+        ratesSlice.forEach(rate => row.appendChild(buildGridCard(rate)));
+        return row;
+      };
+
+      // Row 1 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(0, 6)));
+
+      // Row 2 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(6, 12)));
+
+      // Row 3 (6 items)
+      gridContainer.appendChild(buildCardRow(ratesToRender.slice(12, 18)));
+      
+      // Row 4 (2 cards, 1 info box, 2 cards)
+      const row4 = document.createElement('div');
+      row4.style.display = 'flex';
+      row4.style.gap = '24px';
+      row4.style.width = '100%';
+      row4.style.flexWrap = 'nowrap';
+      row4.style.alignItems = 'stretch'; // Make items equal height
+
+      // First 2 cards
+      ratesToRender.slice(18, 20).forEach(rate => row4.appendChild(buildGridCard(rate)));
+      
+      // Info Box (occupying 2 spots)
+      const infoBox = document.createElement('div');
+      infoBox.style.padding = '30px';
+      infoBox.style.backgroundColor = '#F0F4F8'; // Light Blue/Gray
+      infoBox.style.border = '2px solid #D1D5DB';
+      infoBox.style.borderRadius = '16px';
+      infoBox.style.textAlign = 'center';
+      infoBox.style.color = '#374151';
+      infoBox.style.lineHeight = '1.6';
+      infoBox.style.height = '280px'; // --- Match card height ---
+      infoBox.style.boxSizing = 'border-box';
+      const infoBoxWidthPx = (cardWidthPx * 2) + gap; // (380 * 2) + 24 = 784px
+      infoBox.style.flexBasis = `${infoBoxWidthPx}px`;
+      infoBox.style.flexShrink = '0';
+      
+      infoBox.style.display = 'flex';
+      infoBox.style.flexDirection = 'column';
+      infoBox.style.justifyContent = 'center';
+      infoBox.style.alignItems = 'center';
+      
+      infoBox.innerHTML = `
+        <p style="font-weight: 700; font-size: 26px; margin: 0; color: #111827; line-height: 1.3;">Foreign Exchange Rate for Nepal Published by Nepal Rastra Bank for ${formatDateLong(displayDate)}</p>
+        <p style="font-size: 18px; margin: 12px 0 0 0; color: #4B5563; line-height: 1.5;">This data is generated using Nepal Rastra Bank ForexAPI. Data presentation, extraction and designed by Grisma | visit forex.grisma.com.np for more information.</p>
+      `;
+      row4.appendChild(infoBox);
+
+      // Last 2 cards
+      ratesToRender.slice(20, 22).forEach(rate => row4.appendChild(buildGridCard(rate)));
+      
+      gridContainer.appendChild(row4);
+      wrapper.appendChild(gridContainer);
     }
-    wrapper.appendChild(contentClone);
 
-    // Footer
+    // 5. Add a high-contrast footer
     const footer = document.createElement('div');
-    footer.style.marginTop = '30px';
+    footer.style.marginTop = '40px';
     footer.style.textAlign = 'center';
-    footer.style.fontSize = '14px';
-    footer.style.color = '#6b7280';
-    footer.style.width = '100%'; // Ensure footer stretches if needed
+    footer.style.width = '100%'; // 100% of the 2400px content area
+    footer.style.boxSizing = 'border-box';
+    footer.style.padding = '20px';
+    footer.style.borderTop = '2px solid #E5E7EB';
 
-    const source = document.createElement('p');
-    source.style.marginBottom = '10px';
-    source.style.fontWeight = '600';
-    const lastUpdated = new Date().toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    source.textContent = `Source: Nepal Rastra Bank (NRB) | Last updated: ${lastUpdated}`;
-    footer.appendChild(source);
+    const line1 = document.createElement('p');
+    line1.style.fontWeight = '700';
+    line1.style.fontSize = '26px';
+    line1.style.margin = '0';
+    line1.style.color = '#111827';
+    line1.style.lineHeight = '1.3';
+    line1.textContent = `Foreign Exchange Rate for Nepal Published by Nepal Rastra Bank for ${formatDateLong(displayDate)}`;
+    footer.appendChild(line1);
 
-    const disclaimer = document.createElement('p');
-    disclaimer.style.fontStyle = 'italic';
-    disclaimer.style.fontSize = '12px';
-    disclaimer.textContent = 'Rates are subject to change. Please verify with your financial institution before conducting transactions.';
-    footer.appendChild(disclaimer);
-
-    const designer = document.createElement('p');
-    designer.style.fontStyle = 'italic';
-    designer.style.fontSize = '12px';
-    designer.style.marginTop = '10px';
-    designer.style.color = '#4b5563';
-    designer.textContent = 'Data extraction and presentation designed by Grisma Bhandari';
-    footer.appendChild(designer);
-
+    const line2 = document.createElement('p');
+    line2.style.fontSize = '20px'; 
+    line2.style.margin = '12px 0 0 0';
+    line2.style.color = '#4B5563';
+    line2.style.lineHeight = '1.5';
+    line2.textContent = `This data is generated using Nepal Rastra Bank ForexAPI. Data presentation, extraction and designed by Grisma | visit forex.grisma.com.np for more information.`;
+    footer.appendChild(line2);
+    
     wrapper.appendChild(footer);
 
-    // Temporarily add to DOM to render for html2canvas
+    // 6. Append to DOM (hidden) for rendering
     wrapper.style.position = 'absolute';
     wrapper.style.left = '-9999px';
     document.body.appendChild(wrapper);
 
+    // 7. Generate canvas and download as PNG
     try {
+      toast({
+        title: "Generating Image...",
+        description: "This may take a few seconds for high resolution.",
+      });
+
       const canvas = await html2canvas(wrapper, {
-        scale: 2, // High resolution
-        backgroundColor: '#ffffff',
-        width: wrapper.offsetWidth, // Use wrapper's actual rendered width
-        height: wrapper.offsetHeight // Use wrapper's actual rendered height
+        scale: 1, 
+        backgroundColor: '#ffffff', 
+        width: wrapper.offsetWidth,  // This will now correctly be 2480
+        height: wrapper.offsetHeight, // This will be the full calculated height
+        useCORS: true, 
       });
 
       const link = document.createElement('a');
-      link.download = `forex-rates-${viewMode}-${format(selectedDate, 'yyyy-MM-dd')}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.download = `forex-rates-${viewMode}-${format(displayDate, 'yyyy-MM-dd')}.png`;
+      link.href = canvas.toDataURL('image/png'); // Use PNG
       link.click();
 
       toast({
         title: "Success",
-        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as image.`,
+        description: `${viewMode === 'table' ? 'Table' : 'Grid'} downloaded as PNG image.`,
       });
     } catch (error) {
       console.error('Error generating image:', error);
       toast({
         title: "Error",
-        description: `Failed to download ${viewMode === 'table' ? 'table' : 'grid'} as image.`,
+        description: `Failed to download ${viewMode === 'table' ? 'Table' : 'grid'} as image.`,
         variant: "destructive",
       });
     } finally {
-      document.body.removeChild(wrapper); // Clean up
+      document.body.removeChild(wrapper); // 8. Clean up
     }
   };
+  // --- 
+  // --- 
+  // --- END: CORRECTED FUNCTION ---
+  // --- 
+  // --- 
 
 
   // Helper function to render grid cards
@@ -295,36 +596,34 @@ const NotFound = () => {
     <Layout>
       <div className="py-12 px-4 sm:px-6 lg:px-8 transition-all duration-500">
         <div className="max-w-7xl mx-auto">
-          {/* 404 Header */}
-           <div className="text-center mb-12 animate-fade-in p-8 bg-red-50 border border-red-200 rounded-lg">
-             <AlertCircle className="h-12 w-12 mx-auto mb-4 text-destructive" />
-             <h1 className="text-4xl font-bold text-destructive mb-4">Page Not Found (404)</h1>
-             <p className="text-xl text-red-700 max-w-3xl mx-auto mb-6">
-                We couldn't find the page you were looking for.
-             </p>
-             <Button asChild>
-                <Link to="/">Go to Homepage</Link>
-             </Button>
-           </div>
-          
-           {/* Separator */}
-           <div className="relative my-12">
-             <div className="absolute inset-0 flex items-center" aria-hidden="true">
-               <div className="w-full border-t border-gray-300" />
-             </div>
-             <div className="relative flex justify-center">
-               <span className="bg-gradient-to-br from-slate-50 via-blue-50 to-cyan-50 px-4 text-sm text-gray-500">
-                 Or see today's rates below
-               </span>
-             </div>
-           </div>
+          {/* Header section - Fixed heights */}
+          <div className="text-center mb-12 animate-fade-in min-h-[140px]">
+            <div className="inline-flex items-center justify-center bg-primary/10 text-primary px-3 py-1 rounded-full text-sm font-medium mb-4 h-8">
+              <Gitlab className="h-4 w-4 mr-1" />
+              <span>Live Forex Data</span>
+            </div>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Nepal Rastra Bank</h1>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              Track real-time foreign exchange rates with beautiful visualizations and seamless updates.
+            </p>
+          </div>
 
           {/* Main Title with Date Navigation - Fixed heights */}
           <div className="text-center mb-8 min-h-[100px]">
-            <h2 className="text-2xl sm:text-3xl font-bold text-gray-800 mb-2">
-              Foreign Exchange Rates as Per Nepal Rastra Bank
+            {/* --- UPDATED: Title font size reduced --- */}
+            <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-2 truncate">
+              Foreign Exchange Rates by NRB for {formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}
             </h2>
-            <div className="flex items-center justify-center gap-2 h-10">
+
+            {/* --- NEW: Show fallback message --- */}
+            {isShowingFallback && (
+              <div className="text-sm text-orange-600 font-medium animate-fade-in">
+                No data found for {formatDateLong(selectedDate)}. Showing data for {formatDateLong(subDays(selectedDate, 1))}.
+              </div>
+            )}
+            {/* --- END NEW --- */}
+
+            <div className="flex items-center justify-center gap-2 h-10 mt-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -343,12 +642,15 @@ const NotFound = () => {
                   <Button
                     variant="outline"
                     className={cn(
-                      "w-[240px] justify-center text-left font-normal group relative",
-                      !selectedDate && "text-muted-foreground"
+                      "w-auto px-4 justify-center text-left font-normal group relative", // w-[240px] removed
+                      !selectedDate && "text-muted-foreground",
+                      // --- NEW: Highlight if showing fallback ---
+                      isShowingFallback && "border-orange-300 bg-orange-50 hover:bg-orange-100"
                     )}
                   >
+                    {/* --- UPDATED: Removed formatting, just show date --- */}
                     <span className="text-lg font-semibold text-gray-700">
-                      {formatDateLong(selectedDate)}
+                      {format(displayData ? new Date(displayData.date) : selectedDate, 'MMMM d, yyyy')}
                     </span>
                     <span className="absolute hidden group-hover:block -top-8 px-2 py-1 bg-gray-700 text-white text-xs rounded-md whitespace-nowrap">
                       Click to change date
@@ -390,7 +692,7 @@ const NotFound = () => {
           <div className="flex flex-wrap justify-end items-center mb-6 gap-2 min-h-[40px]">
             <div className="overflow-x-auto flex-shrink-0">
               <ShareButtons 
-                title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(selectedDate)}`}
+                title={`Nepal Rastra Bank Forex Rates for ${formatDateLong(displayData ? new Date(displayData.date) : selectedDate)}`}
                 className="flex-nowrap"
               />
             </div>
@@ -471,7 +773,9 @@ const NotFound = () => {
 
             <TabsContent value="popular" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={popularCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={popularCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                 renderGridCards(popularCurrencies)
               )}
@@ -479,7 +783,9 @@ const NotFound = () => {
 
             <TabsContent value="asian" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={asianCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={asianCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(asianCurrencies)
               )}
@@ -487,7 +793,9 @@ const NotFound = () => {
 
             <TabsContent value="european" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={europeanCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={europeanCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(europeanCurrencies)
               )}
@@ -495,7 +803,9 @@ const NotFound = () => {
 
             <TabsContent value="middle-east" className="animate-fade-in">
               {viewMode === 'table' ? (
-                <ForexTable rates={middleEastCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                <div id="forex-table-container">
+                  <ForexTable rates={middleEastCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                </div>
               ) : (
                  renderGridCards(middleEastCurrencies)
               )}
@@ -503,7 +813,9 @@ const NotFound = () => {
 
              <TabsContent value="other" className="animate-fade-in">
                {viewMode === 'table' ? (
-                 <ForexTable rates={otherCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                 <div id="forex-table-container">
+                   <ForexTable rates={otherCurrencies} isLoading={isLoading || isLoadingPrevDay} title="" previousDayRates={previousDayRates} />
+                 </div>
                ) : (
                   renderGridCards(otherCurrencies)
                )}
@@ -523,7 +835,7 @@ const NotFound = () => {
              </p>
            </div>
 
-           <AdSense adClient="ca-pub-XXXXXXXXXXXXXXXX" adSlot="XXXXXXXXXX" />
+           <AdSense adClient="ca-pub-5410507143596599" adSlot="2194448645" />
 
         </div>
       </div>
