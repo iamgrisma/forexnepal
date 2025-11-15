@@ -1,4 +1,3 @@
-// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/pages/Archive.tsx
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,10 +10,11 @@ import Layout from '@/components/Layout';
 const ITEMS_PER_PAGE = 61; // Approximately 2 months
 
 const Archive = () => {
-  // --- FIX 1: Read the ':page' named parameter instead of a splat route ---
-  const { page } = useParams<{ page: string }>();
-  const currentPage = page ? parseInt(page, 10) : 1;
-  // --- END FIX 1 ---
+  // --- UPDATED to read splat route ---
+  const params = useParams();
+  const pageSlug = params["*"] || ""; // Get the value from the splat (e.g., "2")
+  const currentPage = pageSlug ? parseInt(pageSlug) : 1;
+  // ---
   
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();
@@ -26,6 +26,7 @@ const Archive = () => {
   // Generate year options (from 2000 to current year)
   const years = useMemo(() => {
     const yearList = [];
+    // --- UPDATED: Add "All Years" option ---
     yearList.push('all');
     for (let year = currentYear; year >= 2000; year--) {
       yearList.push(year.toString());
@@ -37,6 +38,7 @@ const Archive = () => {
   const allDates = useMemo(() => {
     const dates: Date[] = [];
     
+    // --- UPDATED: Handle "All Years" ---
     if (selectedYear === 'all') {
       const startYear = 2000;
       const endYear = currentYear;
@@ -112,6 +114,7 @@ const Archive = () => {
 
   const handleFilterChange = () => {
     // Reset to page 1 when filters change
+    // --- UPDATED: Use react-router navigation for HashRouter ---
     window.location.hash = '/archive';
   };
 
@@ -194,16 +197,15 @@ const Archive = () => {
                 <ul className="space-y-2">
                   {dates.map(date => (
                     <li key={date.toISOString()}>
-                      {/* --- FIX 2: Use the correct /archive/:date route --- */}
+                      {/* This link format is correct and will be matched by the splat route */}
                       <Link
-                        to={`/archive/${format(date, 'yyyy-MM-dd')}`}
+                        to={`/daily-update/forex-for/${format(date, 'yyyy-MM-dd')}`}
                         className="block p-3 rounded-lg hover:bg-accent transition-colors"
                       >
                         <span className="text-blue-600 hover:text-blue-700 font-medium">
                           Foreign Exchange Rate for {format(date, 'yyyy-MM-dd')} as per NRB
                         </span>
                       </Link>
-                      {/* --- END FIX 2 --- */}
                     </li>
                   ))}
                 </ul>
@@ -212,7 +214,7 @@ const Archive = () => {
           ))}
         </div>
 
-        {/* Pagination (This logic was already correct) */}
+        {/* Pagination */}
         {totalPages > 1 && (
           <div className="mt-8 flex items-center justify-center gap-2">
             <Button
