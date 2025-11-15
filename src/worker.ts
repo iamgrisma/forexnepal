@@ -1,4 +1,4 @@
-// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/worker.ts
+// src/worker.ts
 import { Env, ExecutionContext, ScheduledEvent } from './worker-types';
 import { corsHeaders } from './constants';
 import { handleScheduled } from './scheduled';
@@ -20,7 +20,7 @@ import {
 } from './api-public';
 
 import {
-    handleFetchAndStore,
+    // handleFetchAndStore, // --- REMOVED (Redundant) ---
     handleSiteSettings,
     handleCheckUser,
     handleAdminLogin,
@@ -28,8 +28,8 @@ import {
     handleChangePassword,
     handleRequestPasswordReset,
     handleResetPassword,
-    handleLoginWithResetToken, // Your new function
-    handleGenerateResetToken, // Your new function
+    handleLoginWithResetToken,
+    handleGenerateResetToken,
     handleUsers,
     handleUserById,
     handlePosts,
@@ -170,9 +170,10 @@ export default {
                 if (pathname === '/api/admin/change-password' && method === 'POST') {
                     return handleChangePassword(request, env);
                 }
-                if (pathname === '/api/admin/fetch-nrb' && method === 'POST') {
-                    return handleFetchAndStore(request, env);
-                }
+                
+                // --- REMOVED: Redundant data update route ---
+                // if (pathname === '/api/admin/fetch-nrb' && method === 'POST')
+
                 if (pathname === '/api/admin/settings') {
                     return handleSiteSettings(request, env);
                 }
