@@ -1,6 +1,6 @@
 // src/pages/AdminDashboard.tsx
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/components/ProtectedRoute'; // This import will now work
+import { useAuth } from '@/components/ProtectedRoute';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -15,7 +15,10 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { LogOut, Home } from 'lucide-react';
+import { LogOut, Home, Loader2 } from 'lucide-react'; // Added Loader2
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // Added query imports
+import { apiClient } from '@/services/apiClient'; // Added apiClient
+import { UserProfile } from '@/worker-types'; // Added UserProfile import
 
 // Import Admin Components
 import DataUpdateControl from '@/components/admin/DataUpdateControl';
@@ -24,15 +27,34 @@ import PostsManagement from '@/components/admin/PostsManagement';
 import UserManagement from '@/components/admin/UserManagement';
 import SiteSettingsComponent from '@/components/admin/SiteSettings';
 import ApiSettings from '@/components/admin/ApiSettings';
+// --- NEW: Import ProfileForm ---
+// (Assuming you place ProfileForm.tsx in 'src/components/admin/')
+import ProfileForm from '@/components/admin/ProfileForm'; 
+import { Skeleton } from '@/components/ui/skeleton';
+
+// --- NEW: Function to fetch the user's own profile ---
+const fetchProfile = async (): Promise<UserProfile> => {
+  // This assumes you have a GET endpoint at /api/admin/profile
+  return await apiClient.get<UserProfile>('/api/admin/profile');
+};
 
 const AdminDashboard = () => {
-  const { logout } = useAuth(); // This will now receive the logout function
+  const { logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // --- NEW: Query to fetch the admin's profile data ---
+  const { 
+    data: userProfile, 
+    isLoading: isProfileLoading 
+  } = useQuery({
+    queryKey: ['userProfile'],
+    queryFn: fetchProfile,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
 
   const handleLogout = () => {
-    logout(); // Call the logout function from context
-    // The ProtectedRoute's effect will handle navigation,
-    // but we can also navigate directly for a faster UI update.
+    logout();
     navigate('/admin/login');
   };
 
@@ -40,12 +62,21 @@ const AdminDashboard = () => {
     navigate('/');
   };
 
+  // --- NEW: Save handler to update query cache on successful save ---
+  const handleSaveProfile = (updatedProfile: UserProfile) => {
+    // The ProfileForm component handles the mutation,
+    // this callback updates the local cache to show changes instantly.
+    queryClient.setQueryData(['userProfile'], updatedProfile);
+  };
+
   return (
     <div className="flex min-h-screen w-full flex-col bg-muted/40">
-      <div className="flex flex-col sm:gap-4 sm:py-4">
+      <div className="flex flex-col sm:gap-4 sm:py-4 sm:pl-14">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4 sm:static sm:h-auto sm:border-0 sm:bg-transparent sm:px-6">
-          <h1 className="text-xl font-semibold">Admin Dashboard</h1>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex-1">
+            <h1 className="text-xl font-semibold">Admin Dashboard</h1>
+          </div>
+          <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={goToHome}>
               <Home className="h-4 w-4 mr-2" />
               Go to Site
@@ -58,54 +89,26 @@ const AdminDashboard = () => {
         </header>
         <main className="grid flex-1 items-start gap-4 p-4 sm:px-6 sm:py-0 md:gap-8">
           <Tabs defaultValue="data-update">
-            <div className="flex items-center">
-              <TabsList>
-                <TabsTrigger value="data-update">Data Update</TabsTrigger>
-                <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
-                <TabsTrigger value="posts">Posts</TabsTrigger>
-                <TabsTrigger value="users">Users</TabsTrigger>
-                <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
-                <TabsTrigger value="api-settings">API Settings</TabsTrigger>
-              </TabsList>
-            </div>
+            <TabsList className="flex flex-wrap h-auto justify-start">
+              <TabsTrigger value="data-update">Data Update</TabsTrigger>
+              <TabsTrigger value="forex-data">Forex Data</TabsTrigger>
+              <TabsTrigger value="posts">Posts</TabsTrigger>
+              <TabsTrigger value="users">Users</TabsTrigger>
+              <TabsTrigger value="site-settings">Site Settings</TabsTrigger>
+              <TabsTrigger value="api-settings">API Settings</TabsTrigger>
+              {/* --- NEW: Profile Tab --- */}
+              <TabsTrigger value="profile">My Profile</TabsTrigger>
+            </TabsList>
+
+            {/* --- Existing Tabs --- */}
             <TabsContent value="data-update">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Data Update Control</CardTitle>
-                  <CardDescription>
-                    Manually fetch data from NRB API and update the database.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <DataUpdateControl />
-                </CardContent>
-              </Card>
+              <DataUpdateControl />
             </TabsContent>
             <TabsContent value="forex-data">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Forex Data Management</CardTitle>
-                  <CardDescription>
-                    Manually add or edit forex data for a specific date.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ForexDataManagement />
-                </CardContent>
-              </Card>
+              <ForexDataManagement />
             </TabsContent>
             <TabsContent value="posts">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Posts Management</CardTitle>
-                  <CardDescription>
-                    Create, edit, and delete blog posts.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PostsManagement />
-                </CardContent>
-              </Card>
+              <PostsManagement />
             </TabsContent>
             <TabsContent value="users">
               <Card>
@@ -146,6 +149,35 @@ const AdminDashboard = () => {
                   </CardContent>
                 </Card>
             </TabsContent>
+
+            {/* --- NEW: Profile Tab Content --- */}
+            <TabsContent value="profile">
+              <Card>
+                <CardHeader>
+                  <CardTitle>My Profile</CardTitle>
+                  <CardDescription>
+                    Manage your profile details and change your password.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {isProfileLoading && (
+                    <div className="space-y-4">
+                      <Skeleton className="h-8 w-1/3" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  )}
+                  {userProfile && (
+                    <ProfileForm profile={userProfile} onSave={handleSaveProfile} />
+                  )}
+                  {!isProfileLoading && !userProfile && (
+                    <p>Error: Could not load user profile.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
           </Tabs>
         </main>
       </div>
