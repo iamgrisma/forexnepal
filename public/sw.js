@@ -1,8 +1,16 @@
-const CACHE_NAME = 'forex-app-v4';
-const STATIC_CACHE = 'forex-static-v4';
-const API_CACHE = 'forex-api-v4';
-const IMAGE_CACHE = 'forex-images-v4';
+// public/sw.js
+
+// --- FIX 1: Update all cache names to 'v5' to bust the old 'v4' cache ---
+const STATIC_CACHE = 'forex-static-v5';
+const API_CACHE = 'forex-api-v5';
+const IMAGE_CACHE = 'forex-images-v5';
+// --- END FIX ---
+
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+// --- FIX 2: Minimal App Shell ---
+// DO NOT cache hashed assets like .js or .css here.
+// Vite's hashing already handles cache-busting for them.
 const urlsToCache = [
   '/',
   '/index.html',
@@ -11,23 +19,28 @@ const urlsToCache = [
   '/icon-192.png',
   '/icon-512.png',
 ];
+// --- END FIX ---
 
+// List of all caches to be managed by this service worker
+const cacheWhitelist = [STATIC_CACHE, API_CACHE, IMAGE_CACHE];
+
+// Install event: cache the minimal app shell
 self.addEventListener('install', (event) => {
-  console.log('[SW] Install event');
+  console.log('[SW] Install event (v5)');
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
       console.log('[SW] Caching app shell');
-      return cache.addAll(urlsToCache).catch((err) => {
-        console.warn('[SW] Cache addAll failed:', err);
-        return Promise.resolve();
-      });
-    }).then(() => self.skipWaiting())
+      return cache.addAll(urlsToCache);
+    }).then(() => {
+      console.log('[SW] App shell cached. Skipping waiting.');
+      return self.skipWaiting(); // Force activation
+    })
   );
 });
 
+// Activate event: clean up old caches (e.g., all 'v4' caches)
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activate event');
-  const cacheWhitelist = [STATIC_CACHE, API_CACHE, IMAGE_CACHE];
+  console.log('[SW] Activate event (v5)');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -38,74 +51,48 @@ self.addEventListener('activate', (event) => {
           }
         })
       );
-    }).then(() => self.clients.claim())
+    }).then(() => {
+      console.log('[SW] Caches cleaned. Claiming clients.');
+      return self.clients.claim(); // Take control of all open pages
+    })
   );
 });
 
+// Fetch event: Apply different strategies
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip browser extension requests
-  if (url.protocol.startsWith('chrome-extension:') || url.protocol.startsWith('moz-extension:')) {
+  // 1. Ignore non-http and non-GET requests
+  if (!url.protocol.startsWith('http') || request.method !== 'GET') {
+    event.respondWith(fetch(request));
     return;
   }
 
-  // --- THIS IS THE FIX ---
-  // If it's not a GET request, just fetch it from the network.
-  // Do not try to cache POST, PUT, DELETE, etc.
-  if (request.method !== 'GET') {
-      event.respondWith(fetch(request));
-      return;
-  }
-  // --- END OF FIX ---
-
-
-  // Network-first strategy for GET API calls
-  if (url.pathname.includes('/api/') || url.pathname.includes('supabase')) {
+  // 2. API calls (Network-first, with cache fallback)
+  // This logic is from your original file and is good.
+  if (url.pathname.includes('/api/')) {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          // Cache successful GET API responses
-          if (response.ok) {
-            const responseToCache = response.clone();
+        .then((networkResponse) => {
+          // Good response? Cache it.
+          if (networkResponse.ok) {
+            const responseToCache = networkResponse.clone();
             caches.open(API_CACHE).then((cache) => {
-              if (request.method === 'GET') {
-                  cache.put(request, responseToCache);
-                  cache.put(
-                      new Request(request.url + '?timestamp'),
-                      new Response(Date.now().toString())
-                  );
-              }
+              cache.put(request, responseToCache);
             });
           }
-          return response;
+          return networkResponse;
         })
         .catch(() => {
-          // Offline fallback for GET API calls
-          return caches.open(API_CACHE).then(async (cache) => {
-            const timestampResponse = await cache.match(
-              new Request(request.url + '?timestamp')
-            );
-
-            if (timestampResponse) {
-              const timestamp = await timestampResponse.text();
-              const age = Date.now() - parseInt(timestamp);
-
-              if (age < CACHE_DURATION) {
-                const cachedResponse = await cache.match(request);
-                if (cachedResponse) {
-                  console.log(`[SW] Serving from cache (API Fallback): ${request.url}`);
-                  return cachedResponse;
-                }
-              } else {
-                  console.log(`[SW] Stale cache data for (API Fallback): ${request.url}`);
-                  // Optionally remove stale data here
-              }
+          // Network failed, try cache
+          return caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) {
+              console.log(`[SW] Serving from cache (API Fallback): ${request.url}`);
+              return cachedResponse;
             }
-
-            // If no valid cache, return offline error
-            console.warn(`[SW] Offline and no valid cache for: ${request.url}`);
+            // No cache, return offline error
+            console.warn(`[SW] Offline and no cache for: ${request.url}`);
             return new Response(
               JSON.stringify({ error: 'Offline and no cached data available' }),
               { status: 503, headers: { 'Content-Type': 'application/json' } }
@@ -116,90 +103,109 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first strategy for static assets (already GET requests)
-  event.respondWith(
-    caches.match(request).then((response) => {
-      if (response) {
-        // Check timestamp for static assets too
-         return caches.open(STATIC_CACHE).then(async (cache) => {
-            const timestampResponse = await cache.match(new Request(request.url + '?timestamp'));
-             let isStale = true; // Assume stale unless proven otherwise
-             if (timestampResponse) {
-                 const timestamp = await timestampResponse.text();
-                 const age = Date.now() - parseInt(timestamp);
-                 if (age < CACHE_DURATION) {
-                    isStale = false;
-                 }
-             }
-
-             if (!isStale) {
-                 // console.log(`[SW] Serving from cache (Static): ${request.url}`);
-                 return response; // Return fresh cached response
-             } else {
-                 // console.log(`[SW] Stale cache for (Static): ${request.url}. Fetching network version.`);
-                 // Stale cache, try fetching from network
-                 return fetch(request).then((networkResponse) => {
-                     if (networkResponse.ok) {
-                         // console.log(`[SW] Updating cache (Static): ${request.url}`);
-                         const respToCache = networkResponse.clone();
-                         cache.put(request, respToCache);
-                         cache.put(new Request(request.url + '?timestamp'), new Response(Date.now().toString()));
-                     }
-                     return networkResponse;
-                 }).catch(() => {
-                      console.warn(`[SW] Network fetch failed for stale static asset. Serving stale cache: ${request.url}`);
-                      return response; // Fallback to stale cache if network fails
-                 });
-             }
-         });
-      }
-
-      // Not in cache, fetch from network
-      return fetch(request).then((networkResponse) => {
-        if (networkResponse.ok) {
-          // Cache newly fetched static assets
-          return caches.open(STATIC_CACHE).then((cache) => {
-              // console.log(`[SW] Caching new asset (Static): ${request.url}`);
-            const respToCache = networkResponse.clone();
-            cache.put(request, respToCache);
-            cache.put(new Request(request.url + '?timestamp'), new Response(Date.now().toString()));
+  // 3. Image calls (Cache-first, network fallback & revalidate)
+  // This logic is good.
+  if (request.destination === 'image') {
+    event.respondWith(
+      caches.open(IMAGE_CACHE).then((cache) => {
+        return cache.match(request).then((cachedResponse) => {
+          // Fetch from network to update cache in the background (stale-while-revalidate)
+          const networkFetch = fetch(request).then((networkResponse) => {
+            if (networkResponse.ok) {
+              cache.put(request, networkResponse.clone());
+            }
             return networkResponse;
           });
-        }
-        return networkResponse; // Return non-ok responses directly
-      }).catch(() => {
-        // Offline fallback for static assets (e.g., return index.html for navigation requests)
-        console.warn(`[SW] Failed to fetch static asset from network: ${request.url}`);
-        if (request.mode === 'navigate' && request.destination === 'document') {
-           console.log('[SW] Serving index.html as fallback for navigation.');
+          // Return from cache if available, otherwise wait for network
+          return cachedResponse || networkFetch;
+        });
+      })
+    );
+    return;
+  }
+
+  // --- FIX 3: New logic for App Shell vs. Static Assets ---
+
+  // 4. Navigation requests (e.g., loading index.html)
+  //    STRATEGY: Network-First
+  //    This is the most important fix to prevent the "white page" error.
+  //    We *must* get the new index.html to get the new JS/CSS file links.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          // Good response? Cache it (e.g., index.html)
+          if (networkResponse.ok && urlsToCache.includes(url.pathname)) {
+            const responseToCache = networkResponse.clone();
+            caches.open(STATIC_CACHE).then((cache) => {
+              cache.put(request, responseToCache);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(() => {
+          // Network failed? Serve index.html from cache as fallback
+          console.log('[SW] Network failed for navigation. Serving /index.html from cache.');
           return caches.match('/index.html');
+        })
+    );
+    return;
+  }
+  
+  // 5. Other static assets (JS, CSS, fonts, etc.)
+  //    STRATEGY: Let the browser's HTTP cache handle them.
+  //    We do *not* want the service worker to cache `vendor-....js`
+  //    because it will become stale on the next build.
+  if (request.destination === 'script' || request.destination === 'style' || request.destination === 'font') {
+    // Just fetch from network. Do not cache.
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // 6. Any other request (e.g., manifest.json, icons from `urlsToCache`)
+  //    STRATEGY: Cache-First
+  event.respondWith(
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      
+      // Not in cache, fetch and cache it (for app shell items)
+      return fetch(request).then((networkResponse) => {
+        if (networkResponse.ok && urlsToCache.includes(url.pathname)) {
+          const responseToCache = networkResponse.clone();
+          caches.open(STATIC_CACHE).then((cache) => {
+            cache.put(request, responseToCache);
+          });
         }
-        // Optionally return a generic offline placeholder for other assets like images
-         return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+        return networkResponse;
       });
     })
   );
+  // --- END FIX ---
 });
 
-// Handle messages from clients (Keep as is)
+// Handle messages from clients (Simplified)
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Received SKIP_WAITING message.');
     self.skipWaiting();
   }
   if (event.data && event.data.type === 'CLEAR_CACHE') {
-    console.log('[SW] Clearing cache on message');
+    console.log('[SW] Received CLEAR_CACHE message. Deleting all caches.');
     event.waitUntil(
-      Promise.all([
-        caches.delete(STATIC_CACHE),
-        caches.delete(API_CACHE),
-        caches.delete(IMAGE_CACHE)
-      ]).then(() => {
-        console.log('[SW] All caches deleted. Re-opening.');
-        return Promise.all([
-          caches.open(STATIC_CACHE),
-          caches.open(API_CACHE),
-          caches.open(IMAGE_CACHE)
-        ]);
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            return caches.delete(cacheName);
+          })
+        );
+      }).then(() => {
+         console.log('[SW] All caches deleted. Re-caching app shell.');
+         // Re-open/re-prime the static cache
+         return caches.open(STATIC_CACHE).then((cache) => {
+            return cache.addAll(urlsToCache);
+         });
       })
     );
   }
