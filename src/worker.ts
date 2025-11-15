@@ -28,6 +28,8 @@ import {
     handleChangePassword,
     handleRequestPasswordReset,
     handleResetPassword,
+    handleLoginWithResetToken, // Your new function
+    handleGenerateResetToken, // Your new function
     handleUsers,
     handleUserById,
     handlePosts,
@@ -36,10 +38,10 @@ import {
     handleGetApiSettings,
     handleUpdateApiSettings,
     handleGoogleLoginCallback,
-    // --- NEW / RENAMED HANDLERS ---
-    handleLoginWithResetToken,
-    handleGenerateResetToken
-    // --- REMOVED: handleOneTimeLogin, handleGenerateOneTimeLoginCode ---
+    // --- IMPORT NEW PROFILE HANDLERS ---
+    handleGetProfile,
+    handleUpdateProfile,
+    handleSendVerificationCode
 } from './api-admin';
 
 export default {
@@ -123,25 +125,23 @@ export default {
                 return handleCheckUser(request, env);
             }
             if (pathname === '/api/admin/login' && method === 'POST') {
-                return handleAdminLogin(request, env); // env contains JWT_SECRET
+                return handleAdminLogin(request, env);
             }
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
-                return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
+                return handleGoogleLoginCallback(request, env);
             }
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
             if (pathname === '/api/admin/request-password-reset' && method === 'POST') {
-                return handleRequestPasswordReset(request, env, ctx); // env contains BREVO_API_KEY
+                return handleRequestPasswordReset(request, env, ctx);
             }
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
-            // --- NEW: Public route to login with a token ---
             if (pathname === '/api/admin/login-with-token' && method === 'POST') {
-                return handleLoginWithResetToken(request, env); // env contains JWT_SECRET
+                return handleLoginWithResetToken(request, env);
             }
-            // --- REMOVED: Old /api/admin/login-one-time route ---
 
 
             // --- Admin Protected Routes (Token required) ---
@@ -154,44 +154,55 @@ export default {
                 }
 
                 // Token is valid, proceed to admin handlers
+
+                // --- NEW: Profile Routes ---
+                if (pathname === '/api/admin/profile' && method === 'GET') {
+                    return handleGetProfile(request, env);
+                }
+                if (pathname === '/api/admin/profile/update-details' && method === 'POST') {
+                    return handleUpdateProfile(request, env);
+                }
+                if (pathname === '/api/admin/profile/send-verification-code' && method === 'POST') {
+                    return handleSendVerificationCode(request, env, ctx);
+                }
+                // --- END: Profile Routes ---
+
                 if (pathname === '/api/admin/change-password' && method === 'POST') {
-                    return handleChangePassword(request, env); // env contains JWT_SECRET
+                    return handleChangePassword(request, env);
                 }
                 if (pathname === '/api/admin/fetch-nrb' && method === 'POST') {
-                    return handleFetchAndStore(request, env); // env contains JWT_SECRET
+                    return handleFetchAndStore(request, env);
                 }
                 if (pathname === '/api/admin/settings') {
-                    return handleSiteSettings(request, env); // env contains JWT_SECRET
+                    return handleSiteSettings(request, env);
                 }
                 if (pathname === '/api/admin/users' && (method === 'GET' || method === 'POST')) {
-                    return handleUsers(request, env); // env contains JWT_SECRET
+                    return handleUsers(request, env);
                 }
                 if (pathname.startsWith('/api/admin/users/') && method === 'DELETE') {
-                    return handleUserById(request, env); // env contains JWT_SECRET
+                    return handleUserById(request, env);
                 }
                 if (pathname === '/api/admin/posts' && (method === 'GET' || method === 'POST')) {
-                    return handlePosts(request, env); // env contains JWT_SECRET
+                    return handlePosts(request, env);
                 }
                 if (pathname.startsWith('/api/admin/posts/') && (method === 'GET' || method === 'PUT' || method === 'DELETE')) {
-                    return handlePostById(request, env); // env contains JWT_SECRET
+                    return handlePostById(request, env);
                 }
                 if (pathname === '/api/admin/forex-data' && (method === 'GET' || method === 'POST')) {
-                    return handleForexData(request, env); // env contains JWT_SECRET
+                    return handleForexData(request, env);
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'GET') {
-                    return handleGetApiSettings(request, env); // env contains JWT_SECRET
+                    return handleGetApiSettings(request, env);
                 }
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
-                    return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
+                    return handleUpdateApiSettings(request, env);
                 }
-                // --- NEW: Admin-only route to generate a token ---
                 if (pathname === '/api/admin/generate-reset-token' && method === 'POST') {
-                    return handleGenerateResetToken(request, env); // env contains JWT_SECRET
+                    return handleGenerateResetToken(request, env);
                 }
-                // --- REMOVED: Old /api/admin/generate-login-code route ---
             }
 
-            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json' } });
+            return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
 
         // --- OAuth Callback Redirect ---
@@ -200,11 +211,9 @@ export default {
             const searchParams = url.search;
             newUrl.pathname = '/';
             newUrl.hash = `/admin/auth/google/callback${searchParams}`;
-            newUrl.search = ''; // Clear search params from main URL
+            newUrl.search = '';
             return Response.redirect(newUrl.toString(), 302);
         }
-        // --- END: OAuth Callback Redirect ---
-
 
         // --- Sitemap ---
         if (pathname === '/sitemap.xml' || pathname === '/sitemap_index.xml') {
