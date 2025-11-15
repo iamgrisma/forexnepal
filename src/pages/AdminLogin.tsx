@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound } from 'lucide-react'; // Removed QrCode
+import { Loader2, ShieldAlert, ShieldCheck, KeyRound } from 'lucide-react'; // Removed QrCode
 import { apiClient } from '@/services/apiClient'; // Import the API client
 import { toast as sonnerToast } from "sonner"; // Import sonner
 import { Separator } from '@/components/ui/separator';
