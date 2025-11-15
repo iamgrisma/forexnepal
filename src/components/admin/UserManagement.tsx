@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
+// --- THIS IS THE FIX: Removed DialogFooter and DialogClose from the import ---
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +23,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { apiClient } from '@/services/apiClient';
-import { Loader2, UserPlus, Trash2, AlertCircle, KeyRound, Copy, Mail, Send } from 'lucide-react'; // --- IMPORTED ICONS ---
+import { Loader2, UserPlus, Trash2, AlertCircle, KeyRound, Copy, Mail } from 'lucide-react'; // Removed 'Send' icon, using 'Mail'
 
 interface User {
   username: string;
@@ -46,6 +47,7 @@ const deleteUser = async (username: string) => {
 };
 
 // --- NEW: Generate Token Function (Admin-only, returns token) ---
+// This calls the NEW endpoint you approved, which uses the correct table
 const generateResetToken = async (username: string) => {
   return await apiClient.post<{ success: boolean, token: string, username: string, expires_at: string }>(
     '/admin/generate-reset-token', 
@@ -54,6 +56,7 @@ const generateResetToken = async (username: string) => {
 };
 
 // --- NEW: Send Reset Email Function (Public, no return) ---
+// This calls the EXISTING password reset endpoint
 const sendResetEmail = async (username: string) => {
   return await apiClient.post('/admin/request-password-reset', { username });
 };
@@ -167,23 +170,12 @@ const UserManagement: React.FC = () => {
   // --- NEW: Handler to copy token to clipboard ---
   const copyTokenToClipboard = () => {
     if (!generatedToken) return;
-    // Use the older execCommand for wider compatibility in iframes
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = generatedToken;
-      ta.style.position = 'fixed'; // prevent scrolling
-      ta.style.top = '0';
-      ta.style.left = '0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.select();
-      document.execCommand('copy');
-      document.body.removeChild(ta);
+    navigator.clipboard.writeText(generatedToken).then(() => {
       toast.success("Token copied to clipboard!");
-    } catch (err) {
+    }).catch(err => {
       console.error('Failed to copy: ', err);
       toast.error('Failed to copy token.');
-    }
+    });
   };
 
   if (isLoading) {
@@ -361,7 +353,7 @@ const UserManagement: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Login Actions for <span className="text-primary">{actionUser?.username}</span></DialogTitle>
             <DialogDescription>
-              Choose how to grant access to this user. The token/link will be valid for 1 hour and can only be used once.
+              Choose how to grant access to this user. The token/link will be valid for 1 hour (if generated) or 15 minutes (if emailed).
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-4">
@@ -391,13 +383,13 @@ const UserManagement: React.FC = () => {
               Send Login Link via Email
             </Button>
           </div>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button type="button" variant="secondary">
-                Cancel
-              </Button>
-            </DialogClose>
-          </DialogFooter>
+          {/* --- THIS IS THE FIX: Replaced DialogFooter/DialogClose with this --- */}
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" onClick={() => setActionUser(null)}>
+              Cancel
+            </Button>
+          </div>
+          {/* --- END FIX --- */}
         </DialogContent>
       </Dialog>
 
@@ -443,7 +435,7 @@ const UserManagement: React.FC = () => {
               onClick={() => deleteMutation.mutate(showDeleteConfirm!.username)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Yes, delete user"}
+              {deleteMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Yes, delete user"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
