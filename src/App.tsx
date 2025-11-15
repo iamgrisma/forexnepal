@@ -1,104 +1,92 @@
+// src/App.tsx
+import React, { lazy, Suspense } from 'react';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Routes, Route } from "react-router-dom";
-import { lazy, Suspense } from "react";
-import Index from "./pages/Index";
-import ProtectedRoute from "./components/ProtectedRoute";
-import PWAInstallPrompt from "./components/PWAInstallPrompt";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
+import ProtectedRoute from '@/components/ProtectedRoute';
+import { Loader2 } from 'lucide-react';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
-// Lazy load non-critical routes
-const Converter = lazy(() => import("./pages/Converter"));
-const HistoricalCharts = lazy(() => import("./pages/HistoricalCharts"));
-const CurrencyHistoricalData = lazy(() => import("./pages/CurrencyHistoricalData"));
-const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
-const About = lazy(() => import("./pages/About"));
-const Contact = lazy(() => import("./pages/Contact"));
-const Disclosure = lazy(() => import("./pages/Disclosure"));
-const AdsTxt = lazy(() => import("./pages/AdsTxt"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const AdminLogin = lazy(() => import("./pages/AdminLogin"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const Posts = lazy(() => import("./pages/Posts"));
-const PostDetail = lazy(() => import("./pages/PostDetail"));
-const ChangePassword = lazy(() => import("./pages/ChangePassword"));
-const Archive = lazy(() => import("./pages/Archive"));
-const ArchiveDetail = lazy(() => import("./pages/ArchiveDetail"));
-const AdminDashboard = lazy(() => import("./pages/AdminDashboard"));
-const PostEditor = lazy(() => import("./pages/PostEditor"));
-const ApiDocs = lazy(() => import("./pages/ApiDocs")); // <-- NEW: Import ApiDocs
+// Eager load critical components
+import Index from './pages/Index';
+import AdminLogin from './pages/AdminLogin';
+import ChangePassword from './pages/ChangePassword';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 10 * 60 * 1000, // 10 minutes
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+// Lazy load other components
+const About = lazy(() => import('./pages/About'));
+const ApiDocs = lazy(() => import('./pages/ApiDocs'));
+const Archive = lazy(() => import('./pages/Archive'));
+const ArchiveDetail = lazy(() => import('./pages/ArchiveDetail'));
+const Contact = lazy(() => import('./pages/Contact'));
+const Converter = lazy(() => import('./pages/Converter'));
+const CurrencyHistoricalData = lazy(() => import('./pages/CurrencyHistoricalData'));
+const Disclosure = lazy(() => import('./pages/Disclosure'));
+const HistoricalCharts = lazy(() => import('./pages/HistoricalCharts'));
+const NotFound = lazy(() => import('./pages/NotFound'));
+const Posts = lazy(() => import('./pages/Posts'));
+const PostDetail = lazy(() => import('./pages/PostDetail'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const AdsTxt = lazy(() => import('./pages/AdsTxt'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const PostEditor = lazy(() => import('./pages/PostEditor'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
-const LoadingFallback = () => (
-  <div className="flex items-center justify-center min-h-screen">
-    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+// --- ADD NEW GOOGLE CALLBACK IMPORT ---
+const GoogleCallback = lazy(() => import('./pages/GoogleCallback'));
+
+const SuspenseFallback = () => (
+  <div className="flex justify-center items-center h-[80vh]">
+    <Loader2 className="h-8 w-8 animate-spin text-primary" />
   </div>
 );
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <PWAInstallPrompt />
-      <Suspense fallback={<LoadingFallback />}>
+function App() {
+  return (
+    <HashRouter>
+      <Suspense fallback={<SuspenseFallback />}>
         <Routes>
-        {/* --- Public Routes --- */}
-        <Route path="/" element={<Index />} />
-        <Route path="/archive" element={<Archive />} />
-        {/* --- UPDATED ROUTE --- */}
-        <Route path="/archive/page/*" element={<Archive />} />
-        
-        {/* --- UPDATED ROUTE --- */}
-        <Route path="/daily-update/forex-for/*" element={<ArchiveDetail />} />
-        
-        <Route path="/converter" element={<Converter />} />
-        <Route path="/historical-charts" element={<HistoricalCharts />} />
-        <Route path="/historical-data/:currencyCode" element={<CurrencyHistoricalData />} />
-        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/disclosure" element={<Disclosure />} />
-        <Route path="/ads.txt" element={<AdsTxt />} />
-        <Route path="/posts" element={<Posts />} />
-        <Route path="/posts/:slug" element={<PostDetail />} />
-        <Route path="/api" element={<ApiDocs />} /> {/* <-- NEW: Add /api route */}
+          {/* Public Routes */}
+          <Route path="/" element={<Index />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/api-docs" element={<ApiDocs />} />
+          <Route path="/archive" element={<Archive />} />
+          <Route path="/archive/:date" element={<ArchiveDetail />} />
+          <Route path="/contact" element={<Contact />} />
+          <Route path="/converter" element={<Converter />} />
+          <Route path="/historical-data/:currency" element={<CurrencyHistoricalData />} />
+          <Route path="/disclosure" element={<Disclosure />} />
+          <Route path="/historical-charts" element={<HistoricalCharts />} />
+          <Route path="/posts" element={<Posts />} />
+          <Route path="/posts/:slug" element={<PostDetail />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
+          <Route path="/ads.txt" element={<AdsTxt />} />
+          
+          {/* Admin Auth Routes */}
+          <Route path="/admin/login" element={<AdminLogin />} />
+          <Route path="/admin/forgot-password" element={<ForgotPassword />} />
+          <Route path="/admin/reset-password" element={<ResetPassword />} />
+          
+          {/* --- ADD NEW GOOGLE CALLBACK ROUTE --- */}
+          <Route path="/admin/auth/google/callback" element={<GoogleCallback />} />
 
-        {/* --- Admin Login Route (Public) --- */}
-        <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="/admin/forgot-password" element={<ForgotPassword />} />
-        <Route path="/admin/reset-password" element={<ResetPassword />} />
+          {/* Protected Admin Routes */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/admin/dashboard" element={<AdminDashboard />} />
+            <Route path="/admin/posts/new" element={<PostEditor />} />
+            <Route path="/admin/posts/edit/:id" element={<PostEditor />} />
+            <Route path="/admin/change-password" element={<ChangePassword />} />
+          </Route>
 
-        {/* --- Protected Admin Routes --- */}
-        {/* The ProtectedRoute component wraps all routes that need authentication */}
-        <Route element={<ProtectedRoute />}>
-           {/* Define the dashboard route HERE */}
-           <Route path="/admin/dashboard" element={<AdminDashboard />} />
-           {/* Define the change password route HERE */}
-           <Route path="/admin/change-password" element={<ChangePassword />} />
-           {/* Define the post editor routes HERE */}
-           <Route path="/admin/posts/new" element={<PostEditor />} />
-           <Route path="/admin/posts/edit/:id" element={<PostEditor />} />
-           {/* Add any other future protected admin routes inside this wrapper */}
-        </Route>
-
-        {/* --- Catch-all Not Found Route (Must be last) --- */}
-        <Route path="*" element={<NotFound />} />
+          {/* 404 Not Found */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+      <Toaster />
+      <SonnerToaster position="top-right" richColors />
+      <PWAInstallPrompt />
+    </HashRouter>
+  );
+}
 
 export default App;
