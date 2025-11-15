@@ -906,7 +906,7 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
     }
 
     // This MUST match the URI in your Google Cloud Console
-    const REDIRECT_URI = 'https://forex.grisma.com.np/#/admin/auth/google/callback';
+    const REDIRECT_URI = 'https://forex.grisma.com.np/admin/auth/google/callback';
     
     try {
         // 1. Exchange code for access token
