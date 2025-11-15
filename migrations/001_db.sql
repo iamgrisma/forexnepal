@@ -1,3 +1,7 @@
+-- === CONSOLIDATED & FIXED MIGRATIONS ===
+-- This single file represents the final, combined schema without using ALTER statements.
+
+-- Table: forex_rates
 CREATE TABLE IF NOT EXISTS forex_rates (
   date TEXT PRIMARY KEY NOT NULL,
   INR_buy REAL,
@@ -115,7 +119,7 @@ CREATE TABLE IF NOT EXISTS site_settings (
   key TEXT UNIQUE NOT NULL,
   value TEXT
 );
-INSERT OR IGIGNORE INTO site_settings (key, value) VALUES ('ticker_enabled', 'true');
+INSERT OR IGNORE INTO site_settings (key, value) VALUES ('ticker_enabled', 'true');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('adsense_enabled', 'false');
 INSERT OR IGNORE INTO site_settings (key, value) VALUES ('adsense_exclusions', '/admin,/login');
 
