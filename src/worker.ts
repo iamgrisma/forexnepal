@@ -37,7 +37,8 @@ import {
     handleUpdateApiSettings,
     // --- IMPORT NEW HANDLERS ---
     handleOneTimeLogin,
-    handleGenerateOneTimeLoginCode
+    handleGenerateOneTimeLoginCode,
+    handleGoogleLoginCallback // --- ADD THIS IMPORT ---
 } from './api-admin';
 
 export default {
@@ -123,10 +124,14 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
-            // --- ADD NEW ONE-TIME LOGIN ROUTE ---
             if (pathname === '/api/admin/login-one-time' && method === 'POST') {
                 return handleOneTimeLogin(request, env); // env contains JWT_SECRET
             }
+            // --- ADD NEW GOOGLE CALLBACK ROUTE ---
+            if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
+                return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
+            }
+            // --- END NEW ROUTE ---
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
