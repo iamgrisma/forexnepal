@@ -13,6 +13,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label'; // <-- ADDED THIS MISSING IMPORT
 
 const passwordSchema = z.object({
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
