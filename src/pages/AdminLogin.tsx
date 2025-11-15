@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react'; // Added QrCode
+import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound } from 'lucide-react'; // Removed QrCode
 import { apiClient } from '@/services/apiClient'; // Import the API client
 import { toast as sonnerToast } from "sonner"; // Import sonner
-import { Separator } from '@/components/ui/separator'; // --- ADD IMPORT ---
+import { Separator } from '@/components/ui/separator';
 
 // --- Google Auth Constants ---
 const GOOGLE_CLIENT_ID = "339956503165-ir1fqjjrso9sk79an6dqh3r69drm60q9.apps.googleusercontent.com";
@@ -23,8 +23,8 @@ const GoogleIcon = () => (
   </svg>
 );
 
-// --- UPDATED: Add 'oneTimeCode' step ---
-type LoginStep = 'redirecting' | 'username' | 'password' | 'oneTimeCode' | 'blocked' | 'error';
+// --- UPDATED: Removed 'oneTimeCode' step ---
+type LoginStep = 'redirecting' | 'username' | 'password' | 'blocked' | 'error';
 
 // Add keys for session storage
 const STEP_STORAGE_KEY = 'loginStep';
@@ -35,8 +35,8 @@ const AdminLogin = () => {
   const getInitialStep = (): LoginStep => {
     try {
       const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
-      // --- UPDATED: Allow 'oneTimeCode' to be stored ---
-      if (storedStep === 'username' || storedStep === 'password' || storedStep === 'oneTimeCode') {
+      // --- UPDATED: Removed 'oneTimeCode' ---
+      if (storedStep === 'username' || storedStep === 'password') {
         return storedStep as LoginStep;
       }
     } catch (e) {}
@@ -54,7 +54,7 @@ const AdminLogin = () => {
   });
 
   const [password, setPassword] = useState('');
-  const [oneTimeCode, setOneTimeCode] = useState(''); // --- NEW: State for the code ---
+  // const [oneTimeCode, setOneTimeCode] = useState(''); // --- REMOVED: State for the code ---
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(5); // Visual countdown
   const [ipAddress, setIpAddress] = useState('');
@@ -122,8 +122,8 @@ const AdminLogin = () => {
   // Save step to session storage whenever it changes
   useEffect(() => {
     try {
-      // --- UPDATED: Save 'oneTimeCode' step as well ---
-      if (step === 'username' || step === 'password' || step === 'oneTimeCode') {
+      // --- UPDATED: Removed 'oneTimeCode' step ---
+      if (step === 'username' || step === 'password') {
         sessionStorage.setItem(STEP_STORAGE_KEY, step);
       } else if (step !== 'redirecting') {
         // Clear storage on block, error, or success
@@ -238,49 +238,9 @@ const AdminLogin = () => {
     }
   };
 
-  // --- NEW 6. One-Time Code Login Handler ---
-  const handleOneTimeLoginSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!oneTimeCode || loading) return;
+  // --- REMOVED 6. One-Time Code Login Handler ---
 
-    setLoading(true);
-    setErrorMessage('');
-
-    try {
-      const data = await apiClient.post<{ 
-        success: boolean; 
-        token: string; 
-        username: string; 
-        mustChangePassword?: boolean;
-        error?: string;
-      }>('/admin/login-one-time', {
-        code: oneTimeCode,
-      });
-
-      if (data.success) {
-        // Clear session storage on successful login
-        sessionStorage.removeItem(STEP_STORAGE_KEY);
-        sessionStorage.removeItem(USERNAME_STORAGE_KEY);
-
-        localStorage.setItem('authToken', data.token);
-        localStorage.setItem('username', data.username);
-        toast({ title: "Login Successful", description: `Welcome, ${data.username}!` });
-        
-        // One-time code login skips password change
-        navigate('/admin/dashboard', { replace: true });
-      } else {
-        toast({ title: "Login Failed", description: data?.error || 'Invalid code', variant: "destructive" });
-      }
-    } catch (error: any)
-    {
-      console.error(error);
-      toast({ title: "Login Failed", description: error.message || "Invalid or expired code.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- NEW 7. Google Login Click Handler ---
+  // --- 7. Google Login Click Handler ---
   const handleGoogleLoginClick = () => {
     setLoading(true); // Set loading while redirecting
     // Construct the Google OAuth URL
@@ -362,23 +322,16 @@ const AdminLogin = () => {
               </Button>
               {/* --- END GOOGLE LOGIN BUTTON --- */}
 
-              <div className="flex justify-between pt-2">
+              <div className="flex justify-center pt-2">
                 <Button
                   type="button"
                   variant="link"
                   onClick={() => navigate('/admin/forgot-password')}
                   className="text-sm px-0"
                 >
-                  Forgot Password?
+                  Forgot Password / Get Login Code
                 </Button>
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => setStep('oneTimeCode')}
-                  className="text-sm px-0"
-                >
-                  Login with one-time code
-                </Button>
+                {/* --- REMOVED one-time code button --- */}
               </div>
             </form>
           </CardContent>
@@ -411,7 +364,7 @@ const AdminLogin = () => {
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Login
               </Button>
-              <div className="flex justify-between">
+              <div className="flex justify-center">
                 <Button
                   type="button"
                   variant="link"
@@ -420,59 +373,13 @@ const AdminLogin = () => {
                 >
                   Forgot Password?
                 </Button>
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={() => setStep('oneTimeCode')}
-                  className="text-sm px-0"
-                >
-                  Login with one-time code
-                </Button>
+                {/* --- REMOVED one-time code button --- */}
               </div>
             </form>
           </CardContent>
         );
 
-      // --- NEW RENDER CASE ---
-      case 'oneTimeCode':
-        return (
-          <CardContent>
-            <form onSubmit={handleOneTimeLoginSubmit} className="space-y-4">
-              <QrCode className="h-10 w-10 text-primary mx-auto" />
-              <CardTitle className="text-center">One-Time Login</CardTitle>
-              <CardDescription className="text-center pb-2">
-                Enter the 8-digit code provided by your administrator.
-              </CardDescription>
-              <div>
-                <label className="text-sm font-medium mb-1 block text-left" htmlFor="oneTimeCode">One-Time Code</label>
-                <Input
-                  id="oneTimeCode"
-                  type="text"
-                  value={oneTimeCode}
-                  onChange={(e) => setOneTimeCode(e.target.value.replace(/\D/g, ''))} // Only allow digits
-                  placeholder="Enter 8-digit code"
-                  required
-                  disabled={loading}
-                  autoComplete="one-time-code"
-                  maxLength={8}
-                  autoFocus
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading || oneTimeCode.length < 8}>
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                Login with Code
-              </Button>
-              <Button
-                type="button"
-                variant="link"
-                onClick={() => setStep('username')} // Go back to username step
-                className="w-full text-sm"
-              >
-                Back to password login
-              </Button>
-            </form>
-          </CardContent>
-        );
+      // --- REMOVED RENDER CASE for 'oneTimeCode' ---
 
       case 'blocked':
       case 'error':
