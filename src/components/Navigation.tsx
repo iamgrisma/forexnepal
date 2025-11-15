@@ -1,182 +1,148 @@
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { cn } from '@/lib/utils';
-// Import icons
-import { ArrowRightLeft, BarChart, Home, BookOpen, User, Phone, BookText, Shield, FileText, LayoutDashboard, Code } from 'lucide-react'; // <-- NEW: Imported Code icon
+// src/components/Navigation.tsx
+import React, { useState } from 'react';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Menu, X, Sun, Moon, Home, BarChart2, Book, Settings, LayoutDashboard, LogOut } from 'lucide-react';
+import { useMobile } from '@/hooks/use-mobile'; // Assuming you have this hook
+
+// --- UPDATED: Removed About, Contact, Disclosure, Privacy from main links ---
+const navLinks = [
+  { href: '/', label: 'Home', Icon: Home },
+  { href: '/historical-charts', label: 'Charts', Icon: BarChart2 },
+  { href: '/posts', label: 'Posts', Icon: Book },
+  { href: '/api-docs', label: 'API', Icon: Settings },
+];
 
 const Navigation = () => {
-  const location = useLocation();
-  const isLoggedIn = localStorage.getItem('authToken');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isMobile = useMobile();
+  const navigate = useNavigate();
+
+  // Handle theme toggling
+  const toggleTheme = () => {
+    const isDarkMode = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  };
+
+  // Check for stored theme on load
+  React.useEffect(() => {
+    const storedTheme = localStorage.getItem('theme');
+    if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  const handleAdminLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('username');
+    localStorage.removeItem('forcePasswordChange');
+    navigate('/admin/login');
+  };
+
+  const renderNavLinks = (isMobileSheet = false) => {
+    const linkClass = isMobileSheet
+      ? 'flex items-center p-3 rounded-md text-lg hover:bg-muted'
+      : 'px-3 py-2 text-sm font-medium rounded-md hover:bg-muted dark:hover:bg-muted/50 transition-colors';
+    
+    const activeClass = isMobileSheet
+      ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+      : 'bg-primary text-primary-foreground hover:bg-primary/90 dark:hover:bg-primary/90';
+
+    const authToken = localStorage.getItem('authToken');
+
+    return (
+      <>
+        {navLinks.map((link) => (
+          <NavLink
+            key={link.label}
+            to={link.href}
+            className={({ isActive }) => `${linkClass} ${isActive ? activeClass : ''}`}
+            onClick={() => isMobileSheet && setIsMobileMenuOpen(false)}
+          >
+            {isMobileSheet && <link.Icon className="mr-3 h-5 w-5" />}
+            {link.label}
+          </NavLink>
+        ))}
+        {authToken && (
+          <>
+            <NavLink
+              to="/admin/dashboard"
+              className={({ isActive }) => `${linkClass} ${isActive ? activeClass : ''}`}
+              onClick={() => isMobileSheet && setIsMobileMenuOpen(false)}
+            >
+              {isMobileSheet && <LayoutDashboard className="mr-3 h-5 w-5" />}
+              Dashboard
+            </NavLink>
+            <Button
+              variant={isMobileSheet ? 'ghost' : 'outline'}
+              size="sm"
+              className={isMobileSheet ? `${linkClass} text-red-500 hover:bg-red-500/10 hover:text-red-600` : 'ml-2'}
+              onClick={() => {
+                if (isMobileSheet) setIsMobileMenuOpen(false);
+                handleAdminLogout();
+              }}
+            >
+              {isMobileSheet && <LogOut className="mr-3 h-5 w-5" />}
+              Logout
+            </Button>
+          </>
+        )}
+      </>
+    );
+  };
 
   return (
-    <>
-      {/* Desktop/Scrollable Mobile Navigation 
-          UPDATED: sticky top-0 changed to md:sticky top-0
-      */}
-      <nav className="bg-white/80 backdrop-blur-lg border-b border-gray-200/50 md:sticky top-0 z-50 shadow-sm">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex justify-between items-center gap-8">
-            <Link to="/" className="flex items-center flex-shrink-0">
-              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 rounded-lg font-bold text-lg shadow-md hover:shadow-lg transition-shadow">
-                ForexNepal
-              </div>
+    <nav className="bg-card dark:bg-card/80 backdrop-blur-sm border-b sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16">
+          
+          {/* Logo */}
+          <div className="flex-shrink-0 flex items-center">
+            <Link to="/" className="text-2xl font-bold text-primary flex items-center">
+              <img src="/icon-192.png" alt="Forex Nepal Logo" className="h-8 w-8 mr-2" />
+              ForexNepal
             </Link>
-
-            {/* Wrapper div allows flex-1 behavior while inner div handles scrolling */}
-            <div className="flex-1 min-w-0 flex justify-end">
-              {/* UPDATED: Reordered links and added Disclosure/Privacy */}
-              <div className="flex items-center space-x-1 overflow-x-auto scrollbar-hide">
-                <NavLink to="/" active={location.pathname === '/'}>
-                  <Home className="h-4 w-4 mr-2" />
-                  Home
-                </NavLink>
-                <NavLink to="/archive" active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}>
-                  <BookOpen className="h-4 w-4 mr-2" />
-                  Daily Archive
-                </NavLink>
-                <NavLink to="/posts" active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}>
-                    <BookText className="h-4 w-4 mr-2" />
-                    Posts
-                </NavLink>
-                <NavLink to="/historical-charts" active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}>
-                  <BarChart className="h-4 w-4 mr-2" />
-                  Charts
-                </NavLink>
-                <NavLink to="/converter" active={location.pathname === '/converter'}>
-                  <ArrowRightLeft className="h-4 w-4 mr-2" />
-                  Converter
-                </NavLink>
-                {/* --- NEW: Added API Link --- */}
-                <NavLink to="/api" active={location.pathname === '/api'}>
-                  <Code className="h-4 w-4 mr-2" />
-                  API
-                </NavLink>
-                <NavLink to="/about" active={location.pathname === '/about'}>
-                  <User className="h-4 w-4 mr-2" />
-                  About
-                </NavLink>
-                <NavLink to="/contact" active={location.pathname === '/contact'}>
-                  <Phone className="h-4 w-4 mr-2" />
-                  Contact
-                </NavLink>
-                {isLoggedIn && (
-                  <NavLink to="/admin/dashboard" active={location.pathname === '/admin/dashboard'}>
-                    <LayoutDashboard className="h-4 w-4 mr-2" />
-                    Dashboard
-                  </NavLink>
-                )}
-                <NavLink to="/disclosure" active={location.pathname === '/disclosure'}>
-                  <FileText className="h-4 w-4 mr-2" />
-                  Disclosure
-                </NavLink>
-                <NavLink to="/privacy-policy" active={location.pathname === '/privacy-policy'}>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Privacy
-                </NavLink>
-                <ExternalNavLink href="https://grisma.com.np">
-                  <BookOpen className="h-4 w-4 mr-2" />
-                  Grisma Blog
-                </ExternalNavLink>
-              </div>
-            </div>
           </div>
+
+          {/* Desktop Nav */}
+          {!isMobile && (
+            <div className="hidden md:flex md:items-center md:space-x-1">
+              {renderNavLinks(false)}
+            </div>
+          )}
+          
+          <div className="flex items-center">
+             {/* Theme Toggle */}
+            <Button variant="ghost" size="icon" onClick={toggleTheme} className="mr-2">
+              <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+              <Moon className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+              <span className="sr-only">Toggle theme</span>
+            </Button>
+            
+            {/* Mobile Menu Button */}
+            {isMobile && (
+              <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    {isMobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="right" className="w-full sm:w-80 p-4">
+                  <div className="flex flex-col space-y-3 pt-8">
+                    {renderNavLinks(true)}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            )}
+          </div>
+
         </div>
-      </nav>
-
-      {/* Mobile Bottom Navigation - UPDATED Order */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 shadow-lg z-50">
-        <div className="grid grid-cols-5 divide-x divide-gray-200">
-          <NavLink
-            to="/posts"
-            active={location.pathname === '/posts' || location.pathname.startsWith('/posts/')}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <BookText className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Posts</span>
-          </NavLink>
-          <NavLink
-            to="/archive"
-            active={location.pathname.startsWith('/archive') || location.pathname.startsWith('/daily-update/')}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <BookOpen className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Archive</span>
-          </NavLink>
-          <NavLink
-            to="/"
-            active={location.pathname === '/'}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <Home className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Home</span>
-          </NavLink>
-          <NavLink
-            to="/historical-charts"
-            active={location.pathname === '/historical-charts' || location.pathname.startsWith('/historical-data')}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <BarChart className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Charts</span>
-          </NavLink>
-          <NavLink
-            to="/converter"
-            active={location.pathname === '/converter'}
-            className="flex flex-col items-center justify-center py-3 px-1 text-center"
-          >
-            <ArrowRightLeft className="h-5 w-5 mb-1" />
-            <span className="text-xs font-medium leading-tight">Convert</span>
-          </NavLink>
-        </div>
-      </nav>
-    </>
+      </div>
+    </nav>
   );
 };
 
-// NavLink and ExternalNavLink remain the same as provided
-interface NavLinkProps {
-  to: string;
-  active: boolean;
-  children: React.ReactNode;
-  className?: string;
-}
-
-const NavLink = ({ to, active, children, className }: NavLinkProps) => {
-  return (
-    <Link
-      to={to}
-      className={cn(
-        "flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap", // Added whitespace-nowrap
-        active
-          ? "bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md"
-          : "text-gray-700 hover:text-blue-600 hover:bg-blue-50",
-        className
-      )}
-    >
-      {children}
-    </Link>
-  );
-};
-
-interface ExternalNavLinkProps {
-  href: string;
-  children: React.ReactNode;
-  className?: string;
-}
-
-const ExternalNavLink = ({ href, children, className }: ExternalNavLinkProps) => {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={cn(
-        "flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap", // Added whitespace-nowrap
-        "text-gray-700 hover:text-blue-600 hover:bg-blue-50",
-        className
-      )}
-    >
-      {children}
-    </a>
-  );
-};
 export default Navigation;
