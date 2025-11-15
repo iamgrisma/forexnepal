@@ -1,24 +1,29 @@
 // iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/api-admin.ts
 // --- ADMIN-FACING API HANDLERS ---
 
-import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement } from './worker-types';
+import { Env, ExecutionContext, SiteSettings, D1Database, ApiAccessSetting, D1PreparedStatement, UserProfile } from './worker-types';
 import { corsHeaders, CURRENCIES, CURRENCY_MAP } from './constants';
 import { generateSlug, formatDate } from './worker-utils';
-import { verifyToken, simpleHash, simpleHashCompare, generateToken } from './auth';
+// --- MODIFIED: Import new auth function ---
+import { verifyToken, simpleHash, simpleHashCompare, generateToken, getUsernameFromToken } from './auth';
 import { processAndStoreApiData } from './scheduled';
 import { getAllSettings } from './api-helpers';
 
 const API_SETTINGS_CACHE_KEY = 'api_access_settings_v1';
 
+// --- Helper function to get the token from the request ---
+function getAuthToken(request: Request): string | null {
+  const authHeader = request.headers.get('Authorization');
+  return authHeader?.replace('Bearer ', '') || null;
+}
+
+
 /**
  * (ADMIN) Forces the worker to fetch from NRB API and store in D1.
  */
 export async function handleFetchAndStore(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+    // This handler is already protected by the 'verifyToken' check in worker.ts
+    // No username is needed, so it's fine.
     
     const url = new URL(request.url);
     const fromDate = url.searchParams.get('from');
@@ -58,12 +63,7 @@ export async function handleFetchAndStore(request: Request, env: Env): Promise<R
  * (ADMIN) GET/POST site settings.
  */
 export async function handleSiteSettings(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
+    // This handler is also fine, as it's protected and doesn't depend on a specific user.
     try {
         if (request.method === 'GET') {
             const settings = await getAllSettings(env.FOREX_DB);
@@ -101,9 +101,10 @@ export async function handleSiteSettings(request: Request, env: Env): Promise<Re
 }
 
 /**
- * (ADMIN) Check if a user exists before asking for a password.
+ * (PUBLIC) Check if a user exists before asking for a password.
  */
 export async function handleCheckUser(request: Request, env: Env): Promise<Response> {
+    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -149,9 +150,10 @@ export async function handleCheckUser(request: Request, env: Env): Promise<Respo
 }
 
 /**
- * (ADMIN) Login handler.
+ * (PUBLIC) Login handler.
  */
 export async function handleAdminLogin(request: Request, env: Env): Promise<Response> {
+    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -194,7 +196,7 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
             return new Response(JSON.stringify({ success: false, error: 'Invalid credentials' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
-        const token = await generateToken(username, env.JWT_SECRET); // <-- Pass secret
+        const token = await generateToken(username, env.JWT_SECRET);
         return new Response(JSON.stringify({
             success: true,
             token,
@@ -209,9 +211,10 @@ export async function handleAdminLogin(request: Request, env: Env): Promise<Resp
 }
 
 /**
- * (ADMIN) Check login attempt count.
+ * (PUBLIC) Check login attempt count.
  */
 export async function handleCheckAttempts(request: Request, env: Env): Promise<Response> {
+    // This is a public route, no auth changes needed.
     const url = new URL(request.url);
     const ipAddress = url.searchParams.get('ip');
     const sessionId = url.searchParams.get('session');
@@ -232,25 +235,31 @@ export async function handleCheckAttempts(request: Request, env: Env): Promise<R
 
 /**
  * (ADMIN) Change password handler.
+ * --- SECURITY FIX APPLIED ---
  */
 export async function handleChangePassword(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) { // <-- Pass secret
+    
+    // --- SECURITY FIX: Get username from token, not from body ---
+    const token = getAuthToken(request);
+    const username = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!username) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
+    // --- END SECURITY FIX ---
+
     try {
-        const { username, newPassword, keepSamePassword } = await request.json();
-        if (!username) {
-             return new Response(JSON.stringify({ success: false, error: 'Username is required.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-        }
+        // We still get the password from the body
+        const { newPassword, keepSamePassword } = await request.json();
+        
         if (!keepSamePassword && (!newPassword || newPassword.length < 8)) {
              return new Response(JSON.stringify({ success: false, error: 'New password must be >= 8 chars.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
 
+        // We use the SECURE username from the token
         const user = await env.FOREX_DB.prepare(
             `SELECT username, password_hash FROM users WHERE username = ?`
         ).bind(username).first<{ username: string; password_hash: string | null }>();
@@ -271,7 +280,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
         await env.FOREX_DB.prepare(
             `UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE username = ?`
-        ).bind(newPasswordHash, username).run();
+        ).bind(newPasswordHash, username).run(); // Secure username
 
         // This table is deprecated but we'll clear it for legacy support.
         await env.FOREX_DB.prepare(`DELETE FROM user_recovery`).run();
@@ -285,6 +294,7 @@ export async function handleChangePassword(request: Request, env: Env): Promise<
 
 /**
  * (ADMIN) Helper function to send password reset email via Brevo.
+ * --- MODIFIED for new combined login/reset flow ---
  */
 async function sendPasswordResetEmail(
     env: Env,
@@ -313,8 +323,7 @@ async function sendPasswordResetEmail(
                 email: 'cadmin@grisma.com.np',
             },
             to: [{ email: to, name: username }],
-            // --- MODIFIED: Subject ---
-            subject: 'Login / Password Reset Request - Forex Nepal Admin',
+            subject: 'Login / Password Reset Request - Forex Nepal Admin', // Updated
             htmlContent: `
               <!DOCTYPE html>
               <html>
@@ -334,24 +343,19 @@ async function sendPasswordResetEmail(
               <body>
                 <div class="container">
                   <div class="header">
-                    <!-- --- MODIFIED: Title --- -->
                     <h1>Login / Password Reset Request</h1>
                   </div>
                   <div class="content">
                     <p>Hello <strong>${username}</strong>,</p>
                     <p>We received a request for a one-time login link or password reset for your Forex Nepal Admin Dashboard account.</p>
-                    <!-- --- MODIFIED: Text --- -->
                     <p>Click the button below to log in directly or to reset your password:</p>
                     <p style="text-align: center;">
-                      <!-- --- MODIFIED: Button Text --- -->
                       <a href="${resetUrl}" class="button">Login / Reset Password</a>
                     </p>
                     <p>Or copy and paste this link into your browser:</p>
                     <p style="word-break: break-all; color: #667eea;">${resetUrl}</p>
-                    <!-- --- MODIFIED: Text --- -->
                     <p>Alternatively, use this token on the reset page:</p>
                     <p style="text-align: center;" class="token">${resetToken}</p>
-                    <!-- --- MODIFIED: Expiry time --- -->
                     <p><strong>This link and token will expire in 15 minutes and can only be used once.</strong></p>
                     <p>If you didn't request this, please ignore this email or contact support if you're concerned about your account security.</p>
                   </div>
@@ -380,7 +384,7 @@ async function sendPasswordResetEmail(
 
 /**
  * (PUBLIC) Request a password reset email.
- * This is also used by admins to send a link to a user.
+ * This is used by the Forgot Password page AND the admin panel.
  */
 export async function handleRequestPasswordReset(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'POST') {
@@ -398,7 +402,6 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
         ).bind(username).first<{ username: string; email: string | null }>();
 
         if (!user || !user.email) {
-            // For security, always return success even if user or email doesn't exist.
             console.log(`Password reset request for "${username}", but user or email not found. Sending success for security.`);
             return new Response(JSON.stringify({ success: true, message: "If account exists, reset email sent" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json'} });
         }
@@ -412,7 +415,6 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
 
         const resetUrl = `https://forex.grisma.com.np/#/admin/reset-password?token=${resetToken}`;
         
-        // This function now sends the updated email template
         sendPasswordResetEmail(
             env,
             user.email,
@@ -434,6 +436,7 @@ export async function handleRequestPasswordReset(request: Request, env: Env, ctx
  * (PUBLIC) Reset password using a token.
  */
 export async function handleResetPassword(request: Request, env: Env): Promise<Response> {
+    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -483,11 +486,11 @@ export async function handleResetPassword(request: Request, env: Env): Promise<R
 }
 
 
-// --- START: *** NEW *** Login with Reset Token Function ---
 /**
  * (PUBLIC) Logs a user in using a password reset token without changing password.
  */
 export async function handleLoginWithResetToken(request: Request, env: Env): Promise<Response> {
+    // This is a public route, no auth changes needed.
     if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
@@ -535,24 +538,24 @@ export async function handleLoginWithResetToken(request: Request, env: Env): Pro
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-// --- END: *** NEW *** Login with Reset Token Function ---
 
 
-// --- START: *** NEW *** Generate Reset Token Function (Admin) ---
 /**
  * (ADMIN) Generates a password reset token for a user *without* sending an email.
  * Returns the token for the admin to copy.
- * This replaces the old `handleGenerateOneTimeLoginCode`
+ * --- SECURITY FIX APPLIED ---
  */
 export async function handleGenerateResetToken(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
+    // This handler is already protected by worker.ts, but we check again.
+    const token = getAuthToken(request);
+    const adminUsername = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!adminUsername) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 
     try {
-        const { username } = await request.json();
+        const { username } = await request.json(); // This is the user to *generate for*
         if (!username) {
             return new Response(JSON.stringify({ success: false, error: 'Username is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
         }
@@ -583,23 +586,17 @@ export async function handleGenerateResetToken(request: Request, env: Env): Prom
         return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
 }
-// --- END: *** NEW *** Generate Reset Token Function (Admin) ---
 
 
 /**
  * (ADMIN) GET all users or POST a new user.
  */
 export async function handleUsers(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-    
+    // This handler is protected by worker.ts, no username logic needed.
     try {
         if (request.method === 'GET') {
             const { results } = await env.FOREX_DB.prepare(
-                `SELECT username, email, role, is_active, created_at FROM users ORDER BY created_at DESC`
+                `SELECT username, email, role, is_active, created_at, full_name, mobile_number, profile_pic_url FROM users ORDER BY created_at DESC`
             ).all();
             return new Response(JSON.stringify({ success: true, users: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -632,18 +629,25 @@ export async function handleUsers(request: Request, env: Env): Promise<Response>
  * (ADMIN) DELETE a user by username.
  */
 export async function handleUserById(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
+    // This handler is protected by worker.ts.
+    // We also need to get the *admin's* username to prevent self-deletion.
+    const token = getAuthToken(request);
+    const adminUsername = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!adminUsername) {
         return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
     }
-    
+
     const url = new URL(request.url);
-    const username = url.pathname.split('/').pop();
+    const usernameToDelete = url.pathname.split('/').pop();
+
+    if (adminUsername === usernameToDelete) {
+        return new Response(JSON.stringify({ success: false, error: 'You cannot delete your own account.' }), { status: 403, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
     
     try {
         if (request.method === 'DELETE') {
-            await env.FOREX_DB.prepare(`DELETE FROM users WHERE username = ?`).bind(username).run();
+            await env.FOREX_DB.prepare(`DELETE FROM users WHERE username = ?`).bind(usernameToDelete).run();
             return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         
@@ -658,11 +662,7 @@ export async function handleUserById(request: Request, env: Env): Promise<Respon
  * (ADMIN) GET all posts or POST a new post.
  */
 export async function handlePosts(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+    // Protected by worker.ts
     try {
         if (request.method === 'GET') {
             const { results } = await env.FOREX_DB.prepare(`SELECT id, title, slug, status, published_at, created_at, updated_at FROM posts ORDER BY created_at DESC`).all();
@@ -697,11 +697,7 @@ export async function handlePosts(request: Request, env: Env): Promise<Response>
  * (ADMIN) GET, PUT, or DELETE a single post by its ID.
  */
 export async function handlePostById(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+    // Protected by worker.ts
     const url = new URL(request.url);
     const id = url.pathname.split('/').pop();
     const postId = parseInt(id || '', 10);
@@ -750,11 +746,7 @@ export async function handlePostById(request: Request, env: Env): Promise<Respon
  * (ADMIN) GET or POST manual forex data.
  */
 export async function handleForexData(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
+    // Protected by worker.ts
     try {
         if (request.method === 'GET') {
             const url = new URL(request.url);
@@ -808,18 +800,11 @@ export async function handleForexData(request: Request, env: Env): Promise<Respo
 }
 
 
-// --- ADMIN HANDLERS FOR API SETTINGS ---
-
 /**
  * (ADMIN) GET all API access settings.
  */
 export async function handleGetApiSettings(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
+    // Protected by worker.ts
     try {
         const { results } = await env.FOREX_DB.prepare("SELECT * FROM api_access_settings ORDER BY endpoint ASC").all<ApiAccessSetting>();
         return new Response(JSON.stringify({ success: true, settings: results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -833,12 +818,7 @@ export async function handleGetApiSettings(request: Request, env: Env): Promise<
  * (ADMIN) POST (update) API access settings.
  */
 export async function handleUpdateApiSettings(request: Request, env: Env): Promise<Response> {
-    const authHeader = request.headers.get('Authorization');
-    const token = authHeader?.replace('Bearer ', '');
-    if (!token || !(await verifyToken(token, env.JWT_SECRET))) {
-        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
-    }
-
+    // Protected by worker.ts
     try {
         const settings: ApiAccessSetting[] = await request.json();
         
@@ -871,7 +851,6 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
             await env.FOREX_DB.batch(stmts);
         }
         
-        // Clear the KV cache
         await env.API_SETTINGS_CACHE.delete(API_SETTINGS_CACHE_KEY);
 
         return new Response(JSON.stringify({ success: true, message: `${stmts.length} settings updated` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -881,16 +860,11 @@ export async function handleUpdateApiSettings(request: Request, env: Env): Promi
     }
 }
 
-
-// --- REMOVED: Old handleOneTimeLogin and handleGenerateOneTimeLoginCode functions ---
-
-
-// --- GoogleAuthCallback Function ---
 /**
  * (PUBLIC) Handles the Google OAuth callback.
- * Exchanges the code for a token, gets user info, and issues a JWT.
  */
 export async function handleGoogleLoginCallback(request: Request, env: Env): Promise<Response> {
+  // This is a public route, no auth changes needed.
   try {
     const { code } = await request.json();
     if (!code) {
@@ -902,16 +876,12 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
       return new Response(JSON.stringify({ success: false, error: 'Server configuration error: Missing secrets' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    // Hard-coded redirect URI, as it's not a secret
     const REDIRECT_URI = "https://forex.grisma.com.np/admin/auth/google/callback";
     
-
     // 1. Exchange code for access token
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         code: code,
         client_id: env.GOOGLE_CLIENT_ID,
@@ -936,9 +906,7 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
 
     // 2. Get user info from Google
     const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: {
-        Authorization: `Bearer ${access_token}`,
-      },
+      headers: { Authorization: `Bearer ${access_token}` },
     });
 
     const userInfoData = await userInfoResponse.json();
@@ -981,4 +949,239 @@ export async function handleGoogleLoginCallback(request: Request, env: Env): Pro
     return new Response(JSON.stringify({ success: false, error: 'An internal server error occurred' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 }
-// --- END: GoogleAuthCallback Function ---
+
+// --- START: NEW PROFILE HANDLERS ---
+
+/**
+ * (ADMIN) Helper function to send email verification email via Brevo.
+ */
+async function sendEmailVerificationEmail(
+    env: Env,
+    to: string,
+    username: string,
+    verificationToken: string,
+    ctx: ExecutionContext
+): Promise<void> {
+    const BREVO_API_KEY = env.BREVO_API_KEY;
+    if (!BREVO_API_KEY) {
+        console.error('BREVO_API_KEY secret not set in Cloudflare Worker.');
+        return;
+    }
+
+    const emailPromise = fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'api-key': BREVO_API_KEY,
+        },
+        body: JSON.stringify({
+            sender: {
+                name: 'Forex Nepal Admin',
+                email: 'cadmin@grisma.com.np',
+            },
+            to: [{ email: to, name: username }],
+            subject: 'Verify Your New Email Address - Forex Nepal Admin',
+            htmlContent: `
+              <p>Hello <strong>${username}</strong>,</p>
+              <p>You requested to change your email address. Please use the verification token below to confirm this change.</p>
+              <p style="font-family: 'Courier New', monospace; font-size: 20px; letter-spacing: 2px;">
+                <strong>${verificationToken}</strong>
+              </p>
+              <p>This token will expire in 15 minutes.</p>
+              <p>If you did not request this, please ignore this email.</p>
+            `,
+        }),
+    }).then(async (emailResponse) => {
+         if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            console.error('Brevo API error (Email Verification):', errorText);
+        } else {
+            console.log('Email verification email sent successfully via Brevo.');
+        }
+    }).catch(emailError => {
+        console.error('Email verification sending error:', emailError);
+    });
+
+    ctx.waitUntil(emailPromise);
+}
+
+
+/**
+ * (ADMIN) GET the logged-in user's profile.
+ */
+export async function handleGetProfile(request: Request, env: Env): Promise<Response> {
+    const token = getAuthToken(request);
+    const username = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!username) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const user = await env.FOREX_DB.prepare(
+            `SELECT username, email, full_name, mobile_number, profile_pic_url FROM users WHERE username = ?`
+        ).bind(username).first<UserProfile>();
+        
+        if (!user) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        
+        return new Response(JSON.stringify(user), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (e: any) {
+        console.error('Failed to fetch profile:', e);
+        return new Response(JSON.stringify({ success: false, error: 'Database query failed' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+/**
+ * (ADMIN) POST to send a verification code for a new email.
+ */
+export async function handleSendVerificationCode(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const token = getAuthToken(request);
+    const username = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!username) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const { email } = await request.json() as { email: string };
+        if (!email) {
+            return new Response(JSON.stringify({ success: false, error: 'Email is required' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        // Check if email is already used by *another* user
+        const existingUser = await env.FOREX_DB.prepare(
+            `SELECT username FROM users WHERE email = ? AND username != ?`
+        ).bind(email, username).first();
+        
+        if (existingUser) {
+            return new Response(JSON.stringify({ success: false, error: 'This email is already in use by another account.' }), { status: 409, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        const verificationToken = `emver-${crypto.randomUUID()}`;
+        const expiresAt = new Date(Date.now() + 900000).toISOString(); // 15 minutes
+
+        await env.FOREX_DB.prepare(
+            `INSERT INTO email_verification_tokens (username, new_email, token, expires_at) VALUES (?, ?, ?, ?)`
+        ).bind(username, email, verificationToken, expiresAt).run();
+
+        // Send the email
+        sendEmailVerificationEmail(env, email, username, verificationToken, ctx);
+
+        return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } catch (e: any) {
+        console.error('Failed to send verification code:', e);
+        return new Response(JSON.stringify({ success: false, error: 'Server error' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+
+/**
+ * (ADMIN) POST to update the user's profile.
+ */
+export async function handleUpdateProfile(request: Request, env: Env): Promise<Response> {
+    const token = getAuthToken(request);
+    const username = token ? await getUsernameFromToken(token, env.JWT_SECRET) : null;
+    
+    if (!username) {
+        return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+
+    try {
+        const values = await request.json() as {
+            full_name: string;
+            mobile_number?: string;
+            profile_pic_url?: string;
+            email: string;
+            email_verification_code?: string;
+            password?: string;
+        };
+
+        const currentUser = await env.FOREX_DB.prepare(
+            `SELECT email FROM users WHERE username = ?`
+        ).bind(username).first<{ email: string }>();
+
+        if (!currentUser) {
+            return new Response(JSON.stringify({ success: false, error: 'User not found' }), { status: 404, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+
+        let newEmail = currentUser.email;
+        const emailChanged = values.email.toLowerCase() !== currentUser.email.toLowerCase();
+
+        if (emailChanged) {
+            if (!values.email_verification_code) {
+                return new Response(JSON.stringify({ success: false, error: 'Email verification code is required.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+
+            // Verify the code
+            const tokenRecord = await env.FOREX_DB.prepare(
+                `SELECT expires_at, used FROM email_verification_tokens WHERE token = ? AND new_email = ? AND username = ?`
+            ).bind(values.email_verification_code, values.email, username).first<{ expires_at: string; used: number }>();
+
+            if (!tokenRecord) {
+                return new Response(JSON.stringify({ success: false, error: 'Invalid verification code.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            if (tokenRecord.used) {
+                return new Response(JSON.stringify({ success: false, error: 'Verification code already used.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            if (new Date(tokenRecord.expires_at) < new Date()) {
+                return new Response(JSON.stringify({ success: false, error: 'Verification code has expired.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            
+            // Code is valid, mark as used and set new email
+            await env.FOREX_DB.prepare(
+                `UPDATE email_verification_tokens SET used = 1 WHERE token = ?`
+            ).bind(values.email_verification_code).run();
+            newEmail = values.email;
+        }
+        
+        // Handle password change
+        let newPasswordHash: string | null = null;
+        if (values.password && values.password.length > 0) {
+            if (values.password.length < 8) {
+                 return new Response(JSON.stringify({ success: false, error: 'New password must be >= 8 chars.' }), { status: 400, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+            }
+            newPasswordHash = await simpleHash(values.password);
+        }
+
+        // Build and execute the update query
+        if (newPasswordHash) {
+            await env.FOREX_DB.prepare(
+                `UPDATE users SET full_name = ?, mobile_number = ?, profile_pic_url = ?, email = ?, password_hash = ?, updated_at = datetime('now') WHERE username = ?`
+            ).bind(
+                values.full_name,
+                values.mobile_number || null,
+                values.profile_pic_url || null,
+                newEmail,
+                newPasswordHash,
+                username
+            ).run();
+        } else {
+            await env.FOREX_DB.prepare(
+                `UPDATE users SET full_name = ?, mobile_number = ?, profile_pic_url = ?, email = ?, updated_at = datetime('now') WHERE username = ?`
+            ).bind(
+                values.full_name,
+                values.mobile_number || null,
+                values.profile_pic_url || null,
+                newEmail,
+                username
+            ).run();
+        }
+
+        // Return the updated profile
+        const updatedProfile = await env.FOREX_DB.prepare(
+            `SELECT username, email, full_name, mobile_number, profile_pic_url FROM users WHERE username = ?`
+        ).bind(username).first<UserProfile>();
+
+        return new Response(JSON.stringify({ success: true, user: updatedProfile }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        
+    } catch (e: any) {
+        console.error('Failed to update profile:', e.message);
+        if (e.message.includes('UNIQUE constraint failed: users.email')) {
+             return new Response(JSON.stringify({ success: false, error: 'This email is already in use by another account.' }), { status: 409, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+        }
+        return new Response(JSON.stringify({ success: false, error: 'Database update failed' }), { status: 500, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
+    }
+}
+// --- END: NEW PROFILE HANDLERS ---
