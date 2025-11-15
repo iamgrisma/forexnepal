@@ -249,8 +249,8 @@ const ArchiveDetail = () => {
             unit: info.unit
         },
         // Re-constitute the display rate (e.g., 0.9 * 10 = 9.0 for JPY)
-        buy: normalizedBuy * unit,
-        sell: normalizedSell * unit,
+        buy: normalizedBuy / unit,
+        sell: normalizedSell / unit,
         
         // Store the actual per-unit values
         normalizedBuy,
