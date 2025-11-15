@@ -1,3 +1,4 @@
+// iamgrisma/forexnepal/forexnepal-892e763f1401a81eb2bc3250b64698c85e1f23bd/src/components/admin/UserManagement.tsx
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,12 +17,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // --- IMPORT Alert Dialog
+} from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { apiClient } from '@/services/apiClient';
-import { Loader2, UserPlus, Trash2, AlertCircle, KeyRound, Copy } from 'lucide-react'; // --- IMPORT KeyRound and Copy ---
+import { Loader2, UserPlus, Trash2, AlertCircle, KeyRound, Copy, Mail, Send } from 'lucide-react'; // --- IMPORTED ICONS ---
 
 interface User {
   username: string;
@@ -44,14 +45,23 @@ const deleteUser = async (username: string) => {
   return await apiClient.delete(`/admin/users/${username}`);
 };
 
-// --- NEW: Generate Code Function ---
-const generateLoginCode = async (username: string) => {
-  return await apiClient.post<{ success: boolean, code: string, username: string }>('/admin/generate-login-code', { username });
+// --- NEW: Generate Token Function (Admin-only, returns token) ---
+const generateResetToken = async (username: string) => {
+  return await apiClient.post<{ success: boolean, token: string, username: string, expires_at: string }>(
+    '/admin/generate-reset-token', 
+    { username }
+  );
 };
+
+// --- NEW: Send Reset Email Function (Public, no return) ---
+const sendResetEmail = async (username: string) => {
+  return await apiClient.post('/admin/request-password-reset', { username });
+};
+
 
 const UserManagement: React.FC = () => {
   const queryClient = useQueryClient();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
     email: '',
@@ -59,10 +69,11 @@ const UserManagement: React.FC = () => {
     role: 'admin',
   });
   
-  // --- NEW: State for code dialog ---
-  const [showCodeDialog, setShowCodeDialog] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState('');
-  const [generatedCodeUser, setGeneratedCodeUser] = useState('');
+  // --- NEW: State for the TWO new dialogs ---
+  const [actionUser, setActionUser] = useState<User | null>(null); // Holds the user you clicked on
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null); // Holds the token to be copied
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<User | null>(null);
+
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['users'],
@@ -74,7 +85,7 @@ const UserManagement: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('User created successfully!');
-      setIsDialogOpen(false);
+      setIsAddUserOpen(false);
       setNewUser({ username: '', email: '', password: '', role: 'admin' });
     },
     onError: (error: Error) => {
@@ -84,27 +95,41 @@ const UserManagement: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
-    onSuccess: () => {
+    onSuccess: (_, username) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success('User deleted successfully!');
+      toast.success(`User "${username}" deleted successfully!`);
+      setShowDeleteConfirm(null);
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to delete user: ${error.message}`);
+    onError: (error: Error, username) => {
+      toast.error(`Failed to delete "${username}": ${error.message}`);
+      setShowDeleteConfirm(null);
     },
   });
   
-  // --- NEW: Mutation for generating code ---
-  const generateCodeMutation = useMutation({
-    mutationFn: generateLoginCode,
+  // --- NEW: Mutation for GENERATING a token (Option 1) ---
+  const generateTokenMutation = useMutation({
+    mutationFn: generateResetToken,
     onSuccess: (data) => {
-      setGeneratedCode(data.code);
-      setGeneratedCodeUser(data.username);
-      setShowCodeDialog(true); // Show the dialog with the code
+      setGeneratedToken(data.token); // This will open the copy dialog
+      setActionUser(null); // Close the action dialog
     },
     onError: (error: Error) => {
-      toast.error(`Failed to generate code: ${error.message}`);
+      toast.error(`Failed to generate token: ${error.message}`);
     },
   });
+
+  // --- NEW: Mutation for SENDING an email (Option 2) ---
+  const sendEmailMutation = useMutation({
+    mutationFn: sendResetEmail,
+    onSuccess: (_, username) => {
+      toast.success(`Login/Reset email sent to ${username}!`);
+      setActionUser(null); // Close the action dialog
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to send email: ${error.message}`);
+    },
+  });
+
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,26 +144,46 @@ const UserManagement: React.FC = () => {
     createMutation.mutate(newUser);
   };
 
-  const handleDeleteUser = (username: string) => {
+  // --- MODIFIED: Delete handler now just shows dialog ---
+  const handleDeleteClick = (user: User) => {
     const currentUser = localStorage.getItem('username');
-    if (username === currentUser) {
+    if (user.username === currentUser) {
       toast.error('You cannot delete your own account');
       return;
     }
-    if (window.confirm(`Are you sure you want to delete user "${username}"?`)) {
-      deleteMutation.mutate(username);
-    }
+    setShowDeleteConfirm(user);
   };
   
-  // --- NEW: Handler to call mutation ---
-  const handleGenerateCode = (username: string) => {
-    generateCodeMutation.mutate(username);
+  // --- NEW: Handler for "Generate Token" button ---
+  const handleGenerateToken = (username: string) => {
+    generateTokenMutation.mutate(username);
   };
 
-  // --- NEW: Handler to copy code to clipboard ---
-  const copyCodeToClipboard = () => {
-    navigator.clipboard.writeText(generatedCode);
-    toast.success("Code copied to clipboard!");
+  // --- NEW: Handler for "Send Email" button ---
+  const handleSendEmail = (username: string) => {
+    sendEmailMutation.mutate(username);
+  };
+
+  // --- NEW: Handler to copy token to clipboard ---
+  const copyTokenToClipboard = () => {
+    if (!generatedToken) return;
+    // Use the older execCommand for wider compatibility in iframes
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = generatedToken;
+      ta.style.position = 'fixed'; // prevent scrolling
+      ta.style.top = '0';
+      ta.style.left = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast.success("Token copied to clipboard!");
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      toast.error('Failed to copy token.');
+    }
   };
 
   if (isLoading) {
@@ -166,7 +211,7 @@ const UserManagement: React.FC = () => {
               <CardTitle>User Management</CardTitle>
               <CardDescription>Manage admin users and their access levels.</CardDescription>
             </div>
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
               <DialogTrigger asChild>
                 <Button>
                   <UserPlus className="h-4 w-4 mr-2" />
@@ -242,7 +287,7 @@ const UserManagement: React.FC = () => {
           <Alert className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              This system currently has limited user management. All users have admin access. Future versions will support granular permissions.
+              All users currently have admin access. Role-based permissions are not yet enforced.
             </AlertDescription>
           </Alert>
 
@@ -283,13 +328,12 @@ const UserManagement: React.FC = () => {
                     </TableCell>
                     <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
                     <TableCell className="text-right">
-                      {/* --- NEW: Generate Code Button --- */}
+                      {/* --- MODIFIED: Key button now opens action dialog --- */}
                       <Button
                         variant="ghost"
                         size="sm"
                         title="Generate one-time login code"
-                        onClick={() => handleGenerateCode(user.username)}
-                        disabled={generateCodeMutation.isPending}
+                        onClick={() => setActionUser(user)} // <-- Opens the new dialog
                       >
                         <KeyRound className="h-4 w-4 text-blue-600" />
                       </Button>
@@ -297,8 +341,8 @@ const UserManagement: React.FC = () => {
                         variant="ghost"
                         size="sm"
                         title="Delete user"
-                        onClick={() => handleDeleteUser(user.username)}
-                        disabled={deleteMutation.isPending}
+                        onClick={() => handleDeleteClick(user)} // <-- Opens delete confirm
+                        disabled={deleteMutation.isPending && deleteMutation.variables === user.username}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -311,24 +355,95 @@ const UserManagement: React.FC = () => {
         </CardContent>
       </Card>
       
-      {/* --- NEW: Alert Dialog to show generated code --- */}
-      <AlertDialog open={showCodeDialog} onOpenChange={setShowCodeDialog}>
+      {/* --- NEW: Key Actions Dialog (Your 2 Options) --- */}
+      <Dialog open={!!actionUser} onOpenChange={(open) => !open && setActionUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Login Actions for <span className="text-primary">{actionUser?.username}</span></DialogTitle>
+            <DialogDescription>
+              Choose how to grant access to this user. The token/link will be valid for 1 hour and can only be used once.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <Button
+              onClick={() => handleGenerateToken(actionUser!.username)}
+              disabled={generateTokenMutation.isPending}
+            >
+              {generateTokenMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Copy className="mr-2 h-4 w-4" />
+              )}
+              Generate & Copy Token
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={() => handleSendEmail(actionUser!.username)}
+              disabled={!actionUser?.email || sendEmailMutation.isPending}
+              title={!actionUser?.email ? "This user has no email address." : "Send login link"}
+            >
+              {sendEmailMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="mr-2 h-4 w-4" />
+              )}
+              Send Login Link via Email
+            </Button>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">
+                Cancel
+              </Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- NEW: Dialog to show generated token for copying --- */}
+      <AlertDialog open={!!generatedToken} onOpenChange={(open) => !open && setGeneratedToken(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>One-Time Login Code</AlertDialogTitle>
+            <AlertDialogTitle>Login Token Generated</AlertDialogTitle>
             <AlertDialogDescription>
-              Share this code with <strong>{generatedCodeUser}</strong>. It is valid for 1 hour and can only be used once.
+              Share this token with the user. It expires in 1 hour and can only be used once.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="p-4 bg-muted rounded-md flex items-center justify-between">
-            <code className="text-2xl font-mono font-bold tracking-widest">{generatedCode}</code>
-            <Button variant="ghost" size="icon" onClick={copyCodeToClipboard}>
+          <div className="p-4 bg-muted rounded-md flex items-center justify-between gap-4">
+            <code className="text-lg font-mono font-bold tracking-tight break-all">
+              {generatedToken}
+            </code>
+            <Button variant="ghost" size="icon" onClick={copyTokenToClipboard}>
               <Copy className="h-5 w-5" />
             </Button>
           </div>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowCodeDialog(false)}>
+            <AlertDialogAction onClick={() => setGeneratedToken(null)}>
               Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* --- NEW: Delete Confirmation Dialog --- */}
+      <AlertDialog open={!!showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the user 
+              <span className="font-bold text-primary"> {showDeleteConfirm?.username}</span> and all their data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteMutation.mutate(showDeleteConfirm!.username)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? "Deleting..." : "Yes, delete user"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
