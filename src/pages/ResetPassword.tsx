@@ -1,78 +1,240 @@
-import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+// src/pages/ResetPassword.tsx
+import React, { useState, useEffect } from 'react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
-import { Loader2, KeyRound } from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Loader2, Terminal, ShieldAlert, KeyRound, LogIn } from 'lucide-react'; // <-- Added LogIn
+import { apiClient } from '@/services/apiClient';
+import { Separator } from '@/components/ui/separator'; // <-- Added Separator
+import { toast as sonnerToast } from "sonner";
+
+type ResetStep = 'loading' | 'form' | 'success' | 'error';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
-  const tokenFromUrl = searchParams.get('token');
-  
-  const [token, setToken] = useState(tokenFromUrl || '');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const [token, setToken] = useState(searchParams.get('token') || '');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  const [step, setStep] = useState<ResetStep>('loading');
+  const [loading, setLoading] = useState(false);
+  const [isLoginLoading, setIsLoginLoading] = useState(false); // <-- NEW: State for direct login button
+  const [errorMessage, setErrorMessage] = useState('');
 
-    if (newPassword !== confirmPassword) {
-      toast({
-        title: "Error",
-        description: "Passwords do not match.",
-        variant: "destructive",
-      });
+  useEffect(() => {
+    const tokenFromUrl = searchParams.get('token');
+    if (tokenFromUrl) {
+      setToken(tokenFromUrl);
+      setStep('form');
+    } else {
+      setStep('form'); // Allow user to paste token
+    }
+  }, [searchParams]);
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (loading || isLoginLoading) return;
+
+    if (!token) {
+      toast({ title: "Error", description: "No reset token provided.", variant: "destructive" });
       return;
     }
-
-    if (newPassword.length < 8) {
-      toast({
-        title: "Error",
-        description: "Password must be at least 8 characters long.",
-        variant: "destructive",
-      });
+    if (password.length < 8) {
+      toast({ title: "Error", description: "Password must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+    if (password !== confirmPassword) {
+      toast({ title: "Error", description: "Passwords do not match.", variant: "destructive" });
       return;
     }
 
     setLoading(true);
+    setErrorMessage('');
 
     try {
-      const response = await fetch('/api/admin/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, newPassword }),
+      const data = await apiClient.post('/admin/reset-password', {
+        token,
+        newPassword: password,
       });
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
-        toast({
-          title: "Success",
-          description: "Your password has been reset successfully.",
+      if (data.success) {
+        setStep('success');
+        sonnerToast.success("Password Reset Successful", {
+          description: "You can now log in with your new password.",
+          duration: 3000,
         });
-        setTimeout(() => navigate('/admin/login'), 1500);
+        navigate('/admin/login');
       } else {
-        toast({
-          title: "Error",
-          description: data.error || "Failed to reset password. The token may be invalid or expired.",
-          variant: "destructive",
-        });
+        throw new Error(data.error || 'Failed to reset password.');
       }
-    } catch (error) {
-      console.error('Password reset error:', error);
-      toast({
-        title: "Error",
-        description: "Unable to reset password. Please try again.",
-        variant: "destructive",
-      });
+    } catch (error: any) {
+      console.error(error);
+      setErrorMessage(error.message || "An unknown error occurred.");
+      setStep('error');
     } finally {
       setLoading(false);
     }
+  };
+
+  // --- NEW: Direct Login Handler ---
+  const handleDirectLogin = async () => {
+    if (loading || isLoginLoading) return;
+
+    if (!token) {
+      toast({ title: "Error", description: "No token provided.", variant: "destructive" });
+      return;
+    }
+
+    setIsLoginLoading(true);
+    setErrorMessage('');
+
+    try {
+      const data = await apiClient.post<{
+        success: boolean;
+        token: string;
+        username: string;
+        error?: string;
+      }>('/admin/login-with-token', { token });
+
+      if (data.success) {
+        // Clear any lingering session storage
+        sessionStorage.removeItem('loginStep');
+        sessionStorage.removeItem('loginUsername');
+        
+        // Store new auth data
+        localStorage.setItem('authToken', data.token);
+        localStorage.setItem('username', data.username);
+        
+        sonnerToast.success("Login Successful", {
+          description: `Welcome, ${data.username}!`,
+          duration: 2000,
+        });
+        
+        // Navigate to dashboard
+        navigate('/admin/dashboard', { replace: true });
+      } else {
+        throw new Error(data.error || 'Failed to log in with token.');
+      }
+    } catch (error: any) {
+      console.error(error);
+      setErrorMessage(error.message || "An unknown error occurred.");
+      setStep('error');
+    } finally {
+      setIsLoginLoading(false);
+    }
+  };
+  // --- END: New Handler ---
+
+
+  const renderContent = () => {
+    if (step === 'error') {
+      return (
+        <CardContent className="space-y-4">
+          <Alert variant="destructive">
+            <ShieldAlert className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              {errorMessage}
+              <br />
+              This may be because your token is invalid, expired, or has already been used.
+            </AlertDescription>
+          </Alert>
+          <Button variant="outline" className="w-full" asChild>
+            <Link to="/admin/forgot-password">Request a new link</Link>
+          </Button>
+        </CardContent>
+      );
+    }
+
+    if (step === 'success') {
+      return (
+        <CardContent className="space-y-4 text-center">
+          <p>Your password has been reset successfully.</p>
+          <Button className="w-full" asChild>
+            <Link to="/admin/login">Go to Login</Link>
+          </Button>
+        </CardContent>
+      );
+    }
+
+    // Default to 'form' or 'loading'
+    return (
+      <CardContent>
+        <form onSubmit={handlePasswordReset} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-1 block text-left" htmlFor="token">
+              Reset Token
+            </label>
+            <Input
+              id="token"
+              type="text"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste token from email"
+              required
+              disabled={loading || isLoginLoading}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block text-left" htmlFor="password">
+              New Password
+            </label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter new password (min 8 chars)"
+              required
+              disabled={loading || isLoginLoading}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1 block text-left" htmlFor="confirmPassword">
+              Confirm New Password
+            </label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm new password"
+              required
+              disabled={loading || isLoginLoading}
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={loading || isLoginLoading || !password || !confirmPassword || !token}>
+            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Change Password
+          </Button>
+
+          {/* --- NEW: Direct Login Button --- */}
+          <div className="relative pt-2">
+            <Separator />
+            <span className="absolute left-1/2 -translate-x-1/2 -top-1 bg-card px-2 text-xs text-muted-foreground">OR</span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleDirectLogin}
+            disabled={loading || isLoginLoading || !token}
+          >
+            {isLoginLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogIn className="mr-2 h-4 w-4" />}
+            Login Directly (Use Token)
+          </Button>
+          {/* --- END: New Button --- */}
+
+        </form>
+      </CardContent>
+    );
   };
 
   return (
@@ -80,76 +242,14 @@ const ResetPassword = () => {
       <div className="py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md mx-auto">
           <Card className="shadow-md">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <KeyRound className="h-6 w-6 text-primary" />
-                <CardTitle>Reset Your Password</CardTitle>
-              </div>
+            <CardHeader className="text-center">
+              <KeyRound className="h-10 w-10 text-primary mx-auto" />
+              <CardTitle>Reset Your Password</CardTitle>
               <CardDescription>
-                Enter your reset code and choose a new secure password.
+                Enter your reset token and a new password.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block" htmlFor="token">
-                    Reset Code
-                  </label>
-                  <Input
-                    id="token"
-                    type="text"
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    placeholder="Enter reset code from email"
-                    required
-                    disabled={loading}
-                    autoFocus={!tokenFromUrl}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block" htmlFor="newPassword">
-                    New Password
-                  </label>
-                  <Input
-                    id="newPassword"
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Enter new password (min 8 chars)"
-                    required
-                    minLength={8}
-                    disabled={loading}
-                    autoFocus={!!tokenFromUrl}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block" htmlFor="confirmPassword">
-                    Confirm New Password
-                  </label>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Confirm new password"
-                    required
-                    minLength={8}
-                    disabled={loading}
-                  />
-                  {newPassword && confirmPassword && newPassword !== confirmPassword && (
-                    <p className="text-xs text-destructive mt-1">Passwords do not match.</p>
-                  )}
-                </div>
-                <Button
-                  type="submit"
-                  disabled={loading || !token || !newPassword || newPassword !== confirmPassword || newPassword.length < 8}
-                  className="w-full"
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {loading ? 'Resetting...' : 'Reset Password'}
-                </Button>
-              </form>
-            </CardContent>
+            {renderContent()}
           </Card>
         </div>
       </div>
