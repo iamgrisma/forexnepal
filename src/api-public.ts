@@ -1,4 +1,4 @@
-// src/api-public.ts
+// iamgrisma/forexnepal/forexnepal-0e3b0b928a538dcfb4920dfab92aefdb890deb1f/src/api-public.ts
 // --- PUBLIC-FACING API HANDLERS ---
 
 import { Env } from './worker-types';
@@ -52,6 +52,7 @@ async function getLatestForexRow(env: Env): Promise<any> {
 
 /**
  * (PUBLIC) Fetches the latest available rates (today or yesterday).
+ * --- FIX: This now returns NORMALIZED (per-unit) rates. ---
  */
 export async function handleLatestRates(request: Request, env: Env): Promise<Response> {
     try {
@@ -67,11 +68,14 @@ export async function handleLatestRates(request: Request, env: Env): Promise<Res
         CURRENCIES.forEach(code => {
             const buyRate = row[`${code}_buy`];
             const sellRate = row[`${code}_sell`];
+            const unit = CURRENCY_MAP[code]?.unit || 1;
+            
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
                     currency: { ...CURRENCY_MAP[code], iso3: code },
-                    buy: buyRate ?? 0,
-                    sell: sellRate ?? 0,
+                    // --- FIX: Normalize the rates ---
+                    buy: (buyRate ?? 0) / unit,
+                    sell: (sellRate ?? 0) / unit,
                 });
             }
         });
@@ -96,6 +100,7 @@ export async function handleLatestRates(request: Request, env: Env): Promise<Res
 
 /**
  * (PUBLIC) Fetches rates for a specific date from the DB.
+ * --- FIX: This now returns NORMALIZED (per-unit) rates. ---
  */
 export async function handleRatesByDate(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -123,11 +128,14 @@ export async function handleRatesByDate(request: Request, env: Env): Promise<Res
         CURRENCIES.forEach(code => {
             const buyRate = row[`${code}_buy`];
             const sellRate = row[`${code}_sell`];
+            const unit = CURRENCY_MAP[code]?.unit || 1;
+
             if (typeof buyRate === 'number' || typeof sellRate === 'number') {
                 rates.push({
                     currency: { ...CURRENCY_MAP[code], iso3: code },
-                    buy: buyRate ?? 0,
-                    sell: sellRate ?? 0,
+                    // --- FIX: Normalize the rates ---
+                    buy: (buyRate ?? 0) / unit,
+                    sell: (sellRate ?? 0) / unit,
                 });
             }
         });
@@ -151,6 +159,7 @@ export async function handleRatesByDate(request: Request, env: Env): Promise<Res
 
 /**
  * (PUBLIC) Fetches historical rates for one or all currencies.
+ * --- FIX: This now returns NORMALIZED (per-unit) rates for charts. ---
  */
 export async function handleHistoricalRates(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -178,9 +187,10 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             if (sampling !== 'daily') {
                 switch (sampling) {
                     case 'weekly': samplingClause = "AND (CAST(STRFTIME('%w', date) AS INT) = 4)"; break; // Wednesday
-                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break;
-                    case 'yearly': samplingClause = "AND (CAST(STRFTIME('%j', date) AS INT) IN (1, 180, 365))"; break;
+                    case '15day': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) IN (1, 15))"; break; // Renamed from 'monthly'
+                    case 'monthly': samplingClause = "AND (CAST(STRFTIME('%d', date) AS INT) = 1)"; break; // True monthly
                 }
+                // Always include the first and last date for accurate ranges
                 samplingClause += ` OR date = ? OR date = ?`;
                 bindings.push(fromDate, toDate);
             }
@@ -198,16 +208,19 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
             const currencyInfo = CURRENCY_MAP[upperCaseCurrencyCode];
             const unit = currencyInfo?.unit || 1;
             
+            // --- FIX: Normalize the rates for the chart ---
             const chartData = results.map((item: any) => ({
                 date: item.date,
                 buy: item.buy && typeof item.buy === 'number' ? item.buy / unit : null,
                 sell: item.sell && typeof item.sell === 'number' ? item.sell / unit : null
             })).filter(d => d.buy !== null || d.sell !== null);
+            // --- END FIX ---
 
             return new Response(JSON.stringify({ success: true, data: chartData, currency: currencyCode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
         } else {
             // Logic for multi-currency comparison (e.g., profit calculator)
+            // --- FIX: This also needs to return NORMALIZED rates ---
             const sql = `
                 SELECT * FROM forex_rates
                 WHERE date = ? OR date = ?
@@ -220,11 +233,14 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
                 CURRENCIES.forEach(code => {
                     const buyRate = row[`${code}_buy`];
                     const sellRate = row[`${code}_sell`];
+                    const unit = CURRENCY_MAP[code]?.unit || 1;
+
                     if (typeof buyRate === 'number' && typeof sellRate === 'number') {
                         rates.push({
                             currency: { ...CURRENCY_MAP[code], iso3: code },
-                            buy: buyRate,
-                            sell: sellRate,
+                            // --- FIX: Normalize the rates ---
+                            buy: buyRate / unit,
+                            sell: sellRate / unit,
                         });
                     }
                 });
@@ -235,6 +251,7 @@ export async function handleHistoricalRates(request: Request, env: Env): Promise
                     rates: rates
                 };
             }).filter(p => p.rates.length > 0);
+            // --- END FIX ---
 
             return new Response(JSON.stringify({ status: { code: 200, message: 'OK' }, payload: payloads }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
@@ -290,6 +307,7 @@ export async function handlePublicPostBySlug(request: Request, env: Env): Promis
 /**
  * (PUBLIC) API for Image Embed
  * Returns HTML that renders the forex table on client side.
+ * --- NOTE: This function intentionally returns UN-NORMALIZED rates ---
  */
 export async function handleImageApi(request: Request, env: Env): Promise<Response> {
     try {
@@ -306,6 +324,7 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
 
         let tableRows = '';
         CURRENCIES.forEach(code => {
+            // --- NOTE: We use the RAW, UN-NORMALIZED rates for this embed ---
             const buyRate = row[`${code}_buy`];
             const sellRate = row[`${code}_sell`];
             
@@ -319,13 +338,12 @@ export async function handleImageApi(request: Request, env: Env): Promise<Respon
                 let sellColor = '#9ca3af';
 
                 if (prevRow) {
-                    const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
-                    const prevSell = (prevRow[`${code}_sell`] || 0) / unit;
-                    const currentBuy = (buyRate || 0) / unit;
-                    const currentSell = (sellRate || 0) / unit;
+                    // Compare raw rates
+                    const prevBuy = (prevRow[`${code}_buy`] || 0);
+                    const prevSell = (prevRow[`${code}_sell`] || 0);
                     
-                    const buyDiff = currentBuy - prevBuy;
-                    const sellDiff = currentSell - prevSell;
+                    const buyDiff = buyRate - prevBuy;
+                    const sellDiff = sellRate - prevSell;
 
                     if (buyDiff > 0.0001) {
                         buyTrend = '▲';
@@ -525,8 +543,9 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
             return new Response(JSON.stringify({ error: 'No data found for this date' }), { status: 404, headers: corsHeaders });
         }
         
-        const usdRate = row['USD_buy'];
-        const usdSell = row['USD_sell'];
+        // --- NOTE: This API uses RAW rates for its text ---
+        const usdRate = row['USD_buy']; // Raw rate
+        const usdSell = row['USD_sell']; // Raw rate
         let gainerName = 'N/A';
         let loserName = 'N/A';
         let maxChange = -Infinity;
@@ -539,9 +558,9 @@ export async function handleArchiveDetailApi(request: Request, env: Env): Promis
             for (const code of CURRENCIES) {
                 if (code === 'INR') continue;
                 
-                const unit = CURRENCY_MAP[code]?.unit || 1;
-                const buy = (row[`${code}_buy`] || 0) / unit;
-                const prevBuy = (prevRow[`${code}_buy`] || 0) / unit;
+                // Compare raw rates directly
+                const buy = (row[`${code}_buy`] || 0);
+                const prevBuy = (prevRow[`${code}_buy`] || 0);
                 
                 if (buy && prevBuy) {
                     const change = buy - prevBuy;
