@@ -1,3 +1,4 @@
+// src/pages/AdminLogin.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,11 +7,23 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import Layout from '@/components/Layout';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, Terminal, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react'; // Added QrCode
+import { Loader2, ShieldAlert, ShieldCheck, KeyRound, QrCode } from 'lucide-react';
 import { apiClient } from '@/services/apiClient'; // Import the API client
 import { toast as sonnerToast } from "sonner"; // Import sonner
+import { Separator } from '@/components/ui/separator'; // --- ADD IMPORT ---
 
-// --- UPDATED: Add 'oneTimeCode' step ---
+// --- Google Auth Constants ---
+const GOOGLE_CLIENT_ID = "339956503165-ir1fqjjrso9sk79an6dqh3r69drm60q9.apps.googleusercontent.com";
+const GOOGLE_REDIRECT_URI = "https://forex.grisma.com.np/admin/auth/google/callback";
+
+// --- Google SVG Icon component ---
+const GoogleIcon = () => (
+  <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+    <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+  </svg>
+);
+
+// --- Login steps ---
 type LoginStep = 'redirecting' | 'username' | 'password' | 'oneTimeCode' | 'blocked' | 'error';
 
 // Add keys for session storage
@@ -22,7 +35,6 @@ const AdminLogin = () => {
   const getInitialStep = (): LoginStep => {
     try {
       const storedStep = sessionStorage.getItem(STEP_STORAGE_KEY);
-      // --- UPDATED: Allow 'oneTimeCode' to be stored ---
       if (storedStep === 'username' || storedStep === 'password' || storedStep === 'oneTimeCode') {
         return storedStep as LoginStep;
       }
@@ -41,7 +53,7 @@ const AdminLogin = () => {
   });
 
   const [password, setPassword] = useState('');
-  const [oneTimeCode, setOneTimeCode] = useState(''); // --- NEW: State for the code ---
+  const [oneTimeCode, setOneTimeCode] = useState(''); // State for the code
   const [loading, setLoading] = useState(false);
   const [countdown, setCountdown] = useState(5); // Visual countdown
   const [ipAddress, setIpAddress] = useState('');
@@ -109,7 +121,6 @@ const AdminLogin = () => {
   // Save step to session storage whenever it changes
   useEffect(() => {
     try {
-      // --- UPDATED: Save 'oneTimeCode' step as well ---
       if (step === 'username' || step === 'password' || step === 'oneTimeCode') {
         sessionStorage.setItem(STEP_STORAGE_KEY, step);
       } else if (step !== 'redirecting') {
@@ -144,7 +155,7 @@ const AdminLogin = () => {
     setErrorMessage('');
 
     try {
-      // Call the new 'check-user' endpoint
+      // Call the 'check-user' endpoint
       await apiClient.post('/admin/check-user', {
         username,
         ipAddress,
@@ -225,7 +236,7 @@ const AdminLogin = () => {
     }
   };
 
-  // --- NEW 6. One-Time Code Login Handler ---
+  // 6. One-Time Code Login Handler
   const handleOneTimeLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oneTimeCode || loading) return;
@@ -267,6 +278,22 @@ const AdminLogin = () => {
     }
   };
 
+  // --- NEW 7. Google Login Click Handler ---
+  const handleGoogleLoginClick = () => {
+    setLoading(true);
+    // Construct the Google OAuth URL
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: GOOGLE_REDIRECT_URI,
+      response_type: 'code',
+      scope: 'email profile',
+      prompt: 'select_account', // Force account selection
+    });
+    
+    // Redirect the user to Google's login page
+    window.location.href = `https://accounts.google.com/o/oauth2/auth?${params.toString()}`;
+  };
+
 
   // --- RENDER LOGIC ---
 
@@ -295,11 +322,13 @@ const AdminLogin = () => {
         return (
           <CardContent>
             <form onSubmit={handleUsernameSubmit} className="space-y-4">
-              <ShieldCheck className="h-10 w-10 text-green-600 mx-auto" />
-              <CardTitle className="text-center">Security Check Passed</CardTitle>
-              <CardDescription className="text-center pb-2">
-                Please enter your username to proceed.
-              </CardDescription>
+              <CardHeader className="p-0 pb-4">
+                <ShieldCheck className="h-10 w-10 text-green-600 mx-auto" />
+                <CardTitle className="text-center">Admin Login</CardTitle>
+                <CardDescription className="text-center">
+                  Please enter your username to proceed.
+                </CardDescription>
+              </CardHeader>
               <div>
                 <label className="text-sm font-medium mb-1 block text-left" htmlFor="username">Username</label>
                 <Input
@@ -319,7 +348,19 @@ const AdminLogin = () => {
                 {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Next
               </Button>
-              <div className="flex justify-between">
+
+              {/* --- ADDED GOOGLE LOGIN BUTTON --- */}
+              <div className="relative">
+                <Separator />
+                <span className="absolute left-1/2 -translate-x-1/2 -top-3 bg-card px-2 text-xs text-muted-foreground">OR</span>
+              </div>
+              <Button type="button" variant="outline" className="w-full" onClick={handleGoogleLoginClick} disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <GoogleIcon />}
+                Login with Google
+              </Button>
+              {/* --- END GOOGLE LOGIN BUTTON --- */}
+
+              <div className="flex justify-between pt-2">
                 <Button
                   type="button"
                   variant="link"
@@ -390,7 +431,6 @@ const AdminLogin = () => {
           </CardContent>
         );
 
-      // --- NEW RENDER CASE ---
       case 'oneTimeCode':
         return (
           <CardContent>
