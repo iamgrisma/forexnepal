@@ -35,11 +35,13 @@ import {
     handleForexData,
     handleGetApiSettings,
     handleUpdateApiSettings,
-    // --- IMPORT NEW/REMOVED HANDLERS ---
-    handleLoginWithToken, // <-- ADD THIS
-    // handleOneTimeLogin, // <-- REMOVE THIS
-    // handleGenerateOneTimeLoginCode, // <-- REMOVE THIS
-    handleGoogleLoginCallback
+    handleLoginWithToken,
+    handleGenerateOneTimeLoginCode,
+    handleGoogleLoginCallback,
+    // --- ADD NEW PROFILE HANDLERS ---
+    handleGetProfile,
+    handleUpdateProfile,
+    handleRequestEmailVerification
 } from './api-admin';
 
 export default {
@@ -125,16 +127,9 @@ export default {
             if (pathname === '/api/admin/login' && method === 'POST') {
                 return handleAdminLogin(request, env); // env contains JWT_SECRET
             }
-            // --- REMOVED /api/admin/login-one-time ---
-            // if (pathname === '/api/admin/login-one-time' && method === 'POST') {
-            //     return handleOneTimeLogin(request, env); // env contains JWT_SECRET
-            // }
-
-            // --- ADD NEW GOOGLE CALLBACK ROUTE ---
             if (pathname === '/api/admin/auth/google/callback' && method === 'POST') {
-                return handleGoogleLoginCallback(request, env); // env contains GOOGLE secrets
+                return handleGoogleLoginCallback(request, env, ctx); // env contains GOOGLE secrets, pass ctx
             }
-            // --- END NEW ROUTE ---
             if (pathname === '/api/admin/check-attempts' && method === 'GET') {
                 return handleCheckAttempts(request, env);
             }
@@ -144,11 +139,9 @@ export default {
             if (pathname === '/api/admin/reset-password' && method === 'POST') {
                 return handleResetPassword(request, env);
             }
-            // --- ADDED: NEW LOGIN WITH TOKEN ROUTE ---
             if (pathname === '/api/admin/login-with-token' && method === 'POST') {
                 return handleLoginWithToken(request, env); // env contains JWT_SECRET
             }
-            // --- END NEW ROUTE ---
 
 
             // --- Admin Protected Routes (Token required) ---
@@ -156,12 +149,23 @@ export default {
                 const authHeader = request.headers.get('Authorization');
                 const token = authHeader?.replace('Bearer ', '');
                 
-                // Pass the secret from env to verifyToken
                 if (!token || !(await auth.verifyToken(token, env.JWT_SECRET))) {
                     return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401, headers: {...corsHeaders, 'Content-Type': 'application/json'} });
                 }
+                
+                // --- NEW: Profile Routes ---
+                if (pathname === '/api/admin/profile' && method === 'GET') {
+                    return handleGetProfile(request, env);
+                }
+                if (pathname === '/api/admin/profile' && method === 'POST') {
+                    return handleUpdateProfile(request, env);
+                }
+                if (pathname === '/api/admin/request-email-verification' && method === 'POST') {
+                    return handleRequestEmailVerification(request, env, ctx);
+                }
+                // --- END: Profile Routes ---
 
-                // Token is valid, proceed to admin handlers
+                // Token is valid, proceed to other admin handlers
                 if (pathname === '/api/admin/change-password' && method === 'POST') {
                     return handleChangePassword(request, env); // env contains JWT_SECRET
                 }
@@ -192,28 +196,19 @@ export default {
                 if (pathname === '/api/admin/api-settings' && method === 'POST') {
                     return handleUpdateApiSettings(request, env); // env contains JWT_SECRET
                 }
-                
-                // --- REMOVED /api/admin/generate-login-code ---
-                // if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
-                //     return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
-                // }
+                if (pathname === '/api/admin/generate-login-code' && method === 'POST') {
+                    return handleGenerateOneTimeLoginCode(request, env); // env contains JWT_SECRET
+                }
             }
 
             return new Response(JSON.stringify({ error: 'API route not found' }), { status: 404, headers: corsHeaders });
         }
 
         // --- ADDED: Handle OAuth Callback for HashRouter ---
-        // This intercepts the non-hash URL from the OAuth provider
-        // and redirects to the correct hash-based URL for the React app.
         if (pathname === '/admin/auth/google/callback') {
             const newUrl = new URL(request.url);
-            // Reconstruct the URL to include the hash
-            // e.g., https://.../admin/auth/google/callback?code=...
-            // becomes: https://.../#/admin/auth/google/callback?code=...
             newUrl.pathname = '/';
             newUrl.hash = `/admin/auth/google/callback${url.search}`; // url.search includes the '?'
-            
-            // Issue the redirect
             return Response.redirect(newUrl.toString(), 302);
         }
         // --- END: OAuth Callback Fix ---
